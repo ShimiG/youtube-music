@@ -20,6 +20,7 @@
     <div class="input-group">
         <input type="text" id="searchInput" placeholder="Search for a song (e.g. Linkin Park)">
         <button onclick="searchMusic()">Search</button>
+        <button onclick="loadLibrary()" style="background-color: #4CAF50; color: white;">📂 My Library</button>
     </div>
 
     <div id="playerContainer" class="video-player">
@@ -54,27 +55,35 @@
 
                 // 2. Render the JSON to HTML
                 resultsDiv.innerHTML = '';
-                videos.forEach(video => {
-                    // Check if it's actually a video (sometimes playlists appear)
-                    if (!video.id.videoId) return;
+videos.forEach(video => {
+    if (!video.id.videoId) return;
 
-                    const title = video.snippet.title;
-                    const thumbnail = video.snippet.thumbnails.default.url;
-                    const videoId = video.id.videoId;
+    const title = video.snippet.title;
+    const thumbnail = video.snippet.thumbnails.default.url;
+    const videoId = video.id.videoId;
+    const channel = video.snippet.channelTitle; // Get the channel name
 
-                    // Create the HTML for each song
-                    const songElement = document.createElement('div');
-                    songElement.className = 'result-item';
-                    songElement.innerHTML = `
-                        <img src="${thumbnail}">
-                        <div>
-                            <strong>${title}</strong><br>
-                            <button onclick="playSong('${videoId}')">▶ Play</button>
-                            <button onclick="saveToPlaylist('${videoId}', '${title.replace(/'/g, "\\'")}')">✚ Like</button>
-                        </div>
-                    `;
-                    resultsDiv.appendChild(songElement);
-                });
+    // ESCAPE QUOTES: If a song has a ' in the title, it breaks the HTML. 
+    // This simple trick fixes it for the button click.
+    const safeTitle = title.replace(/'/g, "\\'");
+    const safeChannel = channel.replace(/'/g, "\\'");
+
+    const songElement = document.createElement('div');
+    songElement.className = 'result-item';
+    songElement.innerHTML = `
+        <img src="${thumbnail}">
+        <div>
+            <strong>${title}</strong><br>
+            <small>${channel}</small><br>
+            <button onclick="playSong('${videoId}')">▶ Play</button>
+            
+            <button onclick="saveToPlaylist('${videoId}', '${safeTitle}', '${safeChannel}', '${thumbnail}')">
+                ✚ Add to Library
+            </button>
+        </div>
+    `;
+    resultsDiv.appendChild(songElement);
+});
 
             } catch (error) {
                 console.error(error);
@@ -118,7 +127,99 @@ async function saveToPlaylist(id, title) {
 
     } catch (error) {
         console.error(error);
-        alert("Error connecting to server.");
+        }
+    }
+}
+async function deleteSong(dbId) {
+    if (!confirm("Are you sure you want to delete this song?")) return;
+
+    try {
+        // Call the endpoint with the specific ID
+        const response = await fetch(`/playlist/${dbId}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            // If successful, reload the list to show it's gone
+            loadLibrary(); 
+        } else {
+            alert("Failed to delete.");
+        }
+    } catch (error) {
+        console.error(error);
+        alert("Server error.");
+    }
+}
+
+// We added 'channel' and 'img' to the arguments
+async function saveToPlaylist(id, title, channel, img) {
+    const btn = event.target;
+    btn.innerText = "Saving...";
+
+    try {
+        const response = await fetch('/playlist/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title: title,
+                youTubeId: id,
+                channelTitle: channel, // Send the channel
+                thumbnailUrl: img      // Send the image
+            })
+        });
+
+        if (response.ok) {
+            btn.innerText = "✔ Saved";
+            btn.disabled = true;
+        } else {
+            btn.innerText = "Error";
+        }
+    } catch (error) {
+        console.error(error);
+    }
+}
+async function loadLibrary() {
+    const resultsDiv = document.getElementById('results');
+    resultsDiv.innerHTML = 'Loading your library...';
+
+    try {
+        // 1. Call YOUR Backend API (The new GET route)
+        const response = await fetch('/playlist');
+        const mySongs = await response.json();
+
+        // 2. Clear the screen
+        resultsDiv.innerHTML = '<h3>📂 My Saved Songs</h3>';
+
+        if (mySongs.length === 0) {
+            resultsDiv.innerHTML += '<p>No songs saved yet.</p>';
+            return;
+        }
+
+        // 3. Render the list
+mySongs.forEach(song => {
+    const songElement = document.createElement('div');
+    songElement.className = 'result-item';
+    
+    // Use the saved thumbnail, or a fallback image if it's missing
+    const imgUrl = song.thumbnailUrl || 'https://via.placeholder.com/120';
+
+    songElement.innerHTML = `
+        <img src="${imgUrl}">
+        <div style="width: 100%">
+            <strong>${song.title}</strong>
+            <br>
+            <small>${song.channelTitle}</small>
+            <br>
+            <button onclick="playSong('${song.youTubeId}')">▶ Play</button>
+            <button onclick="deleteSong('${song._id}')" style="background-color: #ff4444; color: white;">🗑 Delete</button>
+        </div>
+    `;
+    resultsDiv.appendChild(songElement);
+}); 
+
+    } catch (error) {
+        console.error(error);
+        resultsDiv.innerHTML = 'Error loading library.';
     }
 }
     </script>

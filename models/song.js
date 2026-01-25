@@ -16,18 +16,14 @@ const songSchema = new mongoose.Schema({
   youTubeId: {
     type: String,
     required: true
-},
-  duration: {
-     type: Number, 
-     required: true 
   },
+  thumbnailUrl: String,
   genre: String,
   releaseDate: Date,
   createdAt: {
     type: Date,
     default: Date.now
   }
-
 });
 
 module.exports = mongoose.model('Song', songSchema);

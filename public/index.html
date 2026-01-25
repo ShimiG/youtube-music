@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>My Backend Music App</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+        .input-group { margin-bottom: 2rem; }
+        input { padding: 10px; width: 300px; }
+        button { padding: 10px 20px; cursor: pointer; }
+        .result-item { border: 1px solid #ddd; padding: 10px; margin-bottom: 10px; display: flex; align-items: center; gap: 10px; }
+        img { width: 120px; border-radius: 4px; }
+        .video-player { margin-bottom: 20px; display: none; }
+    </style>
+</head>
+<body>
+
+    <h1>🎵 Backend Music Tester</h1>
+
+    <div class="input-group">
+        <input type="text" id="searchInput" placeholder="Search for a song (e.g. Linkin Park)">
+        <button onclick="searchMusic()">Search</button>
+    </div>
+
+    <div id="playerContainer" class="video-player">
+        <iframe id="youtubePlayer" width="560" height="315" src="" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+    </div>
+
+    <div id="results"></div>
+
+    <script>
+        // --- THE LOGIC ---
+        
+        async function searchMusic() {
+            const query = document.getElementById('searchInput').value;
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = 'Loading...';
+
+            // 1. Call YOUR Backend API
+            try {
+                const response = await fetch(`/search?q=${query}`);
+                
+                if (!response.ok) {
+                    throw new Error(`API Error: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                const videos = data.items || [];
+
+                if (videos.length === 0) {
+                    resultsDiv.innerHTML = 'No results found.';
+                    return;
+                }
+
+                // 2. Render the JSON to HTML
+                resultsDiv.innerHTML = '';
+                videos.forEach(video => {
+                    // Check if it's actually a video (sometimes playlists appear)
+                    if (!video.id.videoId) return;
+
+                    const title = video.snippet.title;
+                    const thumbnail = video.snippet.thumbnails.default.url;
+                    const videoId = video.id.videoId;
+
+                    // Create the HTML for each song
+                    const songElement = document.createElement('div');
+                    songElement.className = 'result-item';
+                    songElement.innerHTML = `
+                        <img src="${thumbnail}">
+                        <div>
+                            <strong>${title}</strong><br>
+                            <button onclick="playSong('${videoId}')">▶ Play</button>
+                            <button onclick="saveToPlaylist('${videoId}', '${title.replace(/'/g, "\\'")}')">✚ Like</button>
+                        </div>
+                    `;
+                    resultsDiv.appendChild(songElement);
+                });
+
+            } catch (error) {
+                console.error(error);
+                resultsDiv.innerHTML = 'Error fetching songs.';
+            }
+        }
+
+        function playSong(id) {
+            // Update the IFrame to play the chosen video
+            const player = document.getElementById('youtubePlayer');
+            player.src = `https://www.youtube.com/embed/${id}?autoplay=1`;
+            document.getElementById('playerContainer').style.display = 'block';
+        }
+
+async function saveToPlaylist(id, title) {
+    // Visual feedback that something is happening
+    const btn = event.target; 
+    btn.innerText = "Saving...";
+
+    try {
+        // Send the data to your backend
+        const response = await fetch('/playlist/add', {
+            method: 'POST', // We are CREATING data
+            headers: {
+                'Content-Type': 'application/json' // Tell server we are sending JSON
+            },
+            body: JSON.stringify({
+                title: title,
+                artist: "Unknown", // YouTube Search doesn't give clean artist names easily
+                youTubeId: id
+            })
+        });
+
+        if (response.ok) {
+            btn.innerText = "✔ Saved";
+            btn.disabled = true; // Prevent double-saving
+        } else {
+            alert("Failed to save song.");
+            btn.innerText = "✚ Add to DB";
+        }
+
+    } catch (error) {
+        console.error(error);
+        alert("Error connecting to server.");
+    }
+}
+    </script>
+</body>
+</html>

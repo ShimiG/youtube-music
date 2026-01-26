@@ -1,6 +1,6 @@
-const express = require('express');
+const express = import('express');
 const router = express.Router();
-const { searchYouTube } = require('../controllers/searchController');
+const { searchYouTube } = import('../controllers/searchController');
 
 // Route: GET /search
 // Traffic Cop: Routes the request to the controller

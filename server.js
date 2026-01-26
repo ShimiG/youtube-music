@@ -1,25 +1,30 @@
-require('dotenv').config(); // Load environment variables first!
-const express = require('express');
-const mongoose = require('mongoose');
-const cors = require('cors');
-const path = require('path');
-const searchRoute = require('./routes/search');
-const authRoutes = require('./routes/auth');
+import dotenv from 'dotenv';
+import express from 'express';
+import mongoose from 'mongoose';
+import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import searchRoute from './routes/search.js';
+import authRoutes from './routes/auth.js';
+import playlistRoute from './routes/playlist.js';
+
+dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 
 // --- MIDDLEWARE ---
-// Allows the server to accept JSON data in requests (e.g., POST requests)
 app.use(express.json());
-// Allows other domains to talk to your API
 app.use(cors());
 
 // --- API ROUTES ---
 app.use('/search', searchRoute);
-app.use('/playlist', require('./routes/playlist'));
+app.use('/playlist', playlistRoute);
 app.use('/auth', authRoutes);
 
 // --- SERVE REACT BUILD ---
-// Serve static files from the dist folder (React build output)
 app.use(express.static(path.join(__dirname, 'dist')));
 
 // Fallback: Serve index.html for SPA routing
@@ -34,23 +39,13 @@ const connectDB = async () => {
         console.log('✅ MongoDB Connected Successfully');
     } catch (error) {
         console.error('❌ MongoDB Connection Failed:', error.message);
-        process.exit(1); // Exit with failure
+        process.exit(1);
     }
 };
-
-// --- ROUTES ---
-// 1. Health Check (To test if server is running)
-app.get('/', (req, res) => {
-    res.status(200).send('YouTube Music API is running...');
-});
-
-// Placeholder for your future routes
-// app.use('/api/songs', require('./routes/songRoutes'));
 
 // --- START SERVER ---
 const PORT = process.env.PORT || 3000;
 
-// Connect to DB first, then start server
 connectDB().then(() => {
     app.listen(PORT, () => {
         console.log(`🚀 Server running on port ${PORT}`);

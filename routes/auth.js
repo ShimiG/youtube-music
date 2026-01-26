@@ -1,23 +1,20 @@
-const express = require('express');
+import express from 'express';
+import User from '../models/user.js';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+
 const router = express.Router();
-const User = require('../models/user');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 
 // 1. REGISTER ROUTE
 router.post('/register', async (req, res) => {
     const { username, password } = req.body;
 
     try {
-        // Check if user already exists
         const existingUser = await User.findOne({ username });
         if (existingUser) return res.status(400).json({ error: "Username taken" });
 
-        // Hash the password (Encryption)
-        // 10 is the "Salt Rounds" (how hard it is to crack)
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Create and Save
         const newUser = new User({ 
             username, 
             password: hashedPassword 
@@ -36,23 +33,18 @@ router.post('/login', async (req, res) => {
     const { username, password } = req.body;
 
     try {
-        // Check if user exists
         const user = await User.findOne({ username });
         if (!user) return res.status(400).json({ error: "User not found" });
 
-        // Check if password matches (Compare plain text vs. Hash)
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(400).json({ error: "Invalid password" });
 
-        // Generate the Token (The "ID Badge")
-        // We put the User's ID inside the token so we know who they are later
         const token = jwt.sign(
             { userId: user._id }, 
-            process.env.JWT_SECRET || 'secret_key_123', // In prod, use .env!
-            { expiresIn: '1h' } // Token expires in 1 hour
+            process.env.JWT_SECRET || 'secret_key_123',
+            { expiresIn: '1h' }
         );
 
-        // Send the token to the frontend
         res.json({ token, username: user.username });
 
     } catch (error) {
@@ -60,4 +52,4 @@ router.post('/login', async (req, res) => {
     }
 });
 
-module.exports = router;
+export default router;

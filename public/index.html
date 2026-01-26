@@ -19,7 +19,7 @@
 
     <div class="input-group">
         <input type="text" id="searchInput" placeholder="Search for a song (e.g. Linkin Park)">
-        <button onclick="searchYouTube()">Search</button>
+        <button onclick="searchMusic()">Search</button>
         <button onclick="loadLibrary()" style="background-color: #4CAF50; color: white;">📂 My Library</button>
     </div>
 
@@ -129,7 +129,7 @@ async function saveToPlaylist(id, title) {
         console.error(error);
         }
     }
-}
+
 async function deleteSong(dbId) {
     if (!confirm("Are you sure you want to delete this song?")) return;
 

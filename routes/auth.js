@@ -1,5 +1,5 @@
 import express from 'express';
-import User from '../models/user.js';
+import user from '../models/user.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
@@ -10,18 +10,18 @@ router.post('/register', async (req, res) => {
     const { username, password } = req.body;
 
     try {
-        const existingUser = await User.findOne({ username });
-        if (existingUser) return res.status(400).json({ error: "Username taken" });
+        const existinguser = await user.findOne({ username });
+        if (existinguser) return res.status(400).json({ error: "username taken" });
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        const newUser = new User({ 
+        const newuser = new user({ 
             username, 
             password: hashedPassword 
         });
-        await newUser.save();
+        await newuser.save();
 
-        res.status(201).json({ message: "User created! You can now login." });
+        res.status(201).json({ message: "user created! You can now login." });
 
     } catch (error) {
         res.status(500).json({ error: "Error registering user" });
@@ -33,8 +33,8 @@ router.post('/login', async (req, res) => {
     const { username, password } = req.body;
 
     try {
-        const user = await User.findOne({ username });
-        if (!user) return res.status(400).json({ error: "User not found" });
+        const user = await user.findOne({ username });
+        if (!user) return res.status(400).json({ error: "user not found" });
 
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(400).json({ error: "Invalid password" });

@@ -8,3 +8,4 @@ const { searchYouTube } = require('../controllers/searchController');
 router.get('/', searchYouTube);
 
 module.exports = router;
+export default router;

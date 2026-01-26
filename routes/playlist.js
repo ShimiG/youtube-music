@@ -16,3 +16,4 @@ router.get('/', auth, getAllSongs);
 router.delete('/:id', auth, deleteSong);
 
 module.exports = router;
+export default router;

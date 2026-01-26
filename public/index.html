@@ -201,9 +201,20 @@ async function deleteSong(dbId) {
     if (!confirm("Are you sure you want to delete this song?")) return;
 
     try {
+        // Get the token from localStorage
+        const userToken = localStorage.getItem('token');
+        
+        if (!userToken) {
+            alert("You must be logged in to delete songs");
+            return;
+        }
+
         // Call the endpoint with the specific ID
         const response = await fetch(`/playlist/${dbId}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: {
+                'Authorization': userToken
+            }
         });
 
         if (response.ok) {
@@ -224,14 +235,26 @@ async function saveToPlaylist(id, title, channel, img) {
     btn.innerText = "Saving...";
 
     try {
+        // Get the token from localStorage
+        const userToken = localStorage.getItem('token');
+        
+        if (!userToken) {
+            alert("You must be logged in to save songs");
+            btn.innerText = "✚ Add to Library";
+            return;
+        }
+
         const response = await fetch('/playlist/add', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': userToken // <--- PASS THE ID BADGE HERE
+            },
             body: JSON.stringify({
                 title: title,
                 youTubeId: id,
-                channelTitle: channel, // Send the channel
-                thumbnailUrl: img      // Send the image
+                channelTitle: channel,
+                thumbnailUrl: img
             })
         });
 
@@ -250,8 +273,20 @@ async function loadLibrary() {
     resultsDiv.innerHTML = 'Loading your library...';
 
     try {
+        // Get the token from localStorage
+        const userToken = localStorage.getItem('token');
+        
+        if (!userToken) {
+            resultsDiv.innerHTML = '<p>You must be logged in to view your library</p>';
+            return;
+        }
+
         // 1. Call YOUR Backend API (The new GET route)
-        const response = await fetch('/playlist');
+        const response = await fetch('/playlist', {
+            headers: {
+                'Authorization': userToken
+            }
+        });
         const mySongs = await response.json();
 
         // 2. Clear the screen

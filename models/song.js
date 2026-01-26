@@ -29,6 +29,7 @@ const songSchema = new mongoose.Schema({
         ref: 'User', // It points to the 'User' model
         required: true
     }
+    addedAt: { type: Date, default: Date.now }
 });
 
 module.exports = mongoose.model('Song', songSchema);

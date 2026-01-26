@@ -6,47 +6,52 @@ const addSong = async (req, res) => {
 
     try {
         const newSong = new Song({
-            title: title,
+            title,
             artist: channelTitle,
-            youTubeId: youTubeId,
-            thumbnailUrl: thumbnailUrl,
-            duration: 0
+            youTubeId,
+            thumbnailUrl,
+            duration: 0,
+            // IMPORTANT: Get the ID from the token (provided by middleware)
+            owner: req.user.userId
         });
 
         await newSong.save();
         res.status(201).json(newSong);
     } catch (error) {
         console.error(error);
-        res.status(500).json({ error: "Save failed" });
+        res.status(500).json({ error: "Could not save song" });
     }
 };
 
-// Controller: Get all songs from the playlist
+// Controller: Get all songs for the logged-in user
 const getAllSongs = async (req, res) => {
     try {
-        const songs = await Song.find();
-        res.status(200).json(songs);
+        // Filter: Find songs where 'owner' matches the logged-in user's ID
+        const mySongs = await Song.find({ owner: req.user.userId }).sort({ addedAt: -1 });
+        res.status(200).json(mySongs);
     } catch (error) {
         console.error(error);
-        res.status(500).json({ error: "Failed to fetch songs" });
+        res.status(500).json({ error: "Could not fetch playlist" });
     }
 };
 
 // Controller: Delete a song from the playlist
 const deleteSong = async (req, res) => {
     try {
-        const songId = req.params.id;
-
-        const result = await Song.findByIdAndDelete(songId);
+        // Find and Delete, but ONLY if the owner matches
+        const result = await Song.findOneAndDelete({
+            _id: req.params.id,
+            owner: req.user.userId
+        });
 
         if (!result) {
-            return res.status(404).json({ error: "Song not found" });
+            return res.status(404).json({ error: "Song not found or unauthorized" });
         }
 
-        res.status(200).json({ message: "Song deleted successfully" });
-
+        res.status(200).json({ message: "Deleted" });
     } catch (error) {
-        res.status(500).json({ error: "Could not delete song" });
+        console.error(error);
+        res.status(500).json({ error: "Delete failed" });
     }
 };
 

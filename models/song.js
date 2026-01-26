@@ -23,7 +23,12 @@ const songSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now
-  }
+  },
+    owner: {
+        type: mongoose.Schema.Types.ObjectId, // This is a special MongoDB type
+        ref: 'User', // It points to the 'User' model
+        required: true
+    }
 });
 
 module.exports = mongoose.model('Song', songSchema);

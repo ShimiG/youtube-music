@@ -2,6 +2,7 @@ require('dotenv').config(); // Load environment variables first!
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const path = require('path');
 const searchRoute = require('./routes/search');
 const authRoutes = require('./routes/auth');
 const app = express();
@@ -11,11 +12,20 @@ const app = express();
 app.use(express.json());
 // Allows other domains to talk to your API
 app.use(cors());
-// Use the search route for handling /search requests
+
+// --- API ROUTES ---
 app.use('/search', searchRoute);
-app.use(express.static('public'));
 app.use('/playlist', require('./routes/playlist'));
 app.use('/auth', authRoutes);
+
+// --- SERVE REACT BUILD ---
+// Serve static files from the dist folder (React build output)
+app.use(express.static(path.join(__dirname, 'dist')));
+
+// Fallback: Serve index.html for SPA routing
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
 
 // --- DATABASE CONNECTION ---
 const connectDB = async () => {

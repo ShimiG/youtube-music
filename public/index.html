@@ -15,25 +15,91 @@
     </style>
 </head>
 <body>
+    <h1>🎵 Backend Music App</h1>
 
-    <h1>🎵 Backend Music Tester</h1>
-
-    <div class="input-group">
-        <input type="text" id="searchInput" placeholder="Search for a song (e.g. Linkin Park)">
-        <button onclick="searchMusic()">Search</button>
-        <button onclick="loadLibrary()" style="background-color: #4CAF50; color: white;">📂 My Library</button>
+    <div id="authSection">
+        <h3>Login or Register</h3>
+        <input type="text" id="username" placeholder="Username">
+        <input type="password" id="password" placeholder="Password">
+        <br><br>
+        <button onclick="authenticate('login')">Login</button>
+        <button onclick="authenticate('register')">Register</button>
+        <p id="authMessage" style="color: red;"></p>
     </div>
 
-    <div id="playerContainer" class="video-player">
-        <iframe id="youtubePlayer" width="560" height="315" src="" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
-    </div>
+    <div id="appSection" style="display: none;">
+        <p>Welcome, <span id="displayUsername">User</span>! <button onclick="logout()">Logout</button></p>
+        
+        <hr>
 
-    <div id="results"></div>
+        <div class="input-group">
+            <input type="text" id="searchInput" placeholder="Search for a song...">
+            <button onclick="searchMusic()">Search</button>
+            <button onclick="loadLibrary()" style="background-color: #4CAF50; color: white;">📂 My Library</button>
+        </div>
+
+        <div id="playerContainer" class="video-player">
+            <iframe id="youtubePlayer" width="560" height="315" src="" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+        </div>
+
+        <div id="results"></div>
+    </div>
 
     <script>
-        // --- THE LOGIC ---
-        
-        async function searchMusic() {
+        // GLOBAL VARIABLE: To store the Token
+        let userToken = null;
+
+        // --- AUTHENTICATION LOGIC ---
+
+        async function authenticate(action) {
+            const usernameInput = document.getElementById('username').value;
+            const passwordInput = document.getElementById('password').value;
+            const msg = document.getElementById('authMessage');
+
+            if(!usernameInput || !passwordInput) {
+                msg.innerText = "Please enter username and password";
+                return;
+            }
+
+            try {
+                // Call your new /auth/login or /auth/register route
+                const response = await fetch(`/auth/${action}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: usernameInput, password: passwordInput })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    if (action === 'register') {
+                        msg.style.color = "green";
+                        msg.innerText = "Registration successful! Please log in.";
+                    } else {
+                        // LOGIN SUCCESS
+                        userToken = data.token; // SAVE THE TOKEN!
+                        document.getElementById('displayUsername').innerText = data.username;
+                        
+                        // Switch screens
+                        document.getElementById('authSection').style.display = 'none';
+                        document.getElementById('appSection').style.display = 'block';
+                    }
+                } else {
+                    msg.style.color = "red";
+                    msg.innerText = data.error || "Auth failed";
+                }
+            } catch (error) {
+                console.error(error);
+                msg.innerText = "Server Error";
+            }
+        }
+
+        function logout() {
+            userToken = null;
+            location.reload(); // Refresh page to reset
+        }
+
+  async function searchMusic() {
             const query = document.getElementById('searchInput').value;
             const resultsDiv = document.getElementById('results');
             resultsDiv.innerHTML = 'Loading...';
@@ -223,6 +289,8 @@ mySongs.forEach(song => {
         resultsDiv.innerHTML = 'Error loading library.';
     }
 }
+
     </script>
 </body>
+
 </html>

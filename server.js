@@ -3,6 +3,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const searchRoute = require('./routes/search');
+const authRoutes = require('./routes/auth');
 const app = express();
 
 // --- MIDDLEWARE ---
@@ -14,6 +15,7 @@ app.use(cors());
 app.use('/search', searchRoute);
 app.use(express.static('public'));
 app.use('/playlist', require('./routes/playlist'));
+app.use('/auth', authRoutes);
 
 // --- DATABASE CONNECTION ---
 const connectDB = async () => {

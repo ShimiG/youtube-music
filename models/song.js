@@ -28,7 +28,7 @@ const songSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId, // This is a special MongoDB type
         ref: 'User', // It points to the 'User' model
         required: true
-    }
+    },
     addedAt: { type: Date, default: Date.now }
 });
 

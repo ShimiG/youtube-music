@@ -77,9 +77,7 @@
                         msg.innerText = "Registration successful! Please log in.";
                     } else {
                         // LOGIN SUCCESS
-                        // Save to LocalStorage
-                        localStorage.setItem('userToken', data.token);
-                        userToken = data.token; // Keep variable for backward compatibility
+                        userToken = data.token; // SAVE THE TOKEN!
                         document.getElementById('displayUsername').innerText = data.username;
                         
                         // Switch screens
@@ -97,8 +95,6 @@
         }
 
         function logout() {
-            // Clear from LocalStorage
-            localStorage.removeItem('userToken');
             userToken = null;
             location.reload(); // Refresh page to reset
         }
@@ -235,29 +231,30 @@ async function deleteSong(dbId) {
 
 // We added 'channel' and 'img' to the arguments
 async function saveToPlaylist(id, title, channel, img) {
-    // 1. Get the token fresh from storage
-    const token = localStorage.getItem('userToken');
-
-    if (!token) {
-        alert("You are not logged in!");
-        return;
-    }
-
     const btn = event.target;
     btn.innerText = "Saving...";
 
     try {
+        // Get the token from localStorage
+        const userToken = localStorage.getItem('token');
+        
+        if (!userToken) {
+            alert("You must be logged in to save songs");
+            btn.innerText = "✚ Add to Library";
+            return;
+        }
+
         const response = await fetch('/playlist/add', {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
-                'Authorization': token // <--- Send the storage token
+                'Authorization': userToken // <--- PASS THE ID BADGE HERE
             },
-            body: JSON.stringify({ 
-                title: title, 
-                youTubeId: id, 
-                channelTitle: channel, 
-                thumbnailUrl: img 
+            body: JSON.stringify({
+                title: title,
+                youTubeId: id,
+                channelTitle: channel,
+                thumbnailUrl: img
             })
         });
 
@@ -272,23 +269,22 @@ async function saveToPlaylist(id, title, channel, img) {
     }
 }
 async function loadLibrary() {
-    // 1. Get the token fresh from storage
-    const token = localStorage.getItem('userToken');
-
-    if (!token) {
-        const resultsDiv = document.getElementById('results');
-        resultsDiv.innerHTML = '<p>You must be logged in to view your library</p>';
-        return;
-    }
-
     const resultsDiv = document.getElementById('results');
     resultsDiv.innerHTML = 'Loading your library...';
 
     try {
+        // Get the token from localStorage
+        const userToken = localStorage.getItem('token');
+        
+        if (!userToken) {
+            resultsDiv.innerHTML = '<p>You must be logged in to view your library</p>';
+            return;
+        }
+
         // 1. Call YOUR Backend API (The new GET route)
         const response = await fetch('/playlist', {
             headers: {
-                'Authorization': token // <--- Send the storage token
+                'Authorization': userToken
             }
         });
         const mySongs = await response.json();

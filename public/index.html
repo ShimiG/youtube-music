@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>YouTube Music</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>">
+    <style>
+        /* Modern Dark Theme */
+        body { font-family: 'Segoe UI', sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background-color: #121212; color: #fff; }
+        h1, h3 { color: #1db954; }
+        button { cursor: pointer; padding: 10px 15px; border-radius: 20px; border: none; font-weight: bold; transition: 0.2s; }
+        button:hover { transform: scale(1.05); }
+        
+        /* Utility Classes */
+        .hidden { display: none !important; }
+        .input-group { display: flex; gap: 10px; margin-bottom: 20px; background: #282828; padding: 15px;QNdkzM border-radius: 8px; }
+        input { flex-grow: 1; padding: 10px; border-radius: 20px; border: none; background: #121212; color: white; }
+        
+        /* Results Grid */
+        #results { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
+        .result-item { background: #181818; padding: 15px; border-radius: 8px; text-align: center; }
+        .result-item img { width: 100%; border-radius: 4px; margin-bottom: 10px; }
+        .btn-play { background-color: #1db954; color: white; margin-right: 5px; }
+        .btn-like { background-color: #282828; color: white; border: 1px solid #fff; }
+        .btn-like.liked { background-color: #e91e63; border-color: #e91e63; }
+
+        /* Login Screen */
+        #authSection { text-align: center; margin-top: 100px; }
+        .google-btn { background-color: #DB4437; color: white; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 15px 30px; font-size: 16px; margin: 0 auto; }
+    </style>
+</head>
+<body>
+
+<div id="authSection">
+    <img src="/logo.png" alt="Music Manager Logo" style="width: 150px; margin-bottom: 20px;">
+    
+    <p>Sign in to your YouTube account to use YouTube Music</p>
+    <a href="/auth/login" style="text-decoration: none;">
+        <button class="google-btn">Sign in with Google</button>
+    </a>
+</div>
+
+<div id="appSection" class="hidden">
+    <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px;">
+        
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <img src="/logo.png" alt="Logo" style="height: 40px; width: auto;">
+            <h2 style="margin: 0;">Library</h2>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <div style="text-align: right;">
+                <span id="userName" style="font-weight: bold; display: block;">User</span>
+                <small onclick="logout()" style="color: #bbb; cursor: pointer;">Logout</small>
+            </div>
+            <img id="userAvatar" src="" style="width: 40px; height: 40px; border-radius: 50%; border: 2px solid #1db954; display: none;">
+        </div>
+    </div>
+  
+
+        <div class="input-group">
+            <input type="text" id="searchInput" placeholder="Search for a song...">
+            <button class="btn-play" onclick="searchMusic()">Search</button>
+            <button style="background: #e91e63; color: white;" onclick="loadLibrary()">My Likes</button>
+        </div>
+
+        <div id="playerContainer" class="hidden" style="margin-bottom: 20px; text-align: center;">
+            <iframe id="youtubePlayer" width="560" height="315" src="" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+        </div>
+
+        <div id="results"></div>
+    </div>
+
+   <script>
+    // GLOBAL VARIABLES
+    let userToken = localStorage.getItem('userToken');
+    let refreshToken = localStorage.getItem('refreshToken');
+
+    // --- 1. INITIALIZATION ---
+    window.onload = async function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const newAccessToken = urlParams.get('access_token');
+        const newRefreshToken = urlParams.get('refresh_token');
+
+        // SCENARIO A: Just returned from Google Login
+        if (newAccessToken) {
+            localStorage.setItem('userToken', newAccessToken);
+            userToken = newAccessToken;
+            
+            // Only save refresh token if Google sent one (they always do with prompt='consent')
+            if (newRefreshToken) {
+                localStorage.setItem('refreshToken', newRefreshToken);
+                refreshToken = newRefreshToken;
+            }
+
+            // Clean URL
+            window.history.replaceState({}, document.title, "/");
+            showApp();
+        } 
+        // SCENARIO B: Opening app (tokens already saved)
+        else if (userToken) {
+            showApp();
+        } 
+        // SCENARIO C: Not logged in
+        else {
+            document.getElementById('authSection').classList.remove('hidden');
+        }
+    };
+
+    function showApp() {
+        document.getElementById('authSection').classList.add('hidden');
+        document.getElementById('appSection').classList.remove('hidden');
+        
+        // Try to load data. If it fails, the helper will handle the refresh.
+        fetchProfile();
+    }
+
+    // --- 2. SMART FETCH HELPER  ---
+    // This function wraps our API calls. If a call fails because the token is expired,
+    // it automatically pauses, refreshes the token, and tries again.
+    async function authorizedFetch(url, options = {}) {
+        // Attach current token
+        if (!options.headers) options.headers = {};
+        options.headers['Authorization'] = userToken;
+
+        let response = await fetch(url, options);
+
+        // IF request failed (401 Unauthorized) AND we have a refresh token...
+        if (response.status === 401 && refreshToken) {
+            console.log("Token expired! Attempting refresh...");
+            
+            // 1. Ask Backend for new token
+            const refreshRes = await fetch('/auth/refresh', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refreshToken })
+            });
+
+            if (refreshRes.ok) {
+                const data = await refreshRes.json();
+                console.log("Token refreshed successfully!");
+                
+                // 2. Save new token
+                userToken = data.access_token;
+                localStorage.setItem('userToken', userToken);
+                
+                // 3. Retry original request with new token
+                options.headers['Authorization'] = userToken;
+                response = await fetch(url, options);
+            } else {
+                console.log("Refresh failed. User must log in again.");
+                logout();
+            }
+        }
+
+        return response;
+    }
+
+    // --- 3. CORE FUNCTIONS (Updated to use authorizedFetch) ---
+
+    async function fetchProfile() {
+        try {
+            // Use authorizedFetch instead of fetch
+            const res = await authorizedFetch('/auth/me');
+            
+            if (!res.ok) return; // Silent fail if still unauthorized
+            
+            const data = await res.json();
+            if (data.name) document.getElementById('userName').innerText = data.name;
+            if (data.picture) {
+                const img = document.getElementById('userAvatar');
+                img.src = data.picture;
+                img.style.display = 'block';
+            }
+        } catch (error) {
+            console.error("Profile load error", error);
+        }
+    }
+
+    async function searchMusic() {
+        const query = document.getElementById('searchInput').value;
+        renderResults([], "Loading...");
+
+        try {
+            // Use authorizedFetch
+            const res = await authorizedFetch(`/search?q=${query}`);
+            const data = await res.json();
+            
+            if (!res.ok) throw new Error(data.error || "Search Failed");
+            renderResults(data.items || [], "No results found.");
+        } catch (err) {
+            console.error(err);
+            document.getElementById('results').innerHTML = `<p style="color:red">Error: ${err.message}</p>`;
+        }
+    }
+
+    async function loadLibrary() {
+        renderResults([], "Loading Likes...");
+        try {
+            // Use authorizedFetch
+            const res = await authorizedFetch('/playlist/mine');
+            
+            if (!res.ok) throw new Error("Could not load library");
+            const data = await res.json();
+            
+            renderResults(data, "No liked videos found.", true);
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    async function likeVideo(videoId, btn) {
+        btn.innerText = "...";
+        try {
+            // Use authorizedFetch
+            const res = await authorizedFetch('/playlist/like', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ videoId })
+            });
+
+            if (res.ok) {
+                btn.innerText = "✔ Liked";
+                btn.classList.add('liked');
+                btn.disabled = true;
+            } else {
+                throw new Error("Failed");
+            }
+        } catch (err) {
+            console.error(err);
+            btn.innerText = "Error";
+        }
+    }
+
+    // ... (Keep renderResults, playSong, logout) ...
+    function renderResults(items, emptyMsg, isLibrary = false) {
+        const container = document.getElementById('results');
+        container.innerHTML = '';
+        if (!items || items.length === 0) {
+            container.innerHTML = `<p>${emptyMsg}</p>`;
+            return;
+        }
+        items.forEach(item => {
+            const snip = item.snippet;
+            if (!snip) return;
+            const videoId = isLibrary ? snip.resourceId.videoId : item.id.videoId;
+            if(!videoId) return;
+
+            const card = document.createElement('div');
+            card.className = 'result-item';
+            card.innerHTML = `
+                <img src="${snip.thumbnails.medium?.url || snip.thumbnails.default.url}">
+                <strong>${snip.title}</strong><br>
+                <small>${snip.channelTitle}</small><br><br>
+                <button class="btn-play" onclick="playSong('${videoId}')">▶ Play</button>
+                ${!isLibrary ? `<button class="btn-like" onclick="likeVideo('${videoId}', this)">Like</button>` : ''}
+            `;
+            container.appendChild(card);
+        });
+    }
+
+    function playSong(id) {
+        document.getElementById('playerContainer').classList.remove('hidden');
+        document.getElementById('youtubePlayer').src = `https://www.youtube.com/embed/${id}?autoplay=1`;
+    }
+
+    function logout() {
+        if(userToken) fetch(`https://oauth2.googleapis.com/revoke?token=${userToken}`, { mode: 'no-cors' });
+        localStorage.removeItem('userToken');
+        localStorage.removeItem('refreshToken');
+        location.reload();
+    }
+</script>
+</body>
+</html>

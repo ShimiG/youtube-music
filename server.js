@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-
+const { streamAudio } = require('./controllers/playController');
 // Import Routes
 const searchRoute = require('./routes/search');
 const authRoutes = require('./routes/auth');
@@ -19,7 +19,7 @@ app.use(express.static('public')); // Serves your HTML file
 app.use('/search', searchRoute);
 app.use('/playlist', playlistRoutes);
 app.use('/auth', authRoutes);
-
+app.get('/play', streamAudio);
 // Health Check
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));

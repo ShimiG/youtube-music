@@ -27,10 +27,108 @@
         /* Login Screen */
         #authSection { text-align: center; margin-top: 100px; }
         .google-btn { background-color: #DB4437; color: white; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 15px 30px; font-size: 16px; margin: 0 auto; }
+        #playerContainer {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.95);
+        z-index: 1000;
+        display: flex;
+        flex-direction: column; /* Stack items vertically */
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s ease-in-out; /* Smooth animation */
+        padding: 20px;
+    }
+
+    /* Art Box (Thumbnail) */
+    #playerArtBox {
+        width: 80%;
+        max-width: 600px;
+        aspect-ratio: 16/9;
+        background: #000;
+        border: 2px solid #333;
+        margin-bottom: 20px;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        transition: all 0.3s ease;
+    }
+    
+    #playerThumbnail {
+        width: 100%; height: 100%; object-fit: cover; opacity: 0.8;
+    }
+
+    /* Text Info */
+    #playerTitle {
+        color: white; margin: 0 0 20px 0; text-align: center;
+        transition: all 0.3s ease;
+    }
+
+    /* Audio Player */
+    #audioPlayer {
+        width: 80%; max-width: 800px; margin-bottom: 20px;
+        transition: all 0.3s ease;
+    }
+
+    /* Window Controls (Min/Close) */
+    #windowControls {
+        display: flex; gap: 15px;
+    }
+    .win-btn {
+        padding: 10px 20px;
+        background: #333; color: white; border: 1px solid #555;
+        cursor: pointer; border-radius: 20px; font-size: 16px;
+    }
+    .win-btn:hover { background: #555; }
+
+
+    /* --- MINIMIZED STATE (The Bottom Bar) --- */
+    #playerContainer.minimized {
+        top: auto; /* Release from top */
+        bottom: 0; /* Stick to bottom */
+        height: 90px; /* Fixed height bar */
+        flex-direction: row; /* Horizontal layout */
+        justify-content: space-between;
+        background: #1a1a1a;
+        border-top: 1px solid #444;
+        padding: 0 20px;
+    }
+
+    /* Shrink the Art */
+    #playerContainer.minimized #playerArtBox {
+        width: 60px; height: 60px;
+        margin-bottom: 0;
+        border: none;
+        aspect-ratio: 1/1; /* Square thumbnail */
+    }
+
+    /* Adjust the Title */
+    #playerContainer.minimized #playerTitle {
+        font-size: 14px;
+        margin: 0 15px;
+        text-align: left;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 200px;
+    }
+
+    /* Adjust Audio Bar */
+    #playerContainer.minimized #audioPlayer {
+        width: 40%;
+        margin-bottom: 0;
+        height: 40px;
+    }
+    
+    /* Hide the "Hidden" class strictly */
+    .hidden { display: none !important; }
     </style>
 </head>
 <body>
-
+<script src="/js/YouTubeAdapter.js"></script>
+<script src="/js/PlayerManager.js"></script>
 <div id="authSection">
     <img src="/logo.png" alt="Music Manager Logo" style="width: 150px; margin-bottom: 20px;">
     
@@ -56,56 +154,90 @@
             <img id="userAvatar" src="" style="width: 40px; height: 40px; border-radius: 50%; border: 2px solid #1db954; display: none;">
         </div>
     </div>
+    
   
 
         <div class="input-group">
-            <input type="text" id="searchInput" placeholder="Search for a song...">
-            <button class="btn-play" onclick="searchMusic()">Search</button>
+            <input 
+                type="text" 
+                id="searchInput" 
+                placeholder="Search for songs..." 
+                style="padding: 10px; width: 300px;"
+                onkeydown="if(event.key === 'Enter') searchMusic()"
+                >
             <button style="background: #e91e63; color: white;" onclick="loadLibrary()">My Likes</button>
         </div>
+<div id="playerContainer" class="hidden">
+    
+    <div id="playerArtBox">
+        <img id="playerThumbnail" src="">
+        <div id="playerLoading" style="position: absolute; color: white; font-weight: bold;">
+            Loading...
+        </div>
+    </div>
 
-        <div id="playerContainer" class="hidden" style="margin-bottom: 20px; text-align: center;">
-            <iframe id="youtubePlayer" width="560" height="315" src="" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+    <h2 id="playerTitle">Song Title</h2>
+
+    <audio id="audioPlayer" controls></audio>
+
+        <div id="windowControls">
+            <button id="btnNext" class="win-btn" onclick="playNext()">⏭ Next</button>
+            
+            <button id="btnMin" class="win-btn" onclick="toggleMinimize()">➖ Minimize</button>
+            
+            <button id="btnClose" class="win-btn" onclick="closePlayer()">✖ Close</button>
         </div>
 
+</div>
         <div id="results"></div>
     </div>
 
    <script>
+    // --- GLOBAL STATE ---
+    let songQueue = []; // Holds the current song queue
     // GLOBAL VARIABLES
     let userToken = localStorage.getItem('userToken');
     let refreshToken = localStorage.getItem('refreshToken');
 
     // --- 1. INITIALIZATION ---
-    window.onload = async function() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const newAccessToken = urlParams.get('access_token');
-        const newRefreshToken = urlParams.get('refresh_token');
+    const playerManager = new PlayerManager();  
+    const audioTag = document.getElementById('audioPlayer');
+    const ytAdapter = new YouTubeAdapter(audioTag);
 
-        // SCENARIO A: Just returned from Google Login
-        if (newAccessToken) {
-            localStorage.setItem('userToken', newAccessToken);
-            userToken = newAccessToken;
-            
-            // Only save refresh token if Google sent one (they always do with prompt='consent')
-            if (newRefreshToken) {
-                localStorage.setItem('refreshToken', newRefreshToken);
-                refreshToken = newRefreshToken;
-            }
+    playerManager.registerAdapter('youtube', ytAdapter);
 
-            // Clean URL
-            window.history.replaceState({}, document.title, "/");
-            showApp();
-        } 
-        // SCENARIO B: Opening app (tokens already saved)
-        else if (userToken) {
-            showApp();
-        } 
-        // SCENARIO C: Not logged in
-        else {
-            document.getElementById('authSection').classList.remove('hidden');
+    // 2. PARSE URL TO GET TOKENS (This was missing!)
+    const urlParams = new URLSearchParams(window.location.search);
+    const newAccessToken = urlParams.get('access_token');
+    const newRefreshToken = urlParams.get('refresh_token');
+
+    // SCENARIO A: Just returned from Login (We have tokens in URL)
+    if (newAccessToken) {
+        console.log("Found tokens in URL, logging in...");
+        
+        localStorage.setItem('userToken', newAccessToken);
+        userToken = newAccessToken; // Update global variable
+        
+        if (newRefreshToken) {
+            localStorage.setItem('refreshToken', newRefreshToken);
+            refreshToken = newRefreshToken;
         }
-    };
+
+        // Remove tokens from URL so they don't look messy
+        window.history.replaceState({}, document.title, "/");
+        
+        showApp();
+    } 
+    // SCENARIO B: Opening app (tokens already saved in LocalStorage)
+    else if (userToken) {
+        console.log("Found saved tokens, loading app...");
+        showApp();
+    } 
+    // SCENARIO C: Not logged in
+    else {
+        console.log("No tokens found. Showing login screen.");
+        document.getElementById('authSection').classList.remove('hidden');
+    }
 
     function showApp() {
         document.getElementById('authSection').classList.add('hidden');
@@ -245,24 +377,65 @@
             if (!snip) return;
             const videoId = isLibrary ? snip.resourceId.videoId : item.id.videoId;
             if(!videoId) return;
+                const thumbUrl = snip.thumbnails.high?.url || snip.thumbnails.medium?.url || snip.thumbnails.default.url;
+                const safeTitle = snip.title.replace(/'/g, "\\'"); 
+                const safeArtist = snip.channelTitle.replace(/'/g, "\\'");
 
-            const card = document.createElement('div');
-            card.className = 'result-item';
-            card.innerHTML = `
-                <img src="${snip.thumbnails.medium?.url || snip.thumbnails.default.url}">
-                <strong>${snip.title}</strong><br>
-                <small>${snip.channelTitle}</small><br><br>
-                <button class="btn-play" onclick="playSong('${videoId}')">▶ Play</button>
-                ${!isLibrary ? `<button class="btn-like" onclick="likeVideo('${videoId}', this)">Like</button>` : ''}
-            `;
+        const card = document.createElement('div');
+        card.className = 'result-item';
+        card.innerHTML = `
+            <img src="${thumbUrl}">
+            <strong>${snip.title}</strong><br>
+            <small>${snip.channelTitle}</small><br><br>
+            
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <button class="btn-play" onclick="playSong('${videoId}', '${safeTitle}', '${thumbUrl}', '${safeArtist}')" style="flex: 1;">
+                ▶ Play
+            </button>
+
+            <button class="btn-queue" onclick="addToQueue('${videoId}', '${safeTitle}', '${thumbUrl}', '${safeArtist}')" style="flex: 1; background: #444; color: white; border: none; padding: 5px; cursor: pointer; border-radius: 4px;">
+                + Queue
+            </button>
+            </div>
+            ${!isLibrary ? `<button class="btn-like" onclick="likeVideo('${videoId}', this)">Like</button>` : ''}
+        `;
             container.appendChild(card);
         });
     }
+function toggleMinimize() {
+    const container = document.getElementById('playerContainer');
+    const minBtn = document.getElementById('btnMin'); // <--- TARGET BY ID
+    
+    // Toggle the class
+    container.classList.toggle('minimized');
 
-    function playSong(id) {
-        document.getElementById('playerContainer').classList.remove('hidden');
-        document.getElementById('youtubePlayer').src = `https://www.youtube.com/embed/${id}?autoplay=1`;
+    // Update Button Text logic
+    if (container.classList.contains('minimized')) {
+        minBtn.innerText = "⬜ Expand";
+    } else {
+        minBtn.innerText = "➖ Minimize";
     }
+}
+
+function playSong(videoId, title, thumbnailUrl, artist) {
+    // Create a standardized "Track" object
+    const track = {
+        id: videoId,
+        title: title,
+        artist: artist,
+        image: thumbnailUrl,
+        source: 'youtube' // Explicitly mark this as a YouTube track
+    };
+    playerManager.play(track);
+}
+function closePlayer() {
+    const container = document.getElementById('playerContainer');
+    const audio = document.getElementById('audioPlayer');
+    audio.pause();
+    audio.src = ""; // Stop buffering
+    container.classList.add('hidden');
+    container.style.display = 'none';
+}
 
     function logout() {
         if(userToken) fetch(`https://oauth2.googleapis.com/revoke?token=${userToken}`, { mode: 'no-cors' });
@@ -270,6 +443,33 @@
         localStorage.removeItem('refreshToken');
         location.reload();
     }
+
+function addToQueue(videoId, title, thumbnail, artist) {
+    const track = {
+        id: videoId,
+        title: title,
+        artist: artist,
+        image: thumbnail,
+        source: 'youtube'
+    };
+    playerManager.addToQueue(track);
+    
+    // Simple Button Feedback
+    const btn = event.target;
+    const oldText = btn.innerText;
+    btn.innerText = "✅";
+    setTimeout(() => btn.innerText = oldText, 1000);
+}
+
+function playNext() {
+    playerManager.playNext();
+}
+
+// Listen for Song End (Auto-Play)
+audioTag.onended = () => {
+    console.log("Track finished.");
+    playerManager.playNext();
+};
 </script>
 </body>
 </html>

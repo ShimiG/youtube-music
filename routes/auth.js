@@ -9,7 +9,9 @@ const oauth2Client = new google.auth.OAuth2(
     process.env.REDIRECT_URI
 );
 
-// 1. LOGIN ROUTE
+// auth.js
+
+// 1. LOGIN ROUTE (Sends user TO Google)
 router.get('/login', (req, res) => {
     const scopes = [
         'https://www.googleapis.com/auth/youtube.force-ssl',
@@ -17,25 +19,26 @@ router.get('/login', (req, res) => {
     ];
 
     const url = oauth2Client.generateAuthUrl({
-        access_type: 'offline', // ESSENTIAL: Asks for a Refresh Token
-        prompt: 'consent',      // ESSENTIAL: Forces Google to give it every time
+        access_type: 'offline', 
+        prompt: 'consent',      
         scope: scopes
     });
 
-    res.redirect(url);
+    // CORRECT: Redirect to Google's URL
+    res.redirect(url); 
 });
 
-// 2. CALLBACK ROUTE
+// 2. CALLBACK ROUTE (User comes BACK from Google)
 router.get('/google/callback', async (req, res) => {
     const { code } = req.query;
     if (!code) return res.status(400).send('No code received');
 
     try {
+        // Exchange code for tokens
         const { tokens } = await oauth2Client.getToken(code);
         
-        // We pass BOTH tokens to the frontend
-        // access_token = Short lived (1 hour)
-        // refresh_token = Long lived (Forever-ish)
+        // THIS IS WHERE YOU PUT THE REDIRECT WITH TOKENS
+        // Because "tokens" is defined here!
         const params = new URLSearchParams({
             access_token: tokens.access_token,
             refresh_token: tokens.refresh_token || '' 

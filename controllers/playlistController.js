@@ -49,27 +49,43 @@ const { google } = require('googleapis');
     };
 
     // --- CONTROLLER 2: Like a Video ---
-    const likeVideo = async (req, res) => {
-        try {
-            const authHeader = req.header('Authorization');
-            if (!authHeader) return res.status(401).json({ error: "No token" });
-            const token = authHeader.replace('Bearer ', '');
-            
-            const { videoId } = req.body;
-            const youtube = getYouTubeClient(token);
+const likeVideo = async (req, res) => {
+    console.log("[Backend] Received like request...");
 
-            // ✅ Use the correctly 'rate' endpoint
-            await youtube.videos.rate({
-                id: videoId,
-                rating: 'like'
-            });
-
-            res.sendStatus(200);
-        } catch (error) {
-            console.error("Like Error:", error.message);
-            res.status(500).json({ error: "Could not like video" });
+    try {
+        // 1. Check Token
+        const authHeader = req.header('Authorization');
+        if (!authHeader) {
+            console.error("[Backend] Error: No token provided");
+            return res.status(401).json({ error: "No token" });
         }
-    };
+        
+        // 2. Clean Token (Remove 'Bearer ')
+        const token = authHeader.replace('Bearer ', '');
+        
+        // 3. Get Video ID from Frontend
+        const { videoId } = req.body; // <--- MUST MATCH Frontend JSON
+        console.log(`[Backend] Liking video ID: ${videoId}`);
+
+        if (!videoId) {
+            return res.status(400).json({ error: "Missing videoId" });
+        }
+
+        // 4. Call YouTube API
+        const youtube = getYouTubeClient(token);
+        await youtube.videos.rate({
+            id: videoId,
+            rating: 'like'
+        });
+
+        console.log("[Backend] Success! Video liked.");
+        res.sendStatus(200);
+
+    } catch (error) {
+        console.error("[Backend] Google API Error:", error.message);
+        res.status(500).json({ error: "Could not like video" });
+    }
+};
     // --- CONTROLLER 3: Get User's Playlists ---
 const getUserPlaylists = async (req, res) => {
     try {

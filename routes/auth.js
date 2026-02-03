@@ -1,3 +1,4 @@
+console.log("⚠️ Auth Route File is Loading...");
 const express = require('express');
 const router = express.Router();
 const { google } = require('googleapis');
@@ -12,7 +13,7 @@ const oauth2Client = new google.auth.OAuth2(
 // auth.js
 
 // 1. LOGIN ROUTE (Sends user TO Google)
-router.get('/login', (req, res) => {
+router.get('/google', (req, res) => {
     const scopes = [
         'https://www.googleapis.com/auth/youtube.force-ssl',
         'https://www.googleapis.com/auth/userinfo.profile'
@@ -82,7 +83,10 @@ router.post('/refresh', async (req, res) => {
 
 // 4. GET PROFILE ROUTE (From previous step)
 router.get('/me', async (req, res) => {
-    const token = req.header('Authorization');
+    // FIX: Remove 'Bearer '
+    const authHeader = req.header('Authorization');
+    const token = authHeader ? authHeader.replace('Bearer ', '') : null;
+
     if (!token) return res.status(401).json({ error: "No token" });
 
     try {
@@ -91,7 +95,6 @@ router.get('/me', async (req, res) => {
         const userInfo = await oauth2.userinfo.get();
         res.json({ name: userInfo.data.name, picture: userInfo.data.picture });
     } catch (error) {
-        // If this fails with 401, the Frontend will now know to call /refresh
         res.status(error.response?.status || 500).json({ error: "Profile fetch failed" });
     }
 });

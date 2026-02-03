@@ -5,263 +5,330 @@
     <title>YouTube Music</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>">
     <style>
-        /* Modern Dark Theme */
-        body { font-family: 'Segoe UI', sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background-color: #121212; color: #fff; }
-        h1, h3 { color: #1db954; }
-        button { cursor: pointer; padding: 10px 15px; border-radius: 20px; border: none; font-weight: bold; transition: 0.2s; }
-        button:hover { transform: scale(1.05); }
-        
-        /* Utility Classes */
-        .hidden { display: none !important; }
-        .input-group { display: flex; gap: 10px; margin-bottom: 20px; background: #282828; padding: 15px; border-radius: 8px; }
-        input { flex-grow: 1; padding: 10px; border-radius: 20px; border: none; background: #121212; color: white; }
-        
-        /* Results Grid */
-        #results { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
-        .result-item { background: #181818; padding: 15px; border-radius: 8px; text-align: center; }
-        .result-item img { width: 100%; border-radius: 4px; margin-bottom: 10px; }
-        .btn-play { background-color: #1db954; color: white; margin-right: 5px; }
-        .btn-like { background-color: #282828; color: white; border: 1px solid #fff; }
-        .btn-like.liked { background-color: #e91e63; border-color: #e91e63; }
+    /* --- RESET & BASICS --- */
+    body { margin: 0; font-family: sans-serif; background: #121212; color: white; height: 100vh; display: flex; flex-direction: column; }
+    
+    /* --- LAYOUT --- */
+    .main-layout { display: flex; flex: 1; overflow: hidden; }
+    
+    /* Sidebar */
+    .sidebar { width: 240px; background: #000; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+    .sidebar h2 { margin-top: 0; font-size: 24px; color: #1db954; display: flex; align-items: center; gap: 10px; }
+    .nav-btn { background: transparent; color: #b3b3b3; border: none; padding: 10px; text-align: left; cursor: pointer; font-size: 16px; font-weight: bold; border-radius: 5px; transition: 0.2s; display: flex; align-items: center; gap: 10px; }
+    .nav-btn:hover, .nav-btn.active { background: #282828; color: white; }
+    .nav-icon { width: 24px; text-align: center; }
 
-        /* Login Screen */
-        #authSection { text-align: center; margin-top: 100px; }
-        .google-btn { background-color: #DB4437; color: white; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 15px 30px; font-size: 16px; margin: 0 auto; }
-        #playerContainer {
-        position: fixed;
-        top: 0; left: 0; right: 0; bottom: 0;
-        background: rgba(0,0,0,0.95);
-        z-index: 1000;
+    /* Main Content Area */
+    .content { flex: 1; background: #121212; overflow-y: auto; padding: 20px; position: relative; }
+    .view-section { display: none; } 
+    .view-section.active { display: block; } 
+
+    /* --- COMPONENTS --- */
+    .user-profile { margin-top: auto; display: flex; align-items: center; gap: 10px; padding-top: 20px; border-top: 1px solid #282828; }
+    .user-avatar { width: 35px; height: 35px; border-radius: 50%; background: #333; }
+    
+    /* Search Bar */
+    .search-bar-container { margin-bottom: 20px; }
+    .search-input { width: 100%; max-width: 400px; padding: 12px 20px; border-radius: 50px; border: none; font-size: 16px; color: black; outline: none; }
+
+    /* Song List */
+    .result-item { display: flex; align-items: center; gap: 15px; padding: 10px; background: #181818; margin-bottom: 10px; border-radius: 5px; transition: 0.2s; }
+    .result-item:hover { background: #282828; }
+    .result-item img { width: 50px; height: 50px; object-fit: cover; border-radius: 4px; }
+    .result-info { flex: 1; }
+    .btn-play { background: #1db954; border: none; color: black; width: 35px; height: 35px; border-radius: 50%; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; }
+
+    /* Playlist Grid */
+    .playlist-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 20px; padding-top: 20px; }
+    .playlist-card { background: #181818; padding: 16px; border-radius: 8px; cursor: pointer; transition: 0.3s; }
+    .playlist-card:hover { background: #282828; }
+    .playlist-card img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 4px; margin-bottom: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+    .playlist-card h3 { font-size: 16px; margin: 0 0 5px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .playlist-card p { font-size: 14px; color: #b3b3b3; margin: 0; }
+
+    /* Player Footer */
+    /* --- PLAYER FOOTER (The Bar) --- */
+    .player-footer { 
+        position: fixed; 
+        bottom: 0; 
+        left: 0; 
+        width: 100%; 
+        background: #181818; 
+        border-top: 1px solid #282828; 
+        padding: 0 20px; /* Padding handled by children now */
+        height: 90px; /* Default small height */
+        display: flex; 
+        flex-direction: column; /* Stack controls on top of expanded content */
+        transition: height 0.3s ease-in-out; 
+        z-index: 999;
+        overflow: hidden; /* Hide the big art when minimized */
+        box-sizing: border-box;
+    }
+
+    /* THE MINI BAR (Always Visible) */
+    .mini-player-controls {
+        height: 90px;
+        display: flex; 
+        align-items: center; 
+        gap: 20px;
+        width: 100%;
+        flex-shrink: 0; /* Prevent squishing */
+    }
+
+    /* THE EXPANDED CONTENT (Hidden by default) */
+    .expanded-content {
+        opacity: 0;
         display: flex;
-        flex-direction: column; /* Stack items vertically */
-        align-items: center;
-        justify-content: center;
-        transition: all 0.3s ease-in-out; /* Smooth animation */
+        height: 0;
+        gap: 40px;
         padding: 20px;
+        transition: opacity 0.2s ease;
+        visibility: hidden;
     }
 
-    /* Art Box (Thumbnail) */
-    #playerArtBox {
-        width: 80%;
-        max-width: 600px;
-        aspect-ratio: 16/9;
-        background: #000;
-        border: 2px solid #333;
-        margin-bottom: 20px;
-        position: relative;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        overflow: hidden;
-        transition: all 0.3s ease;
+    /* --- STATE: EXPANDED --- */
+    .player-footer.expanded {
+        height: 80vh; /* Raise up to 80% of screen */
+        border-top: 2px solid #1db954; /* Green accent line */
     }
+
+    .player-footer.expanded .expanded-content {
+        opacity: 1;
+        height: 100%;
+        visibility: visible;
+    }
+
+    /* Big Art & Queue Layout */
+    .big-art-container { flex: 1; display: flex; align-items: center; justify-content: center; }
+    .big-art { width: 300px; height: 300px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-radius: 8px; }
+    .queue-container { flex: 1; overflow-y: auto; background: #222; border-radius: 8px; padding: 10px; }
     
-    #playerThumbnail {
-        width: 100%; height: 100%; object-fit: cover; opacity: 0.8;
-    }
+    .player-info { width: 250px; display: flex; align-items: center; gap: 15px; }
+    .player-controls { flex: 1; display: flex; justify-content: center; }
+    audio { width: 100%; max-width: 500px; }
 
-    /* Text Info */
-    #playerTitle {
-        color: white; margin: 0 0 20px 0; text-align: center;
-        transition: all 0.3s ease;
-    }
-
-    /* Audio Player */
-    #audioPlayer {
-        width: 80%; max-width: 800px; margin-bottom: 20px;
-        transition: all 0.3s ease;
-    }
-
-    /* Window Controls (Min/Close) */
-    #windowControls {
-        display: flex; gap: 15px;
-    }
-    .win-btn {
-        padding: 10px 20px;
-        background: #333; color: white; border: 1px solid #555;
-        cursor: pointer; border-radius: 20px; font-size: 16px;
-    }
-    .win-btn:hover { background: #555; }
-
-
-    /* --- MINIMIZED STATE (The Bottom Bar) --- */
-    #playerContainer.minimized {
-        top: auto; /* Release from top */
-        bottom: 0; /* Stick to bottom */
-        height: 90px; /* Fixed height bar */
-        flex-direction: row; /* Horizontal layout */
-        justify-content: space-between;
-        background: #1a1a1a;
-        border-top: 1px solid #444;
-        padding: 0 20px;
-    }
-
-    /* Shrink the Art */
-    #playerContainer.minimized #playerArtBox {
-        width: 60px; height: 60px;
-        margin-bottom: 0;
-        border: none;
-        aspect-ratio: 1/1; /* Square thumbnail */
-    }
-
-    /* Adjust the Title */
-    #playerContainer.minimized #playerTitle {
-        font-size: 14px;
-        margin: 0 15px;
-        text-align: left;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        max-width: 200px;
-    }
-
-    /* Adjust Audio Bar */
-    #playerContainer.minimized #audioPlayer {
-        width: 40%;
-        margin-bottom: 0;
-        height: 40px;
-    }
-    
-    /* Hide the "Hidden" class strictly */
+    /* Auth Screen */
+    .auth-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
     .hidden { display: none !important; }
-    </style>
+    /* --- MINIMIZE ANIMATION --- */
+    .player-footer { transition: transform 0.3s ease; }
+    .player-footer.minimized { 
+        transform: translateY(100%); 
+</style>
 </head>
 <body>
-<script src="/js/YouTubeAdapter.js"></script>
-<script src="/js/PlayerManager.js"></script>
-<div id="authSection">
-    <img src="/logo.png" alt="Music Manager Logo" style="width: 150px; margin-bottom: 20px;">
-    
-    <p>Sign in to your YouTube account to use YouTube Music</p>
-    <a href="/auth/login" style="text-decoration: none;">
-        <button class="google-btn">Sign in with Google</button>
-    </a>
-</div>
 
-<div id="appSection" class="hidden">
-    <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px;">
+    <div id="authSection" class="auth-screen hidden">
+        <h1 style="font-size: 40px; margin-bottom: 10px;">Music Manager</h1>
+        <p style="color: #b3b3b3; margin-bottom: 40px;">Your Unified Music Player</p>
+        <button onclick="login()" style="padding: 15px 40px; font-size: 18px; border-radius: 50px; border: none; background: #1db954; color: white; cursor: pointer; font-weight: bold;">
+            Login with Google
+        </button>
+    </div>
+
+    <div id="appSection" class="main-layout hidden">
         
-        <div style="display: flex; align-items: center; gap: 10px;">
-            <img src="/logo.png" alt="Logo" style="height: 40px; width: auto;">
-            <h2 style="margin: 0;">Library</h2>
-        </div>
-
-        <div style="display: flex; align-items: center; gap: 15px;">
-            <div style="text-align: right;">
-                <span id="userName" style="font-weight: bold; display: block;">User</span>
-                <small onclick="logout()" style="color: #bbb; cursor: pointer;">Logout</small>
+        <nav class="sidebar">
+            <h2>🎵 Music</h2>
+            <button class="nav-btn active" onclick="navigate('search')"><span class="nav-icon">🔍</span> Search</button>
+            <button class="nav-btn" onclick="navigate('library')"><span class="nav-icon">📚</span> My Library</button>
+            <button class="nav-btn" onclick="navigate('settings')"><span class="nav-icon">⚙️</span> Settings</button>
+            <button class="nav-btn" onclick="navigate('queue')"><span class="nav-icon">⏳</span> Queue</button>
+            <div class="user-profile">
+                <img id="userAvatar" class="user-avatar" src="">
+                <span id="userName" style="font-size: 14px; font-weight: bold;">User</span>
+                <button onclick="logout()" style="margin-left: auto; background: none; border: none; color: #b3b3b3; cursor: pointer;">Exit</button>
             </div>
-            <img id="userAvatar" src="" style="width: 40px; height: 40px; border-radius: 50%; border: 2px solid #1db954; display: none;">
+        </nav>
+
+        <main class="content">
+            <div id="view-search" class="view-section active">
+                <div class="search-bar-container">
+                    <input type="text" id="searchInput" class="search-input" placeholder="What do you want to play?" onkeypress="if(event.key === 'Enter') searchMusic()">
+                </div>
+                <div id="results"></div>
+            </div>
+
+            <div id="view-library" class="view-section">
+                <h1 style="font-size: 32px; margin-bottom: 20px;">Your Library</h1>
+                <div id="playlistGrid" class="playlist-grid"></div>
+            </div>
+
+            <div id="view-playlist-details" class="view-section">
+                <button onclick="navigate('library')" style="background:none; border:none; color:#b3b3b3; cursor:pointer; margin-bottom: 20px;">← Back to Library</button>
+                <div style="display: flex; gap: 20px; align-items: flex-end; margin-bottom: 30px;">
+                    <img id="pl-cover" style="width: 200px; height: 200px; box-shadow: 0 4px 20px rgba(0,0,0,0.5);">
+                    <div>
+                        <span style="font-size: 14px; font-weight: bold;">PLAYLIST</span>
+                        <h1 id="pl-title" style="font-size: 60px; margin: 10px 0;">Playlist Title</h1>
+                        <p id="pl-desc" style="color: #b3b3b3;">Description</p>
+                    </div>
+                </div>
+                <div id="playlist-tracks"></div>
+            </div>
+            <div id="view-queue" class="view-section">
+            <h1 style="font-size: 32px; margin-bottom: 20px;">Current Queue</h1>
+            <button onclick="clearQueue()" style="background:#333; color:white; border:none; padding:8px 16px; border-radius:4px; cursor:pointer;">Clear Queue</button>
+            <div id="queue-list" class="playlist-grid" style="display:block; margin-top:20px;">
+                <p>Queue is empty.</p>
+            </div>
         </div>
+        </main>
     </div>
-    
-  
 
-        <div class="input-group">
-            <input 
-                type="text" 
-                id="searchInput" 
-                placeholder="Search for songs..." 
-                style="padding: 10px; width: 300px;"
-                onkeydown="if(event.key === 'Enter') searchMusic()"
-                >
-            <button style="background: #e91e63; color: white;" onclick="loadLibrary()">My Likes</button>
-        </div>
-<div id="playerContainer" class="hidden">
-    
-    <div id="playerArtBox">
-        <img id="playerThumbnail" src="">
-        <div id="playerLoading" style="position: absolute; color: white; font-weight: bold;">
-            Loading...
-        </div>
-    </div>
-
-    <h2 id="playerTitle">Song Title</h2>
-
-    <audio id="audioPlayer" controls></audio>
-
-        <div id="windowControls">
-            <button id="btnNext" class="win-btn" onclick="playNext()">⏭ Next</button>
+<div id="playerContainer" class="player-footer hidden">
+        
+        <div class="mini-player-controls">
+            <div class="player-info" style="width: 250px; display: flex; align-items: center; gap: 15px;">
+                <img id="playerThumbnail" src="" style="width: 56px; height: 56px; border-radius: 4px;">
+                <div style="overflow: hidden;">
+                    <div id="playerTitle" style="font-weight: bold; white-space: nowrap;">Song Title</div>
+                    <div style="font-size: 12px; color: #b3b3b3;">Artist Name</div>
+                </div>
+            </div>
             
-            <button id="btnMin" class="win-btn" onclick="toggleMinimize()">➖ Minimize</button>
+            <div class="player-controls" style="flex: 1; display: flex; justify-content: center;">
+                <audio id="audioPlayer" controls style="width: 100%; max-width: 500px;"></audio>
+            </div>
             
-            <button id="btnClose" class="win-btn" onclick="closePlayer()">✖ Close</button>
+            <div style="width: 250px; text-align: right;">
+                <button onclick="toggleExpand()" id="btnExpand" style="background: none; border: none; color: white; cursor: pointer; font-size: 16px;">⬜ Expand</button>
+            </div>
         </div>
 
-</div>
-        <div id="results"></div>
+        <div class="expanded-content">
+            <div class="big-art-container">
+                <img id="bigPlayerArt" class="big-art" src="">
+            </div>
+            <div class="queue-container">
+                <h3 style="margin-top:0;">Up Next</h3>
+                <div id="queue-list-expanded">
+                    </div>
+            </div>
+        </div>
     </div>
 
-   <script>
-    // --- GLOBAL STATE ---
-    let songQueue = []; // Holds the current song queue
-    // GLOBAL VARIABLES
+    <script src="/js/YouTubeAdapter.js"></script>
+    <script src="/js/PlayerManager.js"></script>
+
+    <script>
+    // GLOBAL STATE 
     let userToken = localStorage.getItem('userToken');
     let refreshToken = localStorage.getItem('refreshToken');
+    let playerManager;
 
-    // --- 1. INITIALIZATION ---
-    const playerManager = new PlayerManager();  
-    const audioTag = document.getElementById('audioPlayer');
-    const ytAdapter = new YouTubeAdapter(audioTag);
-
-    playerManager.registerAdapter('youtube', ytAdapter);
-
-    // 2. PARSE URL TO GET TOKENS (This was missing!)
-    const urlParams = new URLSearchParams(window.location.search);
-    const newAccessToken = urlParams.get('access_token');
-    const newRefreshToken = urlParams.get('refresh_token');
-
-    // SCENARIO A: Just returned from Login (We have tokens in URL)
-    if (newAccessToken) {
-        console.log("Found tokens in URL, logging in...");
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log("🚀 App Starting...");
+        /// 1. Create Instance
+        playerManager = new PlayerManager();
         
-        localStorage.setItem('userToken', newAccessToken);
-        userToken = newAccessToken; // Update global variable
+        // 2. ✅ Initialize UI (This connects the JS to the HTML)
+        playerManager.init();
+        const audioTag = document.getElementById('audioPlayer');
+        const ytAdapter = new YouTubeAdapter(audioTag);
+        playerManager.registerAdapter('youtube', ytAdapter);
         
-        if (newRefreshToken) {
-            localStorage.setItem('refreshToken', newRefreshToken);
-            refreshToken = newRefreshToken;
+        audioTag.onended = () => playerManager.playNext();
+
+        // 2. Check Auth
+        handleAuth();
+    });
+
+    // --- NAVIGATION ---
+    function navigate(viewName) {
+        document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+        
+        if (viewName === 'search') document.getElementById('view-search').classList.add('active');
+        if (viewName === 'library') {
+            document.getElementById('view-library').classList.add('active');
+            loadPlaylists();
         }
+        // NEW: Queue
+        if (viewName === 'queue') {
+            document.getElementById('view-queue').classList.add('active');
+            if(playerManager) playerManager.renderQueue();
+        }
+        if (viewName === 'settings') alert("Settings coming soon!");
 
-        // Remove tokens from URL so they don't look messy
-        window.history.replaceState({}, document.title, "/");
-        
-        showApp();
-    } 
-    // SCENARIO B: Opening app (tokens already saved in LocalStorage)
-    else if (userToken) {
-        console.log("Found saved tokens, loading app...");
-        showApp();
-    } 
-    // SCENARIO C: Not logged in
-    else {
-        console.log("No tokens found. Showing login screen.");
-        document.getElementById('authSection').classList.remove('hidden');
+        // Update Buttons
+        document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+        if (event && event.target) {
+            const btn = event.target.closest('button');
+            if (btn) btn.classList.add('active');
+        }
+    }
+
+    
+    function clearQueue() {
+        if(playerManager) {
+            playerManager.queue = [];
+            playerManager.renderQueue();
+        }
+    }
+
+    
+    function toggleExpand() {
+        const container = document.getElementById('playerContainer');
+        const btn = document.getElementById('btnExpand');
+
+        // Toggle class
+        container.classList.toggle('expanded');
+
+        // Logic: If expanded class exists -> We are big -> Show "Minimize"
+        if (container.classList.contains('expanded')) {
+            btn.innerText = "➖ Minimize";
+        } else {
+            btn.innerText = "⬜ Expand";
+        }
+    }  // --- AUTH ---
+    function handleAuth() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const newAccessToken = urlParams.get('access_token');
+        const newRefreshToken = urlParams.get('refresh_token');
+
+        if (newAccessToken) {
+            localStorage.setItem('userToken', newAccessToken);
+            userToken = newAccessToken;
+            if (newRefreshToken) {
+                localStorage.setItem('refreshToken', newRefreshToken);
+                refreshToken = newRefreshToken;
+            }
+            window.history.replaceState({}, document.title, "/");
+            showApp();
+        } else if (userToken) {
+            showApp();
+        } else {
+            document.getElementById('authSection').classList.remove('hidden');
+        }
     }
 
     function showApp() {
         document.getElementById('authSection').classList.add('hidden');
         document.getElementById('appSection').classList.remove('hidden');
-        
-        // Try to load data. If it fails, the helper will handle the refresh.
         fetchProfile();
     }
 
-    // --- 2. SMART FETCH HELPER  ---
-    // This function wraps our API calls. If a call fails because the token is expired,
-    // it automatically pauses, refreshes the token, and tries again.
+    function login() { window.location.href = '/auth/google'; }
+    function logout() {
+        localStorage.removeItem('userToken');
+        localStorage.removeItem('refreshToken');
+        location.reload();
+    }
+
+    // --- API HELPER (FIXED) ---
     async function authorizedFetch(url, options = {}) {
-        // Attach current token
         if (!options.headers) options.headers = {};
-        options.headers['Authorization'] = userToken;
+        
+        // ✅ FIX: Send Bearer Token correctly
+        if (userToken) {
+            options.headers['Authorization'] = `Bearer ${userToken}`;
+        }
 
         let response = await fetch(url, options);
 
-        // IF request failed (401 Unauthorized) AND we have a refresh token...
+        // Auto-Refresh Logic
         if (response.status === 401 && refreshToken) {
-            console.log("Token expired! Attempting refresh...");
-            
-            // 1. Ask Backend for new token
+            console.log("Token expired. Refreshing...");
             const refreshRes = await fetch('/auth/refresh', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -270,206 +337,165 @@
 
             if (refreshRes.ok) {
                 const data = await refreshRes.json();
-                console.log("Token refreshed successfully!");
-                
-                // 2. Save new token
                 userToken = data.access_token;
                 localStorage.setItem('userToken', userToken);
                 
-                // 3. Retry original request with new token
-                options.headers['Authorization'] = userToken;
+                // Retry with new token
+                options.headers['Authorization'] = `Bearer ${userToken}`;
                 response = await fetch(url, options);
             } else {
-                console.log("Refresh failed. User must log in again.");
                 logout();
             }
         }
-
         return response;
     }
 
-    // --- 3. CORE FUNCTIONS (Updated to use authorizedFetch) ---
-
+    // --- DATA FUNCTIONS ---
     async function fetchProfile() {
         try {
-            // Use authorizedFetch instead of fetch
             const res = await authorizedFetch('/auth/me');
-            
-            if (!res.ok) return; // Silent fail if still unauthorized
-            
+            if (!res.ok) return;
             const data = await res.json();
             if (data.name) document.getElementById('userName').innerText = data.name;
-            if (data.picture) {
-                const img = document.getElementById('userAvatar');
-                img.src = data.picture;
-                img.style.display = 'block';
-            }
-        } catch (error) {
-            console.error("Profile load error", error);
-        }
+            if (data.picture) document.getElementById('userAvatar').src = data.picture;
+        } catch (e) { console.error(e); }
     }
 
     async function searchMusic() {
         const query = document.getElementById('searchInput').value;
-        renderResults([], "Loading...");
-
+        const container = document.getElementById('results');
+        container.innerHTML = '<p>Searching...</p>';
         try {
-            // Use authorizedFetch
             const res = await authorizedFetch(`/search?q=${query}`);
             const data = await res.json();
-            
-            if (!res.ok) throw new Error(data.error || "Search Failed");
-            renderResults(data.items || [], "No results found.");
+            renderList(data.items || [], container);
         } catch (err) {
-            console.error(err);
-            document.getElementById('results').innerHTML = `<p style="color:red">Error: ${err.message}</p>`;
+            container.innerHTML = `<p style="color:red">Error: ${err.message}</p>`;
         }
     }
 
-    async function loadLibrary() {
-        renderResults([], "Loading Likes...");
+    async function loadPlaylists() {
+        const grid = document.getElementById('playlistGrid');
+        grid.innerHTML = '<p>Loading...</p>';
         try {
-            // Use authorizedFetch
-            const res = await authorizedFetch('/playlist/mine');
+            const res = await authorizedFetch('/playlist/lists');
+            const playlists = await res.json();
+            grid.innerHTML = '';
             
-            if (!res.ok) throw new Error("Could not load library");
-            const data = await res.json();
-            
-            renderResults(data, "No liked videos found.", true);
-        } catch (err) {
-            console.error(err);
-        }
-    }
+            // Inject "Liked Videos" Card manually
+            const likedCard = document.createElement('div');
+            likedCard.className = 'playlist-card';
+            likedCard.onclick = () => openLikedVideos();
+            likedCard.innerHTML = `
+                <div style="width:100%; aspect-ratio:1; background:linear-gradient(45deg,#4e00b8,#8f00b8); border-radius:4px; margin-bottom:10px; display:flex; align-items:center; justify-content:center; font-size:40px;">💜</div>
+                <h3>Liked Songs</h3><p>Auto-generated</p>
+            `;
+            grid.appendChild(likedCard);
 
-    async function likeVideo(videoId, btn) {
-        btn.innerText = "...";
-        try {
-            // Use authorizedFetch
-            const res = await authorizedFetch('/playlist/like', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ videoId })
-            });
-
-            if (res.ok) {
-                btn.innerText = "✔ Liked";
-                btn.classList.add('liked');
-                btn.disabled = true;
-            } else {
-                throw new Error("Failed");
+            if (Array.isArray(playlists)) {
+                playlists.forEach(pl => {
+                    if(pl.snippet.title === 'Like' && pl.contentDetails.itemCount === 0) return; // Ghost filter
+                    const card = document.createElement('div');
+                    card.className = 'playlist-card';
+                    card.onclick = () => openPlaylist(pl.id, pl.snippet.title, pl.snippet.thumbnails?.medium?.url);
+                    card.innerHTML = `<img src="${pl.snippet.thumbnails?.medium?.url}"><h3>${pl.snippet.title}</h3><p>${pl.contentDetails.itemCount} Songs</p>`;
+                    grid.appendChild(card);
+                });
             }
-        } catch (err) {
-            console.error(err);
-            btn.innerText = "Error";
-        }
+        } catch (err) { console.error(err); }
     }
 
-    // ... (Keep renderResults, playSong, logout) ...
-    function renderResults(items, emptyMsg, isLibrary = false) {
-        const container = document.getElementById('results');
+    async function openPlaylist(id, title, img) {
+        setupPlaylistView(title, img);
+        try {
+            const res = await authorizedFetch(`/playlist/lists/${id}`);
+            const tracks = await res.json();
+            renderList(tracks, document.getElementById('playlist-tracks'));
+            document.getElementById('pl-desc').innerText = `${tracks.length} Songs`;
+        } catch(e) { console.error(e); }
+    }
+
+    async function openLikedVideos() {
+        setupPlaylistView("Liked Songs", "https://t.scdn.co/images/3099b3803ad9496896c43f22fe9be8c4.jpeg");
+        try {
+            const res = await authorizedFetch('/playlist/mine');
+            const tracks = await res.json();
+            renderList(tracks, document.getElementById('playlist-tracks'));
+            document.getElementById('pl-desc').innerText = `${tracks.length} Songs`;
+        } catch(e) { console.error(e); }
+    }
+
+    function setupPlaylistView(title, img) {
+        document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+        document.getElementById('view-playlist-details').classList.add('active');
+        document.getElementById('pl-title').innerText = title;
+        document.getElementById('pl-cover').src = img || '';
+        document.getElementById('pl-desc').innerText = "Loading...";
+        document.getElementById('playlist-tracks').innerHTML = '';
+    }
+
+function renderList(items, container) {
         container.innerHTML = '';
-        if (!items || items.length === 0) {
-            container.innerHTML = `<p>${emptyMsg}</p>`;
-            return;
-        }
+        if(!items || items.length === 0) { container.innerHTML = '<p>No results.</p>'; return; }
+        
         items.forEach(item => {
-            const snip = item.snippet;
-            if (!snip) return;
-            const videoId = isLibrary ? snip.resourceId.videoId : item.id.videoId;
-            if(!videoId) return;
-                const thumbUrl = snip.thumbnails.high?.url || snip.thumbnails.medium?.url || snip.thumbnails.default.url;
-                const safeTitle = snip.title.replace(/'/g, "\\'"); 
-                const safeArtist = snip.channelTitle.replace(/'/g, "\\'");
-
-        const card = document.createElement('div');
-        card.className = 'result-item';
-        card.innerHTML = `
-            <img src="${thumbUrl}">
-            <strong>${snip.title}</strong><br>
-            <small>${snip.channelTitle}</small><br><br>
+            const snip = item.snippet || {}; 
+            const videoId = item.id?.videoId || item.id || snip.resourceId?.videoId;
+            const title = item.title || snip.title;
+            const artist = item.artist || snip.channelTitle;
+            const img = item.image || snip.thumbnails?.default?.url;
             
-            <div style="display: flex; gap: 10px; margin-top: 10px;">
-            <button class="btn-play" onclick="playSong('${videoId}', '${safeTitle}', '${thumbUrl}', '${safeArtist}')" style="flex: 1;">
-                ▶ Play
-            </button>
-
-            <button class="btn-queue" onclick="addToQueue('${videoId}', '${safeTitle}', '${thumbUrl}', '${safeArtist}')" style="flex: 1; background: #444; color: white; border: none; padding: 5px; cursor: pointer; border-radius: 4px;">
-                + Queue
-            </button>
-            </div>
-            ${!isLibrary ? `<button class="btn-like" onclick="likeVideo('${videoId}', this)">Like</button>` : ''}
-        `;
-            container.appendChild(card);
+            if (!videoId) return;
+            const safeTitle = title.replace(/'/g, "\\'");
+            const safeArtist = artist.replace(/'/g, "\\'");
+            
+            const div = document.createElement('div');
+            div.className = 'result-item';
+            div.innerHTML = `
+                <img src="${img}">
+                <div class="result-info"><strong>${title}</strong><br><small>${artist}</small></div>
+                
+                <div style="display:flex; gap:10px;">
+                    <button class="btn-play" onclick="playSong('${videoId}', '${safeTitle}', '${img}', '${safeArtist}')">▶</button>
+                    
+                    <button class="nav-btn" style="width:auto; padding:5px 10px; background:#333;" onclick="addToQueue('${videoId}', '${safeTitle}', '${img}', '${safeArtist}')" title="Add to Queue">+</button>
+                    
+                    <button class="nav-btn" style="width:auto; padding:5px 10px; background:transparent; color: #1db954;" onclick="likeVideo('${videoId}', this)" title="Like Song">♥</button>
+                </div>
+            `;
+            container.appendChild(div);
         });
     }
-function toggleMinimize() {
-    const container = document.getElementById('playerContainer');
-    const minBtn = document.getElementById('btnMin'); // <--- TARGET BY ID
-    
-    // Toggle the class
-    container.classList.toggle('minimized');
 
-    // Update Button Text logic
-    if (container.classList.contains('minimized')) {
-        minBtn.innerText = "⬜ Expand";
-    } else {
-        minBtn.innerText = "➖ Minimize";
-    }
-}
+    // --- BRIDGE FUNCTIONS ---
+    function updatePlayerUI(title, img, artist) {
+        // Small Player
+        document.getElementById('playerTitle').innerText = title;
+        document.getElementById('playerThumbnail').src = img;
+        
+        // Big Player
+        const bigArt = document.getElementById('bigPlayerArt');
+        if (bigArt) bigArt.src = img;
 
-function playSong(videoId, title, thumbnailUrl, artist) {
-    // Create a standardized "Track" object
-    const track = {
-        id: videoId,
-        title: title,
-        artist: artist,
-        image: thumbnailUrl,
-        source: 'youtube' // Explicitly mark this as a YouTube track
-    };
-    playerManager.play(track);
-}
-function closePlayer() {
-    const container = document.getElementById('playerContainer');
-    const audio = document.getElementById('audioPlayer');
-    audio.pause();
-    audio.src = ""; // Stop buffering
-    container.classList.add('hidden');
-    container.style.display = 'none';
-}
-
-    function logout() {
-        if(userToken) fetch(`https://oauth2.googleapis.com/revoke?token=${userToken}`, { mode: 'no-cors' });
-        localStorage.removeItem('userToken');
-        localStorage.removeItem('refreshToken');
-        location.reload();
+        // Show player if hidden
+        document.getElementById('playerContainer').classList.remove('hidden');
     }
 
-function addToQueue(videoId, title, thumbnail, artist) {
-    const track = {
-        id: videoId,
-        title: title,
-        artist: artist,
-        image: thumbnail,
-        source: 'youtube'
-    };
-    playerManager.addToQueue(track);
-    
-    // Simple Button Feedback
-    const btn = event.target;
-    const oldText = btn.innerText;
-    btn.innerText = "✅";
-    setTimeout(() => btn.innerText = oldText, 1000);
-}
+    // Update playSong bridge
+    function playSong(id, title, img, artist) {
+        updatePlayerUI(title, img, artist); // <--- Update UI immediately
+        playerManager.play({ id, title, image: img, artist, source: 'youtube' });
+    }
+    function addToQueue(id, title, img, artist) {
+        playerManager.addToQueue({ id, title, image: img, artist, source: 'youtube' });
+        const btn = event.target;
+        btn.innerText = "✅"; setTimeout(() => btn.innerText = "+", 1000);
+    }
+    function closePlayer() { 
+        if(playerManager.currentAdapter) playerManager.currentAdapter.stop();
+        document.getElementById('playerContainer').style.display = 'none';
+    }
 
-function playNext() {
-    playerManager.playNext();
-}
-
-// Listen for Song End (Auto-Play)
-audioTag.onended = () => {
-    console.log("Track finished.");
-    playerManager.playNext();
-};
-</script>
+    </script>
 </body>
 </html>

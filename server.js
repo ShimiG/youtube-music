@@ -7,9 +7,12 @@ const { streamAudio } = require('./controllers/playController');
 const searchRoute = require('./routes/search');
 const authRoutes = require('./routes/auth');
 const playlistRoutes = require('./routes/playlist');
+const { log } = require('console');
 
 const app = express();
-
+app.get('/test', (req, res) => {
+    console.log("Server is working!");
+});
 // --- MIDDLEWARE ---
 app.use(express.json()); // Parses incoming JSON requests
 app.use(cors());         // Allows cross-origin requests

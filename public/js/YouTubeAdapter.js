@@ -5,21 +5,24 @@ class YouTubeAdapter {
     }
 
     // The Manager calls this generic function
-    async play(track) {
-        // Track object looks like: { id, title, artist, image, source: 'youtube' }
+async play(track) {
+        console.log(`🎵 YouTube Adapter: Loading ${track.title}`);
         
-        // 1. Construct the Proxy URL (The logic you already have)
-        // We add the timestamp to prevent caching issues
+        // Add timestamp to prevent caching
         const streamUrl = `/play?videoId=${track.id}&t=${Date.now()}`;
-        
-        // 2. Set the Source and Play
         this.audio.src = streamUrl;
         
         try {
+            // Attempt to play
             await this.audio.play();
+            console.log("✅ Playback started successfully");
         } catch (error) {
-            console.error("YouTube Adapter Error:", error);
-            throw error;
+            // THIS is where the silent error is hiding
+            console.error("🚨 Playback Failed:", error);
+            
+            if (error.name === 'NotAllowedError') {
+                alert("Autoplay blocked. Please interact with the page (click somewhere) and try again.");
+            }
         }
     }
 

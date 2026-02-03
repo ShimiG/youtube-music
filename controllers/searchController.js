@@ -9,7 +9,10 @@ const searchCache = new NodeCache({ stdTTL: 3600 });
 
 const searchYouTube = async (req, res) => {
     const userQuery = req.query.q;
-    const token = req.header('Authorization');
+    const authHeader = req.header('Authorization');
+        if (!authHeader) return res.status(401).json({ error: "No token provided" });
+        
+        const token = authHeader.replace('Bearer ', '');
 
     if (!userQuery) return res.status(400).json({ error: "Missing query" });
 

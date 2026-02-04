@@ -6,7 +6,10 @@
   "scripts": {
     "start": "electron .",
     "server": "node server.js",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "changelog": "auto-changelog -p",
+    "version": "auto-changelog -p && git add CHANGELOG.md",
+    "prepare": "husky"
   },
   "keywords": [],
   "author": "",
@@ -24,21 +27,23 @@
     "youtubei.js": "^16.0.1"
   },
   "devDependencies": {
+    "auto-changelog": "^2.5.0",
     "electron": "^40.1.0",
-    "electron-builder": "^26.7.0"
+    "electron-builder": "^26.7.0",
+    "husky": "^9.1.7"
   },
   "build": {
-  "appId": "com.musicmanager.app",
-  "productName": "Music Manager",
-  "win": {
-    "target": "nsis",
-    "icon": "public/logo.png"
-  },
-  "directories": {
-    "output": "dist"
-  },
-  "extraResources": [
-    "./bin/**"
-  ]
-}
+    "appId": "com.musicmanager.app",
+    "productName": "Music Manager",
+    "win": {
+      "target": "nsis",
+      "icon": "public/logo.png"
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "extraResources": [
+      "./bin/**"
+    ]
+  }
 }

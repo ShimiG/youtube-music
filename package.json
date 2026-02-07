@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "",
   "main": "main.js",
+  "bin": "server.js",
   "scripts": {
     "start": "electron .",
     "server": "node server.js",
@@ -24,6 +25,7 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.1.5",
     "node-cache": "^5.1.2",
+    "open": "^11.0.0",
     "youtubei.js": "^16.0.1"
   },
   "devDependencies": {

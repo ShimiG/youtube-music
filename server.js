@@ -1,4 +1,5 @@
 require('dotenv').config();
+const open = require('open');
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -30,6 +31,7 @@ app.get('/', (req, res) => {
 
 // --- START SERVER ---
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+app.listen(PORT, async () => {
+    console.log(`Server running on port ${PORT}`);
+    await open(`http://localhost:${PORT}`);
 });

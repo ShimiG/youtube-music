@@ -2,7 +2,7 @@ name: Build Windows Exe
 
 on:
   release:
-    types: [created]
+    types: [published]
 
 permissions:
   contents: write
@@ -12,7 +12,7 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -23,14 +23,19 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      - name: Install pkg
+      - name: Install Pkg
         run: npm install -g pkg
 
-      - name: Build Executable
-        run: pkg . --targets node18-win-x64 --output music-app.exe
+      - name: Build EXE
+        run: pkg . --targets node18-win-x64 --output MusicApp.exe --public
+
+      - name: DEBUG - List Files
+        run: dir
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: music-app.exe
+          files: MusicApp.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

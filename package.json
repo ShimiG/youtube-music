@@ -4,13 +4,13 @@
   "description": "",
   "main": "main.js",
   "bin": "server.js",
-"scripts": {
-  "start": "node server.js",
-  "build": "pkg . --targets node18-win-x64 --output MusicApp.exe --public",
-  "test": "cross-env NODE_ENV=test jest",
-  "changelog": "auto-changelog -p",
-  "version": "auto-changelog -p && git add CHANGELOG.md"
-},
+  "scripts": {
+    "start": "node server.js",
+    "build": "pkg . --targets node18-win-x64 --output MusicApp.exe --public",
+    "test": "cross-env NODE_ENV=test jest",
+    "changelog": "auto-changelog -p",
+    "version": "auto-changelog -p && git add CHANGELOG.md"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -20,7 +20,9 @@
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
     "googleapis": "^170.1.0",
+    "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.1.5",
     "node-cache": "^5.1.2",

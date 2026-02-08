@@ -4,14 +4,13 @@
   "description": "",
   "main": "main.js",
   "bin": "server.js",
-  "scripts": {
-    "start": "electron .",
-    "server": "node server.js",
-    "dist": "electron-builder",
-    "changelog": "auto-changelog -p",
-    "version": "auto-changelog -p && git add CHANGELOG.md",
-    "prepare": "husky"
-  },
+"scripts": {
+  "start": "node server.js",
+  "build": "pkg . --targets node18-win-x64 --output MusicApp.exe --public",
+  "test": "cross-env NODE_ENV=test jest",
+  "changelog": "auto-changelog -p",
+  "version": "auto-changelog -p && git add CHANGELOG.md"
+},
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -30,11 +29,13 @@
   },
   "devDependencies": {
     "auto-changelog": "^2.5.0",
+    "cross-env": "^10.1.0",
     "electron": "^40.1.0",
     "electron-builder": "^26.7.0",
-    "husky": "^9.1.7"
+    "husky": "^9.1.7",
+    "jest": "^30.2.0",
+    "supertest": "^7.2.2"
   },
-  
   "build": {
     "appId": "com.musicmanager.app",
     "productName": "Music Manager",
@@ -50,13 +51,13 @@
     ]
   },
   "pkg": {
-  "assets": [
-    "public/**/*",
-    "views/**/*",
-    "bin/**/*"
-  ],
-  "targets": [
-    "node18-win-x64"
-  ]
-}
+    "assets": [
+      "public/**/*",
+      "views/**/*",
+      "bin/**/*"
+    ],
+    "targets": [
+      "node18-win-x64"
+    ]
+  }
 }

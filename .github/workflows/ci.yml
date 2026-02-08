@@ -1,0 +1,40 @@
+name: CI - Build & Test
+
+# Trigger on Push (to main) OR Pull Request (any branch)
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 18
+
+    - name: Install Dependencies
+      run: npm ci
+
+    # 1. RUN UNIT TESTS
+    # If this fails, the whole pipeline stops.
+    - name: Run Tests
+      run: npm test
+
+    # 2. VERIFY BUILD
+    # We try to compile the app. If pkg crashes, this step fails.
+    - name: Install Pkg
+      run: npm install -g pkg
+
+    - name: Verify Build (Dry Run)
+      run: npm run build
+      
+    - name: Check Build Output
+      run: ls -lh MusicApp.exe

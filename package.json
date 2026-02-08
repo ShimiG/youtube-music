@@ -4,12 +4,12 @@
   "description": "",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "node server.js",
     "server": "node server.js",
-    "dist": "electron-builder",
-    "changelog": "auto-changelog -p",
-    "version": "auto-changelog -p && git add CHANGELOG.md",
-    "prepare": "husky"
+    "client": "npm run dev --prefix client",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "build": "pkg . --targets node18-win-x64 --output MusicApp.exe --public",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
@@ -30,6 +30,7 @@
   },
   "devDependencies": {
     "auto-changelog": "^2.5.0",
+    "concurrently": "^9.2.1",
     "electron": "^40.1.0",
     "electron-builder": "^26.7.0",
     "husky": "^9.1.7"

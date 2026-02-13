@@ -5,6 +5,7 @@ import { MusicContext } from './hook';
 export const MusicProvider = ({ children }) => {
     const [currentTrack, setCurrentTrack] = useState(null);
     const [isPlaying, setIsPlaying] = useState(false);
+    const [isLoading, setIsLoading] = useState(false); 
     const [queue, setQueue] = useState([]);
     const [queueIndex, setQueueIndex] = useState(0);
     
@@ -15,16 +16,24 @@ export const MusicProvider = ({ children }) => {
             setCurrentTrack(track);
             setQueue([track]); 
             setQueueIndex(0);
+            setIsLoading(true); 
             
-
             const streamUrl = `http://localhost:3000/stream?videoId=${track.id}`;
             audioRef.current.src = streamUrl;
             audioRef.current.load();
         }
-        
-        audioRef.current.play()
-            .then(() => setIsPlaying(true))
-            .catch(e => console.error("Playback failed:", e));
+
+        const playPromise = audioRef.current.play();
+        if (playPromise !== undefined) {
+            playPromise
+                .then(() => {
+                    setIsPlaying(true);
+                })
+                .catch(e => {
+                    console.error("Playback failed:", e);
+                    setIsLoading(false);
+                });
+        }
     }, [currentTrack]);
 
     const togglePlay = useCallback(() => {
@@ -39,9 +48,10 @@ export const MusicProvider = ({ children }) => {
     const playNext = useCallback(() => {
         if (queueIndex < queue.length - 1) {
             const nextIndex = queueIndex + 1;
-            const nextTrack = queue[nextIndex];
             setQueueIndex(nextIndex);
+            const nextTrack = queue[nextIndex];
             setCurrentTrack(nextTrack);
+            setIsLoading(true); 
             
             audioRef.current.src = `http://localhost:3000/stream?videoId=${nextTrack.id}`;
             audioRef.current.load();
@@ -58,6 +68,7 @@ export const MusicProvider = ({ children }) => {
             const prevTrack = queue[prevIndex];
             setQueueIndex(prevIndex);
             setCurrentTrack(prevTrack);
+            setIsLoading(true); 
             
             audioRef.current.src = `http://localhost:3000/stream?videoId=${prevTrack.id}`;
             audioRef.current.load();
@@ -66,17 +77,32 @@ export const MusicProvider = ({ children }) => {
         }
     }, [queue, queueIndex]);
 
+    // --- EVENT LISTENERS ---
     useEffect(() => {
         const audio = audioRef.current;
+
         const handleEnded = () => playNext();
+        const handleWaiting = () => setIsLoading(true);   
+        const handlePlaying = () => setIsLoading(false);  
+        const handleCanPlay = () => setIsLoading(false);  
 
         audio.addEventListener('ended', handleEnded);
-        return () => audio.removeEventListener('ended', handleEnded);
+        audio.addEventListener('waiting', handleWaiting);
+        audio.addEventListener('playing', handlePlaying);
+        audio.addEventListener('canplay', handleCanPlay);
+
+        return () => {
+            audio.removeEventListener('ended', handleEnded);
+            audio.removeEventListener('waiting', handleWaiting);
+            audio.removeEventListener('playing', handlePlaying);
+            audio.removeEventListener('canplay', handleCanPlay);
+        };
     }, [playNext]);
 
     const value = {
         currentTrack,
         isPlaying,
+        isLoading, 
         queue,
         playTrack,
         togglePlay,

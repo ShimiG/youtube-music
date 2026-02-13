@@ -10,7 +10,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]); 
   
-  const { currentTrack, isPlaying, togglePlay, playTrack, playNext, playPrev } = useMusic();
+  const { currentTrack, isPlaying, isLoading,togglePlay, playTrack, playNext, playPrev } = useMusic();
   // --- AUTH LOGIC ---
 
 useEffect(() => {
@@ -193,7 +193,11 @@ const handleSearch = async (e) => {
             background: 'white', color: 'black', borderRadius: '50%', width: 40, height: 40, 
             border: 'none', fontSize: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
         }}>
-          {isPlaying ? "⏸" : "▶"}
+          {isLoading ? (
+              <div className="loader"></div> // Show Spinner
+          ) : (
+              isPlaying ? "⏸" : "▶"       // Show Icon
+          )}
         </button>
 
           <button onClick={playNext} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: '24px' }}>

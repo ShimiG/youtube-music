@@ -1,12 +1,7 @@
-import { createContext, useState, useContext, useRef, useEffect, useCallback } from 'react';
+import {  useState, useRef, useEffect, useCallback } from 'react';
+import { MusicContext } from './hook';
 
-// 1. Create Context
-const MusicContext = createContext();
 
-// 2. Create Custom Hook
-export const useMusic = () => useContext(MusicContext);
-
-// 3. Create Provider Component
 export const MusicProvider = ({ children }) => {
     const [currentTrack, setCurrentTrack] = useState(null);
     const [isPlaying, setIsPlaying] = useState(false);
@@ -21,8 +16,7 @@ export const MusicProvider = ({ children }) => {
             setQueue([track]); 
             setQueueIndex(0);
             
-            // Connect to Backend Stream
-            // Ensure this URL matches your backend port (3000)
+
             const streamUrl = `http://localhost:3000/stream?videoId=${track.id}`;
             audioRef.current.src = streamUrl;
             audioRef.current.load();
@@ -47,7 +41,6 @@ export const MusicProvider = ({ children }) => {
             const nextIndex = queueIndex + 1;
             const nextTrack = queue[nextIndex];
             setQueueIndex(nextIndex);
-            // We manually update currentTrack here to keep sync
             setCurrentTrack(nextTrack);
             
             audioRef.current.src = `http://localhost:3000/stream?videoId=${nextTrack.id}`;

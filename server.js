@@ -9,8 +9,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// --- IMPORT MIDDLEWARE ---
+const authMiddleware = require('./middleware/auth');
+
 // --- CONFIGURATION ---
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const REDIRECT_URI = 'http://localhost:3000/auth/google/callback';
@@ -39,9 +42,9 @@ app.get('/auth/google/callback', async (req, res) => {
 });
 
 // --- SEARCH ENDPOINT ---
-app.get('/search', async (req, res) => {
+app.get('/search', authMiddleware, async (req, res) => {
     const query = req.query.q;
-    const token = req.headers.authorization?.split(' ')[1]; 
+    const token = req.oauthToken; 
 
     if (!token) return res.status(401).send("Unauthorized: No token provided");
 
@@ -57,12 +60,18 @@ app.get('/search', async (req, res) => {
             part: 'snippet',
             q: query,
             type: 'video',
-            maxResults: 20
+            maxResults: 30
         });
 
         res.json(response.data);
     } catch (error) {
         console.error('Search API Error:', error);
+        
+        // Check if error is due to invalid/expired token
+        if (error.message.includes('Invalid Credentials') || error.status === 401) {
+            return res.status(401).json({ error: "Token expired or invalid" });
+        }
+        
         res.status(500).send(error.message);
     }
 });

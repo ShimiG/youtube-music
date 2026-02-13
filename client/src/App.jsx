@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useMusic } from './context/MusicContext';
+import { useMusic } from './context/hook.jsx';
 
 function App() {
   const [token, setToken] = useState(() => 
-    new URLSearchParams(window.location.search).get('token') || 
+    new URLSearchParams(window.location.search).get('access_token') || 
     localStorage.getItem('userToken')
   );
   const [view, setView] = useState('search'); 
@@ -12,15 +12,13 @@ function App() {
   
   const { currentTrack, isPlaying, togglePlay, playTrack, playNext, playPrev } = useMusic();
   // --- AUTH LOGIC ---
+
 useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const accessToken = params.get('access_token');
 
     if (accessToken) {
       localStorage.setItem('userToken', accessToken);
-      setToken(accessToken);
-      
-
       window.history.replaceState({}, document.title, "/");
     }
   }, []);
@@ -48,11 +46,14 @@ const handleSearch = async (e) => {
             }
         });
 
-   
         if (res.status === 401) {
             console.error("Token expired or invalid.");
             handleLogout(); 
             return;
+        }
+
+        if (!res.ok) {
+            throw new Error(`HTTP error! status: ${res.status}`);
         }
 
         const data = await res.json();

@@ -1,89 +1,115 @@
-require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const { google } = require('googleapis');
+const { spawn } = require('child_process');
 const path = require('path');
-const helmet = require('helmet'); // 1. Secure Headers
-const rateLimit = require('express-rate-limit'); // 2. Rate Limiting
-const app = require('./app');
-// Import Controller
-const { streamAudio } = require('./controllers/playController');
+require('dotenv').config();
 
-// Import Routes
-const searchRoute = require('./routes/search');
-const authRoutes = require('./routes/auth');
-const playlistRoutes = require('./routes/playlist');
+const app = express();
+app.use(cors());
+app.use(express.json());
 
+// --- CONFIGURATION ---
+const PORT = 3000;
+const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const REDIRECT_URI = 'http://localhost:3000/auth/google/callback';
 
-// --- MIDDLEWARE ---
-app.use(express.json()); 
-app.use(cors());         
+const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
 
-// 1. SECURITY: Secure Headers (Helmet)
-// This automatically sets HTTP headers to block common web attacks
-app.use(helmet({
-    contentSecurityPolicy: false, // Disable CSP for now to avoid breaking YouTube images/scripts
-}));
-
-app.use(express.static('public'));
-
-// 2. SECURITY: Rate Limiting
-// Only allow 100 requests per 15 minutes per IP to prevent crashing the server
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, 
-    max: 100, 
-    message: "Too many requests from this IP, please try again later."
+// --- AUTHENTICATION ROUTES ---
+app.get('/auth/google', (req, res) => {
+    const url = oauth2Client.generateAuthUrl({
+        access_type: 'offline',
+        scope: ['https://www.googleapis.com/auth/youtube.readonly']
+    });
+    res.redirect(url);
 });
 
-// 3. SECURITY: Input Validation Middleware
-// This checks the ID *before* it ever reaches your streamAudio controller
-const validateVideoId = (req, res, next) => {
-    // Check both query params (GET) and body (POST) just in case
-    const videoId = req.query.videoId || req.body.videoId;
-
-    // The Regex: Exactly 11 characters, only alphanumeric, dashes, or underscores.
-    const isValid = videoId && /^[a-zA-Z0-9_-]{11}$/.test(videoId);
-
-    if (!isValid) {
-        console.error(`Blocked malicious/invalid request: ${videoId}`);
-        return res.status(400).send("Invalid Video ID");
+app.get('/auth/google/callback', async (req, res) => {
+    const { code } = req.query;
+    try {
+        const { tokens } = await oauth2Client.getToken(code);
+        oauth2Client.setCredentials(tokens);
+        res.redirect(`http://localhost:5173?access_token=${tokens.access_token}`);
+    } catch (error) {
+        console.error('Error retrieving access token', error);
+        res.status(500).send("Authentication failed");
     }
+});
+
+// --- SEARCH ENDPOINT ---
+app.get('/search', async (req, res) => {
+    const query = req.query.q;
+    const token = req.headers.authorization?.split(' ')[1]; 
+
+    if (!token) return res.status(401).send("Unauthorized: No token provided");
+
+    try {
+        oauth2Client.setCredentials({ access_token: token });
+        
+        const youtube = google.youtube({
+            version: 'v3',
+            auth: oauth2Client
+        });
+
+        const response = await youtube.search.list({
+            part: 'snippet',
+            q: query,
+            type: 'video',
+            maxResults: 20
+        });
+
+        res.json(response.data);
+    } catch (error) {
+        console.error('Search API Error:', error);
+        res.status(500).send(error.message);
+    }
+});
+
+// --- AUDIO STREAMING ENDPOINT (THE MISSING PART) ---
+app.get('/stream', (req, res) => {
+    const videoId = req.query.videoId;
+    if (!videoId) return res.status(400).send("Missing videoId");
+
+    // 1. Detect OS
+    const isWindows = process.platform === 'win32';
+    const binaryName = isWindows ? 'yt-dlp.exe' : 'yt-dlp_macos';
+
+    // 2. Build Path to 'bin' folder
+    const ytDlpPath = path.join(__dirname, 'bin', binaryName);
+
+    console.log(`🎤 Starting stream for: ${videoId}`);
+    console.log(`📂 Using binary: ${ytDlpPath}`);
     
-    // If valid, proceed to the controller
-    next();
-};
+    // 3. Spawn Process
+const child = spawn(ytDlpPath, [
+        '-f', 'bestaudio[ext=m4a]/bestaudio', 
+        '--force-ipv4',
+        '--buffer-size', '16K',
+        '-o', '-', 
+        `https://www.youtube.com/watch?v=${videoId}`
+    ]);
+    res.setHeader('Content-Type', 'audio/mpeg');
 
-app.get('/test', (req, res) => {
-    console.log("Server is working!");
-    res.send("Server is working!");
+    child.stdout.pipe(res);
+
+    // Error handling
+    child.stderr.on('data', (data) => {
+        // console.error(`yt-dlp stderr: ${data}`); // Uncomment to debug
+    });
+
+    child.on('error', (err) => {
+        console.error("Failed to start yt-dlp:", err);
+        if (!res.headersSent) res.status(500).send("Streamer error");
+    });
+
+    // Cleanup: Kill the process if client disconnects 
+    req.on('close', () => {
+        child.kill(); 
+    });
 });
 
-// --- ROUTES ---
-app.use('/search', searchRoute);
-app.use('/playlist', playlistRoutes);
-app.use('/auth', authRoutes);
-
-// --- SECURE AUDIO ROUTE ---
-app.get('/play', limiter, validateVideoId, streamAudio);
-
-// Health Check / Home
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// --- START SERVER ---
-
-const PORT = process.env.PORT || 3000;
-
-
-app.listen(PORT, async () => {
+app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
-    
-    try {
-        const open = require('open');
-        await open(`http://localhost:${PORT}`);
-    } catch (e) {}
-    try {
-        const open = require('open');
-        await open(`http://localhost:${PORT}`);
-    } catch (e) {}
 });

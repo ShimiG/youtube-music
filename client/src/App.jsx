@@ -2,20 +2,25 @@ import { useState, useEffect } from 'react';
 import { useMusic } from './context/MusicContext';
 
 function App() {
-  const [token, setToken] = useState(localStorage.getItem('userToken'));
-  const [view, setView] = useState('search'); // 'search' or 'library'
+  const [token, setToken] = useState(() => 
+    new URLSearchParams(window.location.search).get('token') || 
+    localStorage.getItem('userToken')
+  );
+  const [view, setView] = useState('search'); 
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]); // Array of songs
+  const [searchResults, setSearchResults] = useState([]); 
   
-  const { currentTrack, isPlaying, togglePlay, playTrack } = useMusic();
-
+  const { currentTrack, isPlaying, togglePlay, playTrack, playNext, playPrev } = useMusic();
   // --- AUTH LOGIC ---
-  useEffect(() => {
+useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const accessToken = params.get('access_token');
+
     if (accessToken) {
       localStorage.setItem('userToken', accessToken);
       setToken(accessToken);
+      
+
       window.history.replaceState({}, document.title, "/");
     }
   }, []);
@@ -28,7 +33,6 @@ const handleSearch = async (e) => {
     e.preventDefault();
     if (!searchQuery) return;
 
-    // 1. Get the token from storage
     const token = localStorage.getItem('userToken'); 
 
     if (!token) {
@@ -37,23 +41,22 @@ const handleSearch = async (e) => {
     }
     
     try {
-        // 2. Attach the token to the request headers
+      
         const res = await fetch(`http://localhost:3000/search?q=${searchQuery}`, {
             headers: {
                 'Authorization': `Bearer ${token}` 
             }
         });
 
-        // 3. Handle 401 explicitly (Token expired)
+   
         if (res.status === 401) {
             console.error("Token expired or invalid.");
-            handleLogout(); // Force logout so user gets a new token
+            handleLogout(); 
             return;
         }
 
         const data = await res.json();
 
-        // 4. Handle Data (same fix as before)
         if (data.items) {
             setSearchResults(data.items);
         } else if (Array.isArray(data)) {
@@ -78,7 +81,6 @@ const handleSearch = async (e) => {
         </div>
       ) : (
         <>
-          {/* --- SIDEBAR --- */}
           <nav className="sidebar">
             <h2>🎵 Music</h2>
             <button 
@@ -93,11 +95,11 @@ const handleSearch = async (e) => {
             >
                 📚 My Library
             </button>
-            <div style={{ flex: 1 }}></div> {/* Spacer */}
+            <div style={{ flex: 1 }}></div> 
             <button onClick={handleLogout}>Exit</button>
           </nav>
 
-          {/* --- MAIN CONTENT --- */}
+
           <main className="content">
             {view === 'search' && (
                 <div className="search-view">
@@ -117,32 +119,48 @@ const handleSearch = async (e) => {
                         />
                     </form>
 
-                    <div className="results-grid">
-                        {searchResults.length === 0 ? (
-                            <p>Search for a song to begin...</p>
-                        ) : (
-                            searchResults.map((song) => (
-                                <div 
-                                    key={song.id} 
-                                    className="song-item"
-                                    onClick={() => playTrack(song)}
-                                    style={{ 
-                                        display: 'flex', 
-                                        alignItems: 'center', 
-                                        padding: '10px', 
-                                        cursor: 'pointer',
-                                        borderBottom: '1px solid #333'
-                                    }}
-                                >
-                                    <img src={song.thumbnail || song.image} alt="art" style={{ width: 40, height: 40, marginRight: 10, borderRadius: 4 }} />
-                                    <div>
-                                        <div style={{ fontWeight: 'bold' }}>{song.title}</div>
-                                        <div style={{ fontSize: '0.8em', color: '#aaa' }}>{song.channelTitle || "Artist"}</div>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
+                      <div className="results-grid">
+                      {searchResults.length === 0 ? (
+                          <p>Search for a song to begin...</p>
+                      ) : (
+                          searchResults.map((song) => {
+                              const title = song.snippet?.title || song.title || "Unknown Title";
+                              const artist = song.snippet?.channelTitle || song.channelTitle || "Unknown Artist";
+                              const albumArt = song.snippet?.thumbnails?.default?.url 
+                                            || song.thumbnail 
+                                            || song.image 
+                                            || "https://via.placeholder.com/40"; 
+
+                              const videoId = song.id?.videoId || song.id;
+
+                              return (
+                                  <div 
+                                      key={videoId} 
+                                      className="song-item"
+                                  
+                                      onClick={() => playTrack({ title, artist, image: albumArt, id: videoId })}
+                                      style={{ 
+                                          display: 'flex', 
+                                          alignItems: 'center', 
+                                          padding: '10px', 
+                                          cursor: 'pointer',
+                                          borderBottom: '1px solid #333'
+                                      }}
+                                  >
+                                      <img 
+                                          src={albumArt} 
+                                          alt="art" 
+                                          style={{ width: 40, height: 40, marginRight: 10, borderRadius: 4 }} 
+                                      />
+                                      <div>
+                                          <div style={{ fontWeight: 'bold' }}>{title}</div>
+                                          <div style={{ fontSize: '0.8em', color: '#aaa' }}>{artist}</div>
+                                      </div>
+                                  </div>
+                              );
+                          })
+                      )}
+                  </div>
                 </div>
             )}
 
@@ -154,34 +172,37 @@ const handleSearch = async (e) => {
             )}
           </main>
 
-          {/* --- PLAYER FOOTER --- */}
-          {currentTrack && (
-            <div className="player-footer">
-              <div style={{ display: 'flex', alignItems: 'center' }}>
-                <img src={currentTrack.thumbnail || currentTrack.image} style={{width: 50, height: 50, borderRadius: 4, marginRight: 15}} />
-                <div>
-                    <div style={{ fontWeight: 'bold' }}>{currentTrack.title}</div>
-                </div>
-              </div>
-              
-              <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-                 <button 
-                    onClick={togglePlay}
-                    style={{ 
-                        background: 'white', 
-                        color: 'black', 
-                        borderRadius: '50%', 
-                        width: 40, height: 40, 
-                        border: 'none', 
-                        fontSize: '20px',
-                        cursor: 'pointer'
-                    }}
-                 >
-                  {isPlaying ? "⏸" : "▶"}
-                </button>
-              </div>
-            </div>
-          )}
+          
+    {currentTrack && (
+      <div className="player-footer">
+        <div style={{ display: 'flex', alignItems: 'center', width: '30%' }}>
+          <img src={currentTrack.image} style={{width: 50, height: 50, borderRadius: 4, marginRight: 15}} />
+          <div>
+            <div style={{ fontWeight: 'bold' }}>{currentTrack.title}</div>
+            <div style={{ fontSize: '0.8em', color: '#aaa' }}>{currentTrack.artist}</div>
+          </div>
+        </div>
+        
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '20px' }}>
+          <button onClick={playPrev} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: '24px' }}>
+            ⏮
+          </button>
+
+        <button onClick={togglePlay} style={{ 
+            background: 'white', color: 'black', borderRadius: '50%', width: 40, height: 40, 
+            border: 'none', fontSize: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          {isPlaying ? "⏸" : "▶"}
+        </button>
+
+          <button onClick={playNext} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: '24px' }}>
+            ⏭
+          </button>
+        </div>
+        
+        <div style={{ width: '30%' }}></div>
+      </div>
+    )}
         </>
       )}
     </div>

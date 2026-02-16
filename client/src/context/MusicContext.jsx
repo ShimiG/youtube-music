@@ -8,7 +8,10 @@ export const MusicProvider = ({ children }) => {
     const [isLoading, setIsLoading] = useState(false); 
     const [queue, setQueue] = useState([]);
     const [queueIndex, setQueueIndex] = useState(0);
-    
+    const [currentTime, setCurrentTime] = useState(0);
+    const [duration, setDuration] = useState(0);
+    const [seekOffset, setOffset] = useState(0);
+
     const audioRef = useRef(new Audio());
 
     const playTrack = useCallback((track) => {
@@ -17,7 +20,7 @@ export const MusicProvider = ({ children }) => {
             setQueue([track]); 
             setQueueIndex(0);
             setIsLoading(true); 
-            
+            setOffset(0)
             const streamUrl = `http://localhost:3000/stream?videoId=${track.id}`;
             audioRef.current.src = streamUrl;
             audioRef.current.load();
@@ -28,6 +31,7 @@ export const MusicProvider = ({ children }) => {
             playPromise
                 .then(() => {
                     setIsPlaying(true);
+                    setOffset(0);
                 })
                 .catch(e => {
                     console.error("Playback failed:", e);
@@ -57,6 +61,7 @@ export const MusicProvider = ({ children }) => {
             audioRef.current.load();
             audioRef.current.play();
             setIsPlaying(true);
+            setOffset(0);
         } else {
             setIsPlaying(false);
         }
@@ -74,8 +79,31 @@ export const MusicProvider = ({ children }) => {
             audioRef.current.load();
             audioRef.current.play();
             setIsPlaying(true);
+            setOffset(0);
         }
     }, [queue, queueIndex]);
+
+const seek = useCallback((time) => {
+        if (!currentTrack) return;
+
+        console.log(`⏩ Seeking to ${time}s`);
+        
+        
+        setCurrentTime(time);
+        setOffset(time); 
+        setIsLoading(true);
+
+        const streamUrl = `http://localhost:3000/stream?videoId=${currentTrack.id}&seek=${time}`;
+        audioRef.current.src = streamUrl;
+        
+      
+        audioRef.current.load(); 
+        audioRef.current.play()
+            .then(() => setIsPlaying(true))
+            .catch(e => console.error("Seek failed", e));
+            
+    }, [currentTrack]);
+
 
     // --- EVENT LISTENERS ---
     useEffect(() => {
@@ -85,19 +113,37 @@ export const MusicProvider = ({ children }) => {
         const handleWaiting = () => setIsLoading(true);   
         const handlePlaying = () => setIsLoading(false);  
         const handleCanPlay = () => setIsLoading(false);  
-
+        const handleSeek = () => setOffset(seek);
+        const handleTimeUpdate = () => {
+            if (!isNaN(audio.currentTime)) {
+                setCurrentTime(seekOffset + audio.currentTime);
+            }
+        };
+        const handleLoadedMetadata = () => {
+            const d = audio.duration;
+            if (!isNaN(d) && d !== Infinity && d > 0) {
+                setDuration(d);
+            }
+            }
         audio.addEventListener('ended', handleEnded);
         audio.addEventListener('waiting', handleWaiting);
         audio.addEventListener('playing', handlePlaying);
         audio.addEventListener('canplay', handleCanPlay);
-
+        audio.addEventListener('timeupdate', handleTimeUpdate);
+        audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+        audio.addEventListener('seekoffset', handleSeek);
+        audio.addEventListener('durationchange', handleLoadedMetadata)
         return () => {
             audio.removeEventListener('ended', handleEnded);
             audio.removeEventListener('waiting', handleWaiting);
             audio.removeEventListener('playing', handlePlaying);
             audio.removeEventListener('canplay', handleCanPlay);
+            audio.removeEventListener('timeupdate', handleTimeUpdate);
+            audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+            audio.removeEventListener('seekoffset', handleSeek);
+            audio.removeEventListener('durationchage', handleLoadedMetadata)
         };
-    }, [playNext]);
+    }, [playNext, seekOffset, seek]);
 
     const value = {
         currentTrack,
@@ -107,7 +153,11 @@ export const MusicProvider = ({ children }) => {
         playTrack,
         togglePlay,
         playNext,
-        playPrev
+        playPrev,
+        currentTime,
+        duration,
+        seek,
+        seekOffset
     };
 
     return (

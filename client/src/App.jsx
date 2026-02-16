@@ -9,8 +9,11 @@ function App() {
   const [view, setView] = useState('search'); 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]); 
+  const [sliderValue, setSliderValue] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const { currentTrack, isPlaying, isLoading, togglePlay, playTrack, playNext, playPrev, currentTime, duration, seek } = useMusic();
+
   
-  const { currentTrack, isPlaying, isLoading,togglePlay, playTrack, playNext, playPrev } = useMusic();
   // --- AUTH LOGIC ---
 
 useEffect(() => {
@@ -73,6 +76,30 @@ const handleSearch = async (e) => {
     }
   };
 
+  const formatTime = (seconds) => {
+  if (!seconds) return "0:00";
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+};
+useEffect(() => {
+    if (!isDragging) {
+      setSliderValue(currentTime);
+    }
+  }, [currentTime, isDragging]);
+
+
+
+  const handleSeekChange = (e) => {
+    setIsDragging(true);
+    setSliderValue(Number(e.target.value));
+  };
+
+  const handleSeekEnd = () => {
+    seek(sliderValue);
+    setIsDragging(false);
+  };
+
   return (
     <div className="app-container">
       {!token ? (
@@ -119,6 +146,7 @@ const handleSearch = async (e) => {
                             }}
                         />
                     </form>
+                    
 
                       <div className="results-grid">
                       {searchResults.length === 0 ? (
@@ -194,17 +222,43 @@ const handleSearch = async (e) => {
             border: 'none', fontSize: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
         }}>
           {isLoading ? (
-              <div className="loader"></div> // Show Spinner
+              <div className="loader"></div> 
           ) : (
-              isPlaying ? "⏸" : "▶"       // Show Icon
+              isPlaying ? "⏸" : "▶"   
           )}
         </button>
-
+            <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
           <button onClick={playNext} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: '24px' }}>
             ⏭
           </button>
         </div>
-        
+
+            <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '12px', minWidth: '35px', textAlign: 'right', color: '#b3b3b3' }}>
+                {formatTime(sliderValue)}
+            </span>
+            
+            <input 
+              type="range"
+              min="0"
+              max={duration > 0 ? duration : 0} 
+              disabled={duration === 0}
+              value={sliderValue}
+              onChange={handleSeekChange}
+              onMouseUp={handleSeekEnd}   
+              onTouchEnd={handleSeekEnd} 
+              style={{ flex: 1, cursor: 'pointer', accentColor: '#1db954' }}
+            />
+            
+            <span style={{ fontSize: '12px', minWidth: '35px', color: '#b3b3b3' }}>
+                {formatTime(duration)}
+            </span>
+          </div>
+
+            </div>
+                    
         <div style={{ width: '30%' }}></div>
       </div>
     )}

@@ -1,8 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 const { google } = require('googleapis');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const path = require('path');
+const ffmpegPath = require('ffmpeg-static');
 require('dotenv').config();
 
 const app = express();
@@ -67,7 +68,7 @@ app.get('/search', authMiddleware, async (req, res) => {
     } catch (error) {
         console.error('Search API Error:', error);
         
-        // Check if error is due to invalid/expired token
+
         if (error.message.includes('Invalid Credentials') || error.status === 401) {
             return res.status(401).json({ error: "Token expired or invalid" });
         }
@@ -76,46 +77,58 @@ app.get('/search', authMiddleware, async (req, res) => {
     }
 });
 
-// --- AUDIO STREAMING ENDPOINT (THE MISSING PART) ---
+// --- AUDIO STREAMING ENDPOINT ---
+
 app.get('/stream', (req, res) => {
     const videoId = req.query.videoId;
+    const seekTime = req.query.seek || '0';
+
     if (!videoId) return res.status(400).send("Missing videoId");
 
-    // 1. Detect OS
     const isWindows = process.platform === 'win32';
     const binaryName = isWindows ? 'yt-dlp.exe' : 'yt-dlp_macos';
-
-    // 2. Build Path to 'bin' folder
     const ytDlpPath = path.join(__dirname, 'bin', binaryName);
 
-    console.log(`🎤 Starting stream for: ${videoId}`);
-    console.log(`📂 Using binary: ${ytDlpPath}`);
-    
-    // 3. Spawn Process
-const child = spawn(ytDlpPath, [
-        '-f', 'bestaudio[ext=m4a]/bestaudio', 
-        '--force-ipv4',
-        '--buffer-size', '16K',
-        '-o', '-', 
+    const args = [
+        '-g',
+        '-f', 'bestaudio[ext=m4a]',
         `https://www.youtube.com/watch?v=${videoId}`
-    ]);
-    res.setHeader('Content-Type', 'audio/mpeg');
+    ];
 
-    child.stdout.pipe(res);
+    execFile(ytDlpPath, args, (error, stdout, stderr) => {
+        if (error) {
+            console.error("Scout Error:", error);
+            return res.status(500).send("Scout failed");
+        }
 
-    // Error handling
-    child.stderr.on('data', (data) => {
-        // console.error(`yt-dlp stderr: ${data}`); // Uncomment to debug
-    });
+        const audioUrl = stdout.trim();
+        if (!audioUrl) return res.status(500).send("No URL found");
 
-    child.on('error', (err) => {
-        console.error("Failed to start yt-dlp:", err);
-        if (!res.headersSent) res.status(500).send("Streamer error");
-    });
+        const ffmpegArgs = [
+            '-ss', seekTime,      
+            '-i', audioUrl,      
+            '-c:a', 'aac',        
+            '-b:a', '128k',         
+            '-f', 'adts',       
+            '-'                  
+        ];
 
-    // Cleanup: Kill the process if client disconnects 
-    req.on('close', () => {
-        child.kill(); 
+        const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs);
+
+        res.setHeader('Content-Type', 'audio/aac');
+        ffmpegProcess.stdout.pipe(res);
+        
+
+        ffmpegProcess.stderr.on('data', (data) => {
+            const msg = data.toString();
+            if (msg.includes('Error') || msg.includes('Invalid')) {
+                console.error(`🔴 FFmpeg Error: ${msg}`);
+            }
+        });
+
+        req.on('close', () => {
+            ffmpegProcess.kill();
+        });
     });
 });
 

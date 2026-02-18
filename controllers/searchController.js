@@ -1,10 +1,7 @@
-// controllers/searchController.js
 require('dotenv').config();
 const { google } = require('googleapis');
 const NodeCache = require('node-cache');
 
-// Initialize Cache
-// stdTTL: 3600 seconds = 1 Hour (How long to remember results)
 const searchCache = new NodeCache({ stdTTL: 3600 });
 
 const searchYouTube = async (req, res) => {
@@ -13,11 +10,8 @@ const searchYouTube = async (req, res) => {
 
     if (!userQuery) return res.status(400).json({ error: "Missing query" });
 
-    // 1. GENERATE A UNIQUE KEY FOR THIS SEARCH
-    // We lowercase it so "Beatles" and "beatles" use the same cache
     const cacheKey = `search_${userQuery.toLowerCase()}`;
 
-    // 2. CHECK CACHE FIRST
     const cachedData = searchCache.get(cacheKey);
     if (cachedData)
         return res.status(200).json(cachedData);
@@ -25,7 +19,6 @@ const searchYouTube = async (req, res) => {
 
     try {
 
-        // 3. SETUP CLIENT (Same as before)
         let youtube;
         if (token && token !== 'null' && token !== 'undefined') {
             const oauth2Client = new google.auth.OAuth2();
@@ -35,7 +28,6 @@ const searchYouTube = async (req, res) => {
             youtube = google.youtube({ version: 'v3', auth: process.env.YOUTUBE_API_KEY });
         }
 
-        // 4. PERFORM SEARCH
         const response = await youtube.search.list({
             part: 'snippet',
             q: userQuery,
@@ -44,8 +36,6 @@ const searchYouTube = async (req, res) => {
             maxResults: 10
         });
 
-        // 5. SAVE TO CACHE (Critical Step)
-        // We save the response.data for next time
         searchCache.set(cacheKey, response.data);
 
         res.status(200).json(response.data);

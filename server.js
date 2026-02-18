@@ -10,10 +10,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// --- IMPORT MIDDLEWARE ---
 const authMiddleware = require('./middleware/auth');
 
-// --- CONFIGURATION ---
 const PORT = process.env.PORT || 3000;
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
@@ -21,7 +19,6 @@ const REDIRECT_URI = 'http://localhost:3000/auth/google/callback';
 
 const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
 
-// --- AUTHENTICATION ROUTES ---
 app.get('/auth/google', (req, res) => {
     const url = oauth2Client.generateAuthUrl({
         access_type: 'offline',
@@ -42,7 +39,6 @@ app.get('/auth/google/callback', async (req, res) => {
     }
 });
 
-// --- SEARCH ENDPOINT ---
 const parseDuration = (isoDuration) => {
     const regex = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/;
     const matches = isoDuration.match(regex);
@@ -69,7 +65,6 @@ app.get('/search', authMiddleware, async (req, res) => {
             auth: oauth2Client
         });
 
-        // 1. FIRST CALL: Search for videos
         const searchResponse = await youtube.search.list({
             part: 'snippet',
             q: query,
@@ -80,7 +75,6 @@ app.get('/search', authMiddleware, async (req, res) => {
         const items = searchResponse.data.items;
         if (!items || items.length === 0) return res.json([]);
 
-        // 2. EXTRACT IDs: Get all video IDs to ask for details
         const videoIds = items.map(item => item.id.videoId).join(',');
 
         const videosResponse = await youtube.videos.list({
@@ -110,7 +104,6 @@ app.get('/search', authMiddleware, async (req, res) => {
     }
 });
 
-// --- AUDIO STREAMING ENDPOINT ---
 
 app.get('/stream', (req, res) => {
     const videoId = req.query.videoId;

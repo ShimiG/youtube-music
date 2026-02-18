@@ -111,7 +111,6 @@ const seek = useCallback((time) => {
     }, [currentTrack]);
 
 
-    // --- EVENT LISTENERS ---
     useEffect(() => {
         const audio = audioRef.current;
 

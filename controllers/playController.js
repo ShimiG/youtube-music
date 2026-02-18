@@ -6,12 +6,9 @@ const axios = require('axios');
 const playCache = new NodeCache({ stdTTL: 3600 });
 
 
- // Helper function to get the direct URL using yt-dlp
 
 const getAudioUrl = (videoId) => {
     return new Promise((resolve, reject) => {
-        // -g: Get URL only 
-        // -f: Best audio m4a
         const ytDlp = spawn('yt-dlp', [
             '-g', 
             '-f', 'bestaudio[ext=m4a]/bestaudio',
@@ -43,7 +40,6 @@ const streamAudio = async (req, res) => {
     if (!videoId) return res.status(400).send("Missing videoId");
 
     try {
-        //  Get the Direct Audio URL
         let audioUrl = playCache.get(videoId);
 
         if (!audioUrl) {
@@ -54,7 +50,6 @@ const streamAudio = async (req, res) => {
             console.log(`Using Cached URL for: ${videoId}`);
         }
 
-        // Prepare headers for the Proxy Request
         const headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         };
@@ -62,7 +57,6 @@ const streamAudio = async (req, res) => {
             headers['Range'] = range;
         }
 
-        //  Request the stream from Google
         const response = await axios({
             method: 'get',
             url: audioUrl,
@@ -71,7 +65,6 @@ const streamAudio = async (req, res) => {
             validateStatus: (status) => status >= 200 && status < 400 
         });
 
-        //  Pass the appropriate headers back to the Browser
         res.status(response.status); 
         
         const headersToPass = [
@@ -87,7 +80,6 @@ const streamAudio = async (req, res) => {
             }
         });
 
-        // Pipe the data
         response.data.pipe(res);
 
     } catch (error) {

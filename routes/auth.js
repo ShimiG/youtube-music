@@ -3,7 +3,6 @@ const express = require('express');
 const router = express.Router();
 const { google } = require('googleapis');
 
-// Setup Google Client
 const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
@@ -12,7 +11,6 @@ const oauth2Client = new google.auth.OAuth2(
 
 
 
-// 1. LOGIN ROUTE 
 router.get('/google', (req, res) => {
     const scopes = [
         'https://www.googleapis.com/auth/youtube.force-ssl',
@@ -29,7 +27,6 @@ router.get('/google', (req, res) => {
     res.redirect(url); 
 });
 
-// 2. CALLBACK ROUTE
 router.get('/google/callback', async (req, res) => {
     const { code } = req.query;
     if (!code) return res.status(400).send('No code received');
@@ -51,7 +48,6 @@ router.get('/google/callback', async (req, res) => {
     }
 });
 
-// 3. REFRESH TOKEN ROUTE
 router.post('/refresh', async (req, res) => {
     const { refresh_token } = req.body;
     if (!refresh_token) return res.status(400).json({ error: "No refresh token" });
@@ -75,7 +71,6 @@ router.post('/refresh', async (req, res) => {
     }
 });
 
-// 4. GET PROFILE ROUTE
 router.get('/me', async (req, res) => {
     const authHeader = req.header('Authorization');
     const token = authHeader ? authHeader.replace('Bearer ', '') : null;

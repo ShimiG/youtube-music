@@ -15,7 +15,6 @@ const playlistRoutes = require('./routes/playlist');
 
 const app = express();
 
-// --- MIDDLEWARE ---
 app.use(express.json()); 
 app.use(cors());         
 
@@ -25,7 +24,6 @@ app.use(helmet({
 
 app.use(express.static('public'));
 
-//  SECURITY
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, 
     max: 100, 
@@ -53,15 +51,12 @@ app.get('/test', (req, res) => {
     res.send("Server is working!");
 });
 
-// --- ROUTES ---
 app.use('/search', searchRoute);
 app.use('/playlist', playlistRoutes);
 app.use('/auth', authRoutes);
 
-// --- SECURE AUDIO ROUTE ---
 app.get('/play', limiter, validateVideoId, streamAudio);
 
-// Health Check 
 app.get('/', (req, res) => {
     res.json({ 
         status: "Running", 

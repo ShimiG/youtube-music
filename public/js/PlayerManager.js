@@ -1,23 +1,21 @@
 class PlayerManager {
     constructor() {
         // --- DATA STRUCTURES ---
-        this.prevStack = [];    // History (Previous songs)
+        this.prevStack = [];
         this.currentTrack = null; 
-        this.nextStack = [];    // Queue (Up Next)
+        this.nextStack = [];    
         
         this.isShuffle = false;
-        this.originalStack = []; // Backup of queue before shuffling
-        this.repeatMode = 0;     // 0 = Off, 1 = All, 2 = One
+        this.originalStack = []; 
+        this.repeatMode = 0;     
 
         this.adapters = {};
         this.currentAdapter = null;
         
-        // UI References (Populated in init)
         this.ui = {}; 
     }
 
     init() {
-        // Connect to the DOM elements
         this.ui = {
             container: document.getElementById('playerContainer'),
             title: document.getElementById('playerTitle'),

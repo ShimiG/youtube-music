@@ -6,8 +6,6 @@ const UserSchema = new mongoose.Schema({
         required: true, 
         unique: true 
     },
-    // We never store passwords in plain text! 
-    // We will hash them later (or use OAuth ID here).
     password: { 
         type: String, 
         required: true 

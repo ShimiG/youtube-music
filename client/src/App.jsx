@@ -14,7 +14,6 @@ function App() {
   const { currentTrack, isPlaying, isLoading, togglePlay, playTrack, playNext, playPrev, currentTime, duration, seek } = useMusic();
 
   
-  // --- AUTH LOGIC ---
 
 useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -29,7 +28,6 @@ useEffect(() => {
   const handleLogin = () => window.location.href = 'http://localhost:3000/auth/google';
   const handleLogout = () => { localStorage.removeItem('userToken'); setToken(null); };
 
-  // --- SEARCH LOGIC ---
 const handleSearch = async (e) => {
     e.preventDefault();
     if (!searchQuery) return;

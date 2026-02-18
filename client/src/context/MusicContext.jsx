@@ -10,7 +10,7 @@ export const MusicProvider = ({ children }) => {
     const [queueIndex, setQueueIndex] = useState(0);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
-    const [seekOffset, setOffset] = useState(0);
+    const setOffset = useRef(0);
 
     const audioRef = useRef(new Audio());
 
@@ -20,7 +20,13 @@ export const MusicProvider = ({ children }) => {
             setQueue([track]); 
             setQueueIndex(0);
             setIsLoading(true); 
-            setOffset(0)
+            setOffset.current = 0;
+            setCurrentTime(0);
+            if (track.duration) {
+            setDuration(track.duration);
+            } else {
+            setDuration(0); 
+            }
             const streamUrl = `http://localhost:3000/stream?videoId=${track.id}`;
             audioRef.current.src = streamUrl;
             audioRef.current.load();
@@ -115,8 +121,10 @@ const seek = useCallback((time) => {
         const handleCanPlay = () => setIsLoading(false);  
         const handleSeek = () => setOffset(seek);
         const handleTimeUpdate = () => {
-            if (!isNaN(audio.currentTime)) {
-                setCurrentTime(seekOffset + audio.currentTime);
+            const time = audio.currentTime;
+            if (!isNaN(time)) {
+                const offset = setOffset.current || 0
+                setCurrentTime(offset + time);
             }
         };
         const handleLoadedMetadata = () => {
@@ -124,7 +132,7 @@ const seek = useCallback((time) => {
             if (!isNaN(d) && d !== Infinity && d > 0) {
                 setDuration(d);
             }
-            }
+        };
         audio.addEventListener('ended', handleEnded);
         audio.addEventListener('waiting', handleWaiting);
         audio.addEventListener('playing', handlePlaying);
@@ -132,7 +140,7 @@ const seek = useCallback((time) => {
         audio.addEventListener('timeupdate', handleTimeUpdate);
         audio.addEventListener('loadedmetadata', handleLoadedMetadata);
         audio.addEventListener('seekoffset', handleSeek);
-        audio.addEventListener('durationchange', handleLoadedMetadata)
+        audio.addEventListener('durationchange', handleLoadedMetadata);
         return () => {
             audio.removeEventListener('ended', handleEnded);
             audio.removeEventListener('waiting', handleWaiting);
@@ -143,7 +151,7 @@ const seek = useCallback((time) => {
             audio.removeEventListener('seekoffset', handleSeek);
             audio.removeEventListener('durationchage', handleLoadedMetadata)
         };
-    }, [playNext, seekOffset, seek]);
+    }, [playNext, setOffset, seek]);
 
     const value = {
         currentTrack,
@@ -157,7 +165,7 @@ const seek = useCallback((time) => {
         currentTime,
         duration,
         seek,
-        seekOffset
+        setOffset
     };
 
     return (

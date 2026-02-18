@@ -43,6 +43,18 @@ app.get('/auth/google/callback', async (req, res) => {
 });
 
 // --- SEARCH ENDPOINT ---
+const parseDuration = (isoDuration) => {
+    const regex = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/;
+    const matches = isoDuration.match(regex);
+    if (!matches) return 0;
+    
+    const hours = parseInt(matches[1] || 0);
+    const minutes = parseInt(matches[2] || 0);
+    const seconds = parseInt(matches[3] || 0);
+    
+    return (hours * 3600) + (minutes * 60) + seconds;
+};
+
 app.get('/search', authMiddleware, async (req, res) => {
     const query = req.query.q;
     const token = req.oauthToken; 
@@ -57,19 +69,40 @@ app.get('/search', authMiddleware, async (req, res) => {
             auth: oauth2Client
         });
 
-        const response = await youtube.search.list({
+        // 1. FIRST CALL: Search for videos
+        const searchResponse = await youtube.search.list({
             part: 'snippet',
             q: query,
             type: 'video',
             maxResults: 30
         });
 
-        res.json(response.data);
+        const items = searchResponse.data.items;
+        if (!items || items.length === 0) return res.json([]);
+
+        // 2. EXTRACT IDs: Get all video IDs to ask for details
+        const videoIds = items.map(item => item.id.videoId).join(',');
+
+        const videosResponse = await youtube.videos.list({
+            part: 'contentDetails,snippet',
+            id: videoIds
+        });
+
+
+        const cleanResults = videosResponse.data.items.map(video => ({
+            id: video.id,
+            title: video.snippet.title,
+            channelTitle: video.snippet.channelTitle,
+            thumbnail: video.snippet.thumbnails.default.url,
+            duration: parseDuration(video.contentDetails.duration) 
+        }));
+
+        res.json(cleanResults);
+
     } catch (error) {
         console.error('Search API Error:', error);
         
-
-        if (error.message.includes('Invalid Credentials') || error.status === 401) {
+        if (error.message && (error.message.includes('Invalid Credentials') || error.code === 401)) {
             return res.status(401).json({ error: "Token expired or invalid" });
         }
         

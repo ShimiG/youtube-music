@@ -159,15 +159,14 @@ useEffect(() => {
                                             || song.thumbnail 
                                             || song.image 
                                             || "https://via.placeholder.com/40"; 
-
+                              const duration = song.duration
                               const videoId = song.id?.videoId || song.id;
-
                               return (
                                   <div 
                                       key={videoId} 
                                       className="song-item"
                                   
-                                      onClick={() => playTrack({ title, artist, image: albumArt, id: videoId })}
+                                      onClick={() => playTrack({ title: title, artist: artist, image: albumArt, id: videoId, duration: duration })}
                                       style={{ 
                                           display: 'flex', 
                                           alignItems: 'center', 

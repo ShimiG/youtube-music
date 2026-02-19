@@ -10,8 +10,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// --- IMPORT MIDDLEWARE ---
 const authMiddleware = require('./middleware/auth');
 
+// --- CONFIGURATION ---
 const PORT = process.env.PORT || 3000;
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
@@ -19,6 +21,7 @@ const REDIRECT_URI = 'http://localhost:3000/auth/google/callback';
 
 const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
 
+// --- AUTHENTICATION ROUTES ---
 app.get('/auth/google', (req, res) => {
     const url = oauth2Client.generateAuthUrl({
         access_type: 'offline',
@@ -39,6 +42,7 @@ app.get('/auth/google/callback', async (req, res) => {
     }
 });
 
+// --- SEARCH ENDPOINT ---
 const parseDuration = (isoDuration) => {
     const regex = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/;
     const matches = isoDuration.match(regex);
@@ -104,35 +108,40 @@ app.get('/search', authMiddleware, async (req, res) => {
     }
 });
 
+// --- AUDIO STREAMING ENDPOINT ---
 
 app.get('/stream', (req, res) => {
     const videoId = req.query.videoId;
-    const seekTime = req.query.seek || '0';
+    const seekTime = Math.floor(Number(req.query.seek || 0)); 
 
     if (!videoId) return res.status(400).send("Missing videoId");
 
+    console.log(`\nSTREAM REQUEST: Video ${videoId} | Seek: ${seekTime}s`);
+
     const isWindows = process.platform === 'win32';
-    const binaryName = isWindows ? 'yt-dlp.exe' : 'yt-dlp_macos';
-    const ytDlpPath = path.join(__dirname, 'bin', binaryName);
+    const ytDlpPath = path.join(__dirname, 'bin', isWindows ? 'yt-dlp.exe' : 'yt-dlp_macos');
+
 
     const args = [
-        '-g',
-        '-f', 'bestaudio[ext=m4a]',
+        '-g',                            
         `https://www.youtube.com/watch?v=${videoId}`
     ];
 
     execFile(ytDlpPath, args, (error, stdout, stderr) => {
         if (error) {
-            console.error("Scout Error:", error);
-            return res.status(500).send("Scout failed");
-        }
+            console.error("Scout Error:", stderr);
+            return res.status(500).send("Could not find audio URL");
+        }   
 
         const audioUrl = stdout.trim();
         if (!audioUrl) return res.status(500).send("No URL found");
 
         const ffmpegArgs = [
-            '-ss', seekTime,      
+            '-reconnect_streamed', '1',
+            '-reconnect_delay_max', '5',
+            '-ss', seekTime.toString(),      
             '-i', audioUrl,      
+            '-vn',
             '-c:a', 'aac',        
             '-b:a', '128k',         
             '-f', 'adts',       
@@ -142,18 +151,20 @@ app.get('/stream', (req, res) => {
         const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs);
 
         res.setHeader('Content-Type', 'audio/aac');
+        res.setHeader('Transfer-Encoding', 'chunked');
+        
         ffmpegProcess.stdout.pipe(res);
         
-
         ffmpegProcess.stderr.on('data', (data) => {
             const msg = data.toString();
             if (msg.includes('Error') || msg.includes('Invalid')) {
-                console.error(`🔴 FFmpeg Error: ${msg}`);
+                console.error(`FFmpeg Error: ${msg}`);
             }
         });
 
         req.on('close', () => {
-            ffmpegProcess.kill();
+            console.log("Client disconnected. Killing FFmpeg stream.");
+            ffmpegProcess.kill('SIGKILL');
         });
     });
 });

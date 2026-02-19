@@ -11,7 +11,8 @@ export const MusicProvider = ({ children }) => {
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
     const setOffset = useRef(0);
-
+    const [volume, setVolume] = useState(1);
+    const prevVolumeRef = useRef(1);
     const audioRef = useRef(new Audio());
 
     const playTrack = useCallback((track) => {
@@ -37,7 +38,7 @@ export const MusicProvider = ({ children }) => {
             playPromise
                 .then(() => {
                     setIsPlaying(true);
-                    setOffset(0);
+                    setOffset.current = 0;
                 })
                 .catch(e => {
                     console.error("Playback failed:", e);
@@ -55,6 +56,22 @@ export const MusicProvider = ({ children }) => {
         setIsPlaying(!isPlaying);
     }, [isPlaying]);
 
+    const updateVolume = useCallback((newVolume) => {
+        setVolume(newVolume);
+        audioRef.current.volume = newVolume;
+        if (newVolume > 0) {
+            prevVolumeRef.current = newVolume;
+        }
+    }, []);
+
+    const toggleMute = useCallback(() => {
+        if (volume > 0) {
+            updateVolume(0); 
+        } else {
+            updateVolume(prevVolumeRef.current || 1); 
+        }
+    }, [volume, updateVolume]);
+
     const playNext = useCallback(() => {
         if (queueIndex < queue.length - 1) {
             const nextIndex = queueIndex + 1;
@@ -67,7 +84,7 @@ export const MusicProvider = ({ children }) => {
             audioRef.current.load();
             audioRef.current.play();
             setIsPlaying(true);
-            setOffset(0);
+            setOffset.current = 0;;
         } else {
             setIsPlaying(false);
         }
@@ -85,7 +102,7 @@ export const MusicProvider = ({ children }) => {
             audioRef.current.load();
             audioRef.current.play();
             setIsPlaying(true);
-            setOffset(0);
+            setOffset.current = 0;;
         }
     }, [queue, queueIndex]);
 
@@ -96,7 +113,7 @@ const seek = useCallback((time) => {
         
         
         setCurrentTime(time);
-        setOffset(time); 
+        setOffset.current = time; 
         setIsLoading(true);
 
         const streamUrl = `http://localhost:3000/stream?videoId=${currentTrack.id}&seek=${time}`;
@@ -118,7 +135,7 @@ const seek = useCallback((time) => {
         const handleWaiting = () => setIsLoading(true);   
         const handlePlaying = () => setIsLoading(false);  
         const handleCanPlay = () => setIsLoading(false);  
-        const handleSeek = () => setOffset(seek);
+        const handleSeek = () => setOffset.current=seek;
         const handleTimeUpdate = () => {
             const time = audio.currentTime;
             if (!isNaN(time)) {
@@ -132,6 +149,7 @@ const seek = useCallback((time) => {
                 setDuration(d);
             }
         };
+        
         audio.addEventListener('ended', handleEnded);
         audio.addEventListener('waiting', handleWaiting);
         audio.addEventListener('playing', handlePlaying);
@@ -164,6 +182,9 @@ const seek = useCallback((time) => {
         currentTime,
         duration,
         seek,
+        volume,
+        updateVolume, 
+        toggleMute,
         setOffset
     };
 

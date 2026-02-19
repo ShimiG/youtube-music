@@ -11,7 +11,7 @@ function App() {
   const [searchResults, setSearchResults] = useState([]); 
   const [sliderValue, setSliderValue] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
-  const { currentTrack, isPlaying, isLoading, togglePlay, playTrack, playNext, playPrev, currentTime, duration, seek } = useMusic();
+  const { currentTrack, isPlaying, isLoading, togglePlay, playTrack, playNext, playPrev, currentTime, duration, volume, updateVolume, toggleMute, seek } = useMusic();
 
   
 
@@ -88,15 +88,7 @@ useEffect(() => {
 
 
 
-  const handleSeekChange = (e) => {
-    setIsDragging(true);
-    setSliderValue(Number(e.target.value));
-  };
 
-  const handleSeekEnd = () => {
-    seek(sliderValue);
-    setIsDragging(false);
-  };
 
   return (
     <div className="app-container">
@@ -240,12 +232,18 @@ useEffect(() => {
             <input 
               type="range"
               min="0"
-              max={duration > 0 ? duration : 0} 
-              disabled={duration === 0}
+              max={duration || 0}
               value={sliderValue}
-              onChange={handleSeekChange}
-              onMouseUp={handleSeekEnd}   
-              onTouchEnd={handleSeekEnd} 
+              disabled={!duration}
+
+              onPointerDown={() => {setIsDragging(true)}}
+              onChange={(e) => {setSliderValue(Number(e.target.value))}}
+              onPointerUp={() => {
+                  setIsDragging(false); 
+                  console.log(`seek to: ${sliderValue}s`);
+                  seek(sliderValue); 
+              }}
+              
               style={{ flex: 1, cursor: 'pointer', accentColor: '#1db954' }}
             />
             
@@ -254,6 +252,22 @@ useEffect(() => {
             </span>
           </div>
 
+            </div>
+
+            {/* VOLUME CONTROL */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px', flex: 1 }}>
+              <button onClick={toggleMute} style={{ background: 'none', border: 'none', color: '#b3b3b3', fontSize: '18px', cursor: 'pointer' }}>
+                {volume === 0 ? "🔇" : volume < 0.5 ? "🔉" : "🔊"}
+              </button>
+              <input 
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={volume}
+                onChange={(e) => updateVolume(Number(e.target.value))}
+                style={{ width: '80px', cursor: 'pointer', accentColor: '#1db954' }}
+              />
             </div>
                     
         <div style={{ width: '30%' }}></div>

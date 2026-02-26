@@ -15,37 +15,90 @@ export const MusicProvider = ({ children }) => {
     const prevVolumeRef = useRef(1);
     const audioRef = useRef(new Audio());
 
+    
+    const loadAudio = useCallback((track) => {
+        setCurrentTrack(track);
+        setIsLoading(true);
+        
+        setOffset.current = 0; 
+        setCurrentTime(0);
+
+        if (track.duration) {
+            setDuration(track.duration);
+        } else {
+            setDuration(0);
+        }
+        
+        const streamUrl = `http://localhost:3000/stream?videoId=${track.id}`;
+        audioRef.current.src = streamUrl;
+        audioRef.current.load();
+        
+        audioRef.current.play()
+            .then(() => setIsPlaying(true))
+            .catch(e => {
+                console.error("Playback failed:", e);
+                setIsLoading(false);
+            });
+    }, []);
+
     const playTrack = useCallback((track) => {
         if (currentTrack?.id !== track.id) {
-            setCurrentTrack(track);
             setQueue([track]); 
             setQueueIndex(0);
-            setIsLoading(true); 
-            setOffset.current = 0;
-            setCurrentTime(0);
-            if (track.duration) {
-            setDuration(track.duration);
-            } else {
-            setDuration(0); 
-            }
-            const streamUrl = `http://localhost:3000/stream?videoId=${track.id}`;
-            audioRef.current.src = streamUrl;
-            audioRef.current.load();
+            loadAudio(track);
         }
+    }, [currentTrack, loadAudio]);
 
-        const playPromise = audioRef.current.play();
-        if (playPromise !== undefined) {
-            playPromise
-                .then(() => {
-                    setIsPlaying(true);
-                    setOffset.current = 0;
-                })
-                .catch(e => {
-                    console.error("Playback failed:", e);
-                    setIsLoading(false);
-                });
+
+    const playNext = useCallback(() => {
+        if (queueIndex < queue.length - 1) {
+            const nextIndex = queueIndex + 1;
+            setQueueIndex(nextIndex);
+            loadAudio(queue[nextIndex]); 
+        } else {
+            setIsPlaying(false);
         }
-    }, [currentTrack]);
+    }, [queue, queueIndex, loadAudio]);
+
+
+    const playPrev = useCallback(() => {
+        if (queueIndex > 0) {
+            const prevIndex = queueIndex - 1;
+            setQueueIndex(prevIndex);
+            loadAudio(queue[prevIndex]);
+        }
+    }, [queue, queueIndex, loadAudio]);
+
+    // --- 3. QUEUE CONTROLS ---
+    const addToQueue = useCallback((track) => {
+        setQueue(prev => {
+            const newQueue = [...prev, track];
+            if (newQueue.length === 1 && !currentTrack) {
+                setQueueIndex(0);
+                loadAudio(track);
+            }
+            return newQueue;
+        });
+    }, [currentTrack, loadAudio]);
+
+    const removeFromQueue = useCallback((indexToRemove) => {
+        setQueue(prev => prev.filter((_, i) => i !== indexToRemove));
+        
+        
+        if (indexToRemove < queueIndex) {
+            setQueueIndex(prev => prev - 1);
+        } else if (indexToRemove === queueIndex) {
+            playNext(); 
+        }
+    }, [queueIndex, playNext]);
+
+    const playQueueIndex = useCallback((index) => {
+        if (queue[index]) {
+            setQueueIndex(index);
+            loadAudio(queue[index]);
+        }
+    }, [queue, loadAudio]);
+
 
     const togglePlay = useCallback(() => {
         if (isPlaying) {
@@ -72,59 +125,43 @@ export const MusicProvider = ({ children }) => {
         }
     }, [volume, updateVolume]);
 
-    const playNext = useCallback(() => {
-        if (queueIndex < queue.length - 1) {
-            const nextIndex = queueIndex + 1;
-            setQueueIndex(nextIndex);
-            const nextTrack = queue[nextIndex];
-            setCurrentTrack(nextTrack);
-            setIsLoading(true); 
-            
-            audioRef.current.src = `http://localhost:3000/stream?videoId=${nextTrack.id}`;
-            audioRef.current.load();
-            audioRef.current.play();
-            setIsPlaying(true);
-            setOffset.current = 0;;
-        } else {
-            setIsPlaying(false);
-        }
-    }, [queue, queueIndex]);
-
-    const playPrev = useCallback(() => {
-        if (queueIndex > 0) {
-            const prevIndex = queueIndex - 1;
-            const prevTrack = queue[prevIndex];
-            setQueueIndex(prevIndex);
-            setCurrentTrack(prevTrack);
-            setIsLoading(true); 
-            
-            audioRef.current.src = `http://localhost:3000/stream?videoId=${prevTrack.id}`;
-            audioRef.current.load();
-            audioRef.current.play();
-            setIsPlaying(true);
-            setOffset.current = 0;;
-        }
-    }, [queue, queueIndex]);
 
 const seek = useCallback((time) => {
-        if (!currentTrack) return;
+        if (!currentTrack || !audioRef.current) return;
 
-        console.log(`⏩ Seeking to ${time}s`);
-        
-        
-        setCurrentTime(time);
-        setOffset.current = time; 
-        setIsLoading(true);
+        const cleanTime = Math.floor(Number(time));
+        const audio = audioRef.current;
+        const targetInternalTime = cleanTime - setOffset.current;
 
-        const streamUrl = `http://localhost:3000/stream?videoId=${currentTrack.id}&seek=${time}`;
-        audioRef.current.src = streamUrl;
-        
-      
-        audioRef.current.load(); 
-        audioRef.current.play()
-            .then(() => setIsPlaying(true))
-            .catch(e => console.error("Seek failed", e));
+        let isBuffered = false;
+        for (let i = 0; i < audio.buffered.length; i++) {
+            if (targetInternalTime >= audio.buffered.start(i) && targetInternalTime <= audio.buffered.end(i)) {
+                isBuffered = true;
+                break;
+            }
+        }
+
+        if (isBuffered) {
+            audio.currentTime = targetInternalTime; 
+            setCurrentTime(cleanTime);
+        } else {
+            setCurrentTime(cleanTime);
+            setOffset.current = cleanTime; 
+            setIsLoading(true);
+
+            const streamUrl = `http://localhost:3000/stream?videoId=${currentTrack.id}&seek=${cleanTime}`;
             
+            audio.pause();
+            audio.src = streamUrl;
+            audio.load();
+            
+            audio.play()
+                .then(() => setIsPlaying(true))
+                .catch(e => {
+                    console.error("Audio Playback Failed after seek:", e);
+                    setIsLoading(false);
+                });
+        }
     }, [currentTrack]);
 
 
@@ -166,9 +203,54 @@ const seek = useCallback((time) => {
             audio.removeEventListener('timeupdate', handleTimeUpdate);
             audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
             audio.removeEventListener('seekoffset', handleSeek);
-            audio.removeEventListener('durationchage', handleLoadedMetadata)
+            audio.removeEventListener('durationchange', handleLoadedMetadata)
         };
     }, [playNext, setOffset, seek]);
+
+    // --- OS MEDIA CONTROLS  ---
+    useEffect(() => {
+        if ('mediaSession' in navigator && currentTrack) {
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: currentTrack.title,
+                artist: currentTrack.channelTitle || currentTrack.artist || 'Unknown Artist',
+                album: 'Music Manager', 
+                artwork: [
+                    { 
+                        src: currentTrack.thumbnail || currentTrack.image || 'https://via.placeholder.com/512', 
+                        sizes: '512x512', 
+                        type: 'image/jpeg' 
+                    }
+                ]
+            });
+
+            navigator.mediaSession.setActionHandler('play', () => {
+                audioRef.current.play();
+                setIsPlaying(true);
+            });
+            
+            navigator.mediaSession.setActionHandler('pause', () => {
+                audioRef.current.pause();
+                setIsPlaying(false);
+            });
+            
+            navigator.mediaSession.setActionHandler('previoustrack', () => playPrev());
+            navigator.mediaSession.setActionHandler('nexttrack', () => playNext());
+            navigator.mediaSession.setActionHandler('seekto', (details) => {
+                if (details.seekTime !== undefined) {
+                    seek(details.seekTime);
+                }
+            });
+        }
+        return () => {
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.setActionHandler('play', null);
+                navigator.mediaSession.setActionHandler('pause', null);
+                navigator.mediaSession.setActionHandler('previoustrack', null);
+                navigator.mediaSession.setActionHandler('nexttrack', null);
+                navigator.mediaSession.setActionHandler('seekto', null);
+            }
+        };
+    }, [currentTrack, playNext, playPrev, seek]);
 
     const value = {
         currentTrack,
@@ -185,7 +267,12 @@ const seek = useCallback((time) => {
         volume,
         updateVolume, 
         toggleMute,
-        setOffset
+        setOffset,
+        queueIndex,
+        playQueueIndex,
+        removeFromQueue,
+        addToQueue
+
     };
 
     return (

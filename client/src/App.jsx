@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useMusic } from './context/hook.jsx';
+import './App.css';
 
 function App() {
   const [token, setToken] = useState(() => 
@@ -12,11 +13,13 @@ function App() {
   const [searchResults, setSearchResults] = useState([]); 
   const [sliderValue, setSliderValue] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
-
+  const [playlists, setPlaylists] = useState([]);
+  const [selectedPlaylist, setSelectedPlaylist] = useState(null);
+  const [playlistTracks, setPlaylistTracks] = useState([]);
   const { 
     currentTrack, isPlaying, isLoading, togglePlay, playTrack, playNext, playPrev, 
     currentTime, duration, volume, updateVolume, toggleMute, seek, 
-    queue, queueIndex, playQueueIndex, removeFromQueue, addToQueue 
+    queue, queueIndex, playQueueIndex, removeFromQueue, addToQueue, isShuffle, toggleShuffle 
   } = useMusic();
 
   useEffect(() => {
@@ -84,6 +87,46 @@ function App() {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
+useEffect(() => {
+    if(view === 'library') {
+      const token = localStorage.getItem('userToken');
+      if (!token) return;
+
+      fetch('http://localhost:3000/playlists', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      .then(res => res.json())
+      .then(data => setPlaylists(data)) 
+      .catch(err => console.error("Failed to fetch playlists:", err));
+    }
+  }, [view]);
+
+const handleViewPlaylist = async (playlist) => {
+    const token = localStorage.getItem('userToken');
+    if (!token) return;
+
+    setSelectedPlaylist(playlist);
+    setPlaylistTracks([]); 
+
+    try {
+        const res = await fetch(`http://localhost:3000/playlists/${playlist.id}/tracks`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const tracks = await res.json();
+        setPlaylistTracks(tracks);
+    } catch (err) {
+        console.error("Failed to load playlist tracks:", err);
+    }
+  };
+
+    const handlePlayAll = () => {
+        if (!playlistTracks || playlistTracks.length === 0) return;
+        playTrack(playlistTracks[0]);
+        playlistTracks.slice(1).forEach(track => {
+            addToQueue(track);
+        });
+    };
+
   useEffect(() => {
     if (!isDragging) {
       setSliderValue(currentTime);
@@ -108,7 +151,7 @@ function App() {
                 🔍 Search
             </button>
             <button 
-                onClick={() => setView('library')}
+                onClick={() => { setView('library'); setSelectedPlaylist(null); }} 
                 style={{ color: view === 'library' ? 'white' : '#b3b3b3' }}
             >
                 📚 My Library
@@ -131,7 +174,7 @@ function App() {
                     </form>
                     
                     {/* MAIN CONTENT AREA */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', padding: '20px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', padding: '20px', width: '100%', boxSizing: 'border-box' }}> 
                       
                       {/* SEARCH RESULTS */}
                       <div>
@@ -139,7 +182,6 @@ function App() {
                         <div style={{ display: 'grid', gap: '10px', marginTop: '10px' }}>
                           {searchResults.map(video => (
                             <div key={video.id} style={{ display: 'flex', gap: '10px', padding: '10px', borderBottom: '1px solid #eee', alignItems: 'center' }}>
-                              {/* Using fallback to support both 'thumbnail' and 'image' formats */}
                               <img src={video.thumbnail || video.image} style={{ width: 80, borderRadius: '4px', cursor: 'pointer' }} onClick={() => playTrack(video)} alt="thumbnail" />
                               <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => playTrack(video)}>
                                 <div style={{ fontWeight: 'bold' }}>{video.title}</div>
@@ -190,9 +232,89 @@ function App() {
             )}
 
             {view === 'library' && (
-                <div className="library-view">
-                    <h1>Your Library</h1>
-                    <p>Playlists coming soon...</p>
+                <div className="library-view" style={{ padding: '20px' }}>
+                    
+                    {!selectedPlaylist ? (
+                        <>
+                            <h1 style={{ marginTop: 0 }}>Your Library</h1>
+                            {playlists.length === 0 ? (
+                                <p style={{ color: '#0d0d0d', fontStyle: 'italic' }}>No playlists found in your library.</p>
+                            ) : (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '20px', marginTop: '20px' }}>
+                                    {playlists.map(playlist => (
+                                        <div 
+                                            key={playlist.id} 
+                                            onClick={() => handleViewPlaylist(playlist)}
+                                            style={{ display: 'flex', gap: '15px', padding: '10px', background: '#605151', borderRadius: '8px', alignItems: 'center', cursor: 'pointer', border: '1px solid #eee' }}
+                                        >
+                                            <img src={playlist.thumbnail || playlist.image} style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: '4px' }} alt="thumbnail" />
+                                            <div>
+                                                <div style={{ fontWeight: 'bold' }}>{playlist.title}</div>
+                                                <div style={{ fontSize: '12px', color: '#666' }}>{playlist.itemCount} songs</div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </>
+                    ) : (
+                        <>
+
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '1px solid #eee', paddingBottom: '15px' }}>
+                                
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                                    <button 
+                                        onClick={() => setSelectedPlaylist(null)} 
+                                        style={{ background: '#eee', color: '#333', border: 'none', padding: '8px 15px', borderRadius: '20px', cursor: 'pointer', fontWeight: 'bold' }}
+                                    >
+                                        ← Back
+                                    </button>
+                                    <h2 style={{ margin: 0 }}>{selectedPlaylist.title}</h2>
+                                </div>
+                                <button 
+                                    onClick={handlePlayAll}
+                                    disabled={playlistTracks.length === 0}
+                                    style={{ 
+                                        background: '#1db954', 
+                                        color: 'white', 
+                                        border: 'none', 
+                                        padding: '10px 20px', 
+                                        borderRadius: '20px', 
+                                        cursor: playlistTracks.length === 0 ? 'not-allowed' : 'pointer', 
+                                        fontWeight: 'bold',
+                                        opacity: playlistTracks.length === 0 ? 0.5 : 1
+                                    }}
+                                >
+                                    ▶ Play All
+                                </button>
+                                
+                            </div>
+                            
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                {playlistTracks.length === 0 ? (
+                                    <div style={{ textAlign: 'center', padding: '20px', color: '#888' }}>Loading tracks...</div>
+                                ) : (
+                                    playlistTracks.map((track, index) => (
+                                        <div key={`${track.id}-${index}`} style={{ display: 'flex', gap: '15px', padding: '10px', borderBottom: '1px solid #eee', alignItems: 'center' }}>
+                                            <img src={track.thumbnail || track.image} style={{ width: 50, borderRadius: '4px', cursor: 'pointer' }} onClick={() => playTrack(track)} />
+                                            
+                                            <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => playTrack(track)}>
+                                                <div style={{ fontWeight: 'bold' }}>{track.title}</div>
+                                                <div style={{ fontSize: '12px', color: '#666' }}>{track.channelTitle || track.artist}</div>
+                                            </div>
+                                            
+                                            <button 
+                                                onClick={() => addToQueue(track)}
+                                                style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #1db954', background: 'transparent', color: '#1db954', cursor: 'pointer', fontSize: '12px' }}
+                                            >
+                                                + Queue
+                                            </button>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </>
+                    )}
                 </div>
             )}
           </main>
@@ -214,13 +336,26 @@ function App() {
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', width: '40%' }}>
                 
                 {/* Playback Buttons */}
+                <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+
                 <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '20px' }}>
+                    <button className={`shuffle-btn ${isShuffle ? 'active' : ''}`} onClick={toggleShuffle} title="Shuffle">
+                      <svg viewBox="0 0 24 24">
+                          <path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/>
+                      </svg>
+                  </button>
+
                   <button onClick={playPrev} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: '24px' }}>⏮</button>
                   <button onClick={togglePlay} style={{ background: 'white', color: 'black', borderRadius: '50%', width: 40, height: 40, border: 'none', fontSize: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {isLoading ? <div className="loader" style={{ border: '3px solid #f3f3f3', borderTop: '3px solid #555', borderRadius: '50%', width: '20px', height: '20px', animation: 'spin 1s linear infinite' }}></div> : (isPlaying ? "⏸" : "▶")}
                   </button>
-                  <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
                   <button onClick={playNext} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: '24px' }}>⏭</button>
+
+                  <button className="shuffle-btn" title="Repeat" style={{ opacity: 0.5 }}>
+                      <svg viewBox="0 0 24 24">
+                          <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/>
+                      </svg>
+                  </button>
                 </div>
 
                 {/* Seek Bar */}
@@ -246,6 +381,7 @@ function App() {
 
                 {/* Volume Controls */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px', width: '30%' }}>
+
                 <button onClick={toggleMute} style={{ background: 'none', border: 'none', color: '#b3b3b3', fontSize: '18px', cursor: 'pointer' }}>
                   {volume === 0 ? "🔇" : volume < 0.5 ? "🔉" : "🔊"}
                 </button>

@@ -8,13 +8,16 @@ export const MusicProvider = ({ children }) => {
     const [isLoading, setIsLoading] = useState(false); 
     const [queue, setQueue] = useState([]);
     const [queueIndex, setQueueIndex] = useState(0);
+    const [isShuffle, setIsShuffle] = useState(false);
+    const originalQueueRef = useRef([]);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
     const setOffset = useRef(0);
     const [volume, setVolume] = useState(1);
     const prevVolumeRef = useRef(1);
     const audioRef = useRef(new Audio());
-
+    const preloadAudioRef = useRef(new Audio());
+    const hasPreloadedNext = useRef(false);
     
     const loadAudio = useCallback((track) => {
         setCurrentTrack(track);
@@ -23,6 +26,7 @@ export const MusicProvider = ({ children }) => {
         setOffset.current = 0; 
         setCurrentTime(0);
 
+        hasPreloadedNext.current = false;
         if (track.duration) {
             setDuration(track.duration);
         } else {
@@ -45,6 +49,7 @@ export const MusicProvider = ({ children }) => {
         if (currentTrack?.id !== track.id) {
             setQueue([track]); 
             setQueueIndex(0);
+            setIsShuffle(false);
             loadAudio(track);
         }
     }, [currentTrack, loadAudio]);
@@ -99,6 +104,37 @@ export const MusicProvider = ({ children }) => {
         }
     }, [queue, loadAudio]);
 
+    const shuffleArray = (array) => {
+        const newArr = [...array];
+        for (let i = newArr.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [newArr[i], newArr[j]] = [newArr[j], newArr[i]];
+        }
+        return newArr;
+    };
+
+    const toggleShuffle = useCallback(() => {
+        setIsShuffle((prevShuffle) => {
+            const turningOn = !prevShuffle;
+
+            if (turningOn) {
+                originalQueueRef.current = [...queue];
+                const current = queue[queueIndex];
+                const others = queue.filter((_, i) => i !== queueIndex);
+                const shuffledOthers = shuffleArray(others);
+                setQueue([current, ...shuffledOthers]);
+                setQueueIndex(0); 
+            } else {
+                const original = originalQueueRef.current;
+                setQueue(original);
+                const currentId = queue[queueIndex]?.id;
+                const restoredIndex = original.findIndex(t => t.id === currentId);
+                setQueueIndex(restoredIndex !== -1 ? restoredIndex : 0);
+            }
+
+            return turningOn;
+        });
+    }, [queue, queueIndex]);
 
     const togglePlay = useCallback(() => {
         if (isPlaying) {
@@ -186,7 +222,20 @@ const seek = useCallback((time) => {
                 setDuration(d);
             }
         };
-        
+        const handleProgress = () => {
+            if (!audio.duration || audio.buffered.length === 0) return;
+            const bufferedEnd = audio.buffered.end(audio.buffered.length - 1);
+            if (bufferedEnd >= audio.duration - 2) {
+                if (!hasPreloadedNext.current && queueIndex < queue.length - 1) {
+                    const nextTrack = queue[queueIndex + 1];
+                    const preloadUrl = `http://localhost:3000/stream?videoId=${nextTrack.id}&seek=0`;
+                    preloadAudioRef.current.src = preloadUrl;
+                    preloadAudioRef.current.load(); 
+                    
+                    hasPreloadedNext.current = true;
+                }
+            }
+        };
         audio.addEventListener('ended', handleEnded);
         audio.addEventListener('waiting', handleWaiting);
         audio.addEventListener('playing', handlePlaying);
@@ -195,6 +244,7 @@ const seek = useCallback((time) => {
         audio.addEventListener('loadedmetadata', handleLoadedMetadata);
         audio.addEventListener('seekoffset', handleSeek);
         audio.addEventListener('durationchange', handleLoadedMetadata);
+        audio.addEventListener('progress', handleProgress);
         return () => {
             audio.removeEventListener('ended', handleEnded);
             audio.removeEventListener('waiting', handleWaiting);
@@ -203,11 +253,11 @@ const seek = useCallback((time) => {
             audio.removeEventListener('timeupdate', handleTimeUpdate);
             audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
             audio.removeEventListener('seekoffset', handleSeek);
-            audio.removeEventListener('durationchange', handleLoadedMetadata)
+            audio.removeEventListener('durationchange', handleLoadedMetadata);
+            audio.removeEventListener('progress', handleProgress);
         };
-    }, [playNext, setOffset, seek]);
+    }, [playNext, setOffset, seek, queue, queueIndex]);
 
-    // --- OS MEDIA CONTROLS  ---
     useEffect(() => {
         if ('mediaSession' in navigator && currentTrack) {
             navigator.mediaSession.metadata = new MediaMetadata({
@@ -269,6 +319,8 @@ const seek = useCallback((time) => {
         toggleMute,
         setOffset,
         queueIndex,
+        isShuffle,
+        toggleShuffle,
         playQueueIndex,
         removeFromQueue,
         addToQueue

@@ -1,4 +1,5 @@
 const express = require('express');
+const initDB = require('./config/db');
 const cors = require('cors');
 const { google } = require('googleapis');
 const { spawn, execFile } = require('child_process');
@@ -9,6 +10,7 @@ require('dotenv').config();
 const app = express();
 app.use(cors());
 app.use(express.json());
+
 
 // --- IMPORT MIDDLEWARE ---
 const authMiddleware = require('./middleware/auth');
@@ -108,7 +110,6 @@ app.get('/search', authMiddleware, async (req, res) => {
     }
 });
 
-// 1. GET USER PLAYLISTS
 app.get('/playlists', authMiddleware, async (req, res) => {
     const token = req.oauthToken;
     if (!token) return res.status(401).send("Unauthorized");
@@ -118,7 +119,7 @@ app.get('/playlists', authMiddleware, async (req, res) => {
         const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
 
         const response = await youtube.playlists.list({
-            part: 'snippet,contentDetails', // Added contentDetails to get itemCount
+            part: 'snippet,contentDetails',
             mine: true,
             maxResults: 50
         });
@@ -126,19 +127,18 @@ app.get('/playlists', authMiddleware, async (req, res) => {
         const playlists = response.data.items.map(pl => ({
             id: pl.id,
             title: pl.snippet.title,
-            // Safe navigation (?) in case a playlist has no thumbnail yet
             thumbnail: pl.snippet.thumbnails?.default?.url || 'https://via.placeholder.com/80',
-            itemCount: pl.contentDetails.itemCount // Included for your UI!
+            itemCount: pl.contentDetails.itemCount 
         }));
 
-        res.json(playlists); // Note: We are sending an Array directly
+        res.json(playlists); 
     } catch (error) {
         console.error('Playlists API Error:', error);
         res.status(500).send(error.message);
     }
 });
 
-// 2. GET PLAYLIST TRACKS (With Duration)
+
 app.get('/playlists/:id/tracks', authMiddleware, async (req, res) => {
     const token = req.oauthToken;
     const playlistId = req.params.id;
@@ -148,7 +148,6 @@ app.get('/playlists/:id/tracks', authMiddleware, async (req, res) => {
         oauth2Client.setCredentials({ access_token: token });
         const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
 
-        // Step A: Get the Video IDs in the playlist
         const itemsRes = await youtube.playlistItems.list({
             part: 'snippet,contentDetails',
             playlistId,
@@ -158,19 +157,16 @@ app.get('/playlists/:id/tracks', authMiddleware, async (req, res) => {
         const videoIds = itemsRes.data.items.map(item => item.contentDetails.videoId).join(',');
         if (!videoIds) return res.json([]);
 
-        // Step B: Ask Google for the Durations of those specific IDs
         const videosRes = await youtube.videos.list({
             part: 'contentDetails,snippet',
             id: videoIds
         });
 
-        // Step C: Format for the React Player
         const cleanTracks = videosRes.data.items.map(video => ({
             id: video.id,
             title: video.snippet.title,
             channelTitle: video.snippet.channelTitle,
             thumbnail: video.snippet.thumbnails?.default?.url || 'https://via.placeholder.com/80',
-            // Uses the parseDuration helper function we made earlier!
             duration: parseDuration(video.contentDetails.duration) 
         }));
 
@@ -180,6 +176,7 @@ app.get('/playlists/:id/tracks', authMiddleware, async (req, res) => {
         res.status(500).send(error.message);
     }
 });
+
 // --- AUDIO STREAMING ENDPOINT ---
 
 app.get('/stream', (req, res) => {
@@ -240,7 +237,11 @@ app.get('/stream', (req, res) => {
         });
     });
 });
-
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+initDB().then(db => {
+    app.locals.db = db; 
+    app.listen(PORT, () => {
+        console.log(`Server running on http://localhost:${PORT}`);
+        });
+}).catch(err => {
+    console.error('Failed to initialize database:', err);
 });

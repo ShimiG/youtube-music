@@ -379,22 +379,34 @@ const handleViewPlaylist = async (playlist) => {
                 </div>
               </div>
 
-                {/* Volume Controls */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px', width: '30%' }}>
-
-                <button onClick={toggleMute} style={{ background: 'none', border: 'none', color: '#b3b3b3', fontSize: '18px', cursor: 'pointer' }}>
-                  {volume === 0 ? "🔇" : volume < 0.5 ? "🔉" : "🔊"}
-                </button>
-                <input 
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={volume}
-                  onChange={(e) => updateVolume(Number(e.target.value))}
-                  style={{ width: '80px', cursor: 'pointer', accentColor: '#1db954' }}
-                />
-              </div>
+            {/*  Volume Controls */}
+             <div className="volume-container">
+                 <button 
+                     className={`sound-btn ${volume === 0 ? 'sound-mute' : ''}`} 
+                     onClick={toggleMute}
+                     title={volume === 0 ? "Unmute" : "Mute"}
+                 >
+                     <div className="sound-icon">
+                         <svg viewBox="0 0 24 24">
+                             <path d="M7 9v6h4l5 5V4l-5 5H7z" />
+                         </svg>
+                     </div>
+                     <div className="sound-wave sound-wave_one"></div>
+                     <div className="sound-wave sound-wave_two"></div>
+                 </button>
+                 <input 
+                     type="range" 
+                     className="volume-slider"
+                     min="0" 
+                     max="1" 
+                     step="0.01" 
+                     value={volume} 
+                     onChange={(e) => updateVolume(parseFloat(e.target.value))} 
+                     style={{
+                         background: `linear-gradient(to right, ${volume > 0 ? '#1db954' : '#4d4d4d'} ${volume * 100}%, #4d4d4d ${volume * 100}%)`
+                     }}
+                 />
+             </div>
             </div>
           )}
         </>

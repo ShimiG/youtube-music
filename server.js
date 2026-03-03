@@ -27,7 +27,10 @@ const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_U
 app.get('/auth/google', (req, res) => {
     const url = oauth2Client.generateAuthUrl({
         access_type: 'offline',
-        scope: ['https://www.googleapis.com/auth/youtube.readonly']
+        prompt: 'consent',
+        scope: ['https://www.googleapis.com/auth/youtube.readonly',
+                'https://www.googleapis.com/auth/userinfo.profile',
+                'https://www.googleapis.com/auth/userinfo.email']
     });
     res.redirect(url);
 });
@@ -237,6 +240,75 @@ app.get('/stream', (req, res) => {
         });
     });
 });
+
+// --- LOG LISTENING HISTORY ---
+app.post('/history', async (req, res) => {
+    const db = req.app.locals.db; 
+    const googleId = req.headers['x-google-id']; 
+    const { trackId, title, artist, thumbnail, email, displayName } = req.body;
+
+    if (!googleId || !trackId) return res.status(400).send("Missing user or track data");
+
+    try {
+        await db.run(
+            `INSERT OR IGNORE INTO users (oauth_id, display_name, email, platform) VALUES (?, ?, ?, 'google')`,
+            [googleId, displayName || 'User', email || '']
+        );
+        const user = await db.get(`SELECT id FROM users WHERE oauth_id = ?`, [googleId]);
+        await db.run(`DELETE FROM history WHERE user_id = ? AND track_id = ?`, [user.id, trackId]);
+        await db.run(
+            `INSERT INTO history (user_id, track_id, title, artist, thumbnail) VALUES (?, ?, ?, ?, ?)`,
+            [user.id, trackId, title, artist, thumbnail]
+        );
+        await db.run(`
+            DELETE FROM history 
+            WHERE user_id = ? AND id NOT IN (
+                SELECT id FROM history WHERE user_id = ? ORDER BY played_at DESC LIMIT 50
+            )
+        `, [user.id, user.id]);
+
+        res.status(200).json({ success: true });
+    } catch (error) {
+        console.error('History API Error:', error);
+        res.status(500).send("Failed to save history");
+    }
+});
+app.get('/history', async (req, res) => {
+    const db = req.app.locals.db;
+    const googleId = req.headers['x-google-id']; 
+
+    if (!googleId) return res.status(401).send("Unauthorized: Missing Google ID");
+
+    try {
+        const history = await db.all(`
+            SELECT 
+                h.track_id as id, 
+                h.title, 
+                h.artist as channelTitle, 
+                h.thumbnail as image
+            FROM history h
+            JOIN users u ON h.user_id = u.id
+            WHERE u.oauth_id = ?
+            ORDER BY h.played_at DESC
+            LIMIT 50
+        `, [googleId]);
+        const uniqueHistory = [];
+        const seenIds = new Set();
+        for (const track of history) {
+            if (!seenIds.has(track.id)) {
+                uniqueHistory.push(track);
+                seenIds.add(track.id);
+            }
+        }
+
+        res.json(uniqueHistory);
+
+    } catch (error) {
+        console.error('Fetch History Error:', error);
+        res.status(500).send("Failed to fetch history");
+    }
+});
+
 initDB().then(db => {
     app.locals.db = db; 
     app.listen(PORT, () => {

@@ -19,18 +19,36 @@ export const MusicProvider = ({ children }) => {
     const preloadAudioRef = useRef(new Audio());
     const hasPreloadedNext = useRef(false);
     
+    
     const loadAudio = useCallback((track) => {
         setCurrentTrack(track);
-        setIsLoading(true);
-        
+        setIsLoading(true); 
         setOffset.current = 0; 
         setCurrentTime(0);
-
         hasPreloadedNext.current = false;
         if (track.duration) {
             setDuration(track.duration);
         } else {
             setDuration(0);
+        }
+        const googleId = localStorage.getItem('googleId');
+        
+        if (googleId) {
+            fetch('http://localhost:3000/history', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-google-id': googleId 
+                },
+                body: JSON.stringify({
+                    trackId: track.id,
+                    title: track.title,
+                    artist: track.channelTitle || track.artist || 'Unknown Artist',
+                    thumbnail: track.thumbnail || track.image,
+                    email: localStorage.getItem('userEmail'),
+                    displayName: localStorage.getItem('userName')
+                })
+            }).catch(err => console.error("Failed to log history:", err));
         }
         
         const streamUrl = `http://localhost:3000/stream?videoId=${track.id}`;

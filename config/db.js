@@ -52,6 +52,7 @@ async function initDB() {
             track_id TEXT NOT NULL,
             title TEXT NOT NULL,
             artist TEXT,
+            thumbnail TEXT, 
             played_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );

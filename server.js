@@ -4,9 +4,14 @@ const cors = require('cors');
 const { google } = require('googleapis');
 const { spawn, execFile } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 const ffmpegPath = require('ffmpeg-static');
 require('dotenv').config();
-
+const cacheDir = path.join(__dirname, 'cache');
+if (!fs.existsSync(cacheDir)) {
+    fs.mkdirSync(cacheDir);
+    console.log('Audio cache directory created.');
+}
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -192,7 +197,12 @@ app.get('/stream', (req, res) => {
 
     const isWindows = process.platform === 'win32';
     const ytDlpPath = path.join(__dirname, 'bin', isWindows ? 'yt-dlp.exe' : 'yt-dlp_macos');
-
+    const filePath = path.join(cacheDir, `${videoId}.m4a`);
+    if (fs.existsSync(filePath)) {
+        console.log(` Serving from local cache: ${videoId}`);
+        return res.sendFile(filePath); 
+    }
+    console.log(` Not in cache. Downloading and streaming: ${videoId}`);
 
     const args = [
         '-g',                            
@@ -226,7 +236,8 @@ app.get('/stream', (req, res) => {
         res.setHeader('Transfer-Encoding', 'chunked');
         
         ffmpegProcess.stdout.pipe(res);
-        
+        const fileStream = fs.createWriteStream(filePath);
+        ffmpegProcess.stdout.pipe(fileStream);
         ffmpegProcess.stderr.on('data', (data) => {
             const msg = data.toString();
             if (msg.includes('Error') || msg.includes('Invalid')) {
@@ -234,8 +245,13 @@ app.get('/stream', (req, res) => {
             }
         });
 
-        req.on('close', () => {
-            console.log("Client disconnected. Killing FFmpeg stream.");
+        req.on('close',(code) => {
+        if (code === 0) {
+            console.log(` Successfully cached: ${videoId}`);
+        } else {
+            console.error(` process exited with code ${code}`);
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        }
             ffmpegProcess.kill('SIGKILL');
         });
     });

@@ -28,6 +28,38 @@ const REDIRECT_URI = 'http://localhost:3000/auth/google/callback';
 
 const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
 
+
+function manageAudioCache(maxFiles = 50) {
+    fs.readdir(cacheDir, (err, files) => {
+        if (err) return console.error('🔍 Error reading cache directory:', err);
+        const audioFiles = files.filter(f => f.endsWith('.m4a') || f.endsWith('.mp3'));
+        
+        if (audioFiles.length > maxFiles) {
+            const filesWithStats = audioFiles.map(file => {
+                const fullPath = path.join(cacheDir, file);
+                return {
+                    path: fullPath,
+                    time: fs.statSync(fullPath).mtime.getTime() 
+                };
+            });
+
+            filesWithStats.sort((a, b) => a.time - b.time);
+
+            const filesToDelete = filesWithStats.slice(0, filesWithStats.length - maxFiles);
+
+            filesToDelete.forEach(fileObj => {
+                fs.unlink(fileObj.path, err => {
+                    if (err) {
+                        console.error(` Failed to delete old cache file: ${fileObj.path}`, err);
+                    } else {
+                        console.log(`Cache Manager deleted old track: ${path.basename(fileObj.path)}`);
+                    }
+                });
+            });
+        }
+    });
+}
+
 // --- AUTHENTICATION ROUTES ---
 app.get('/auth/google', (req, res) => {
     const url = oauth2Client.generateAuthUrl({
@@ -200,6 +232,8 @@ app.get('/stream', (req, res) => {
     const filePath = path.join(cacheDir, `${videoId}.m4a`);
     if (fs.existsSync(filePath)) {
         console.log(` Serving from local cache: ${videoId}`);
+        const now = new Date();
+        fs.utimesSync(filePath, now, now);
         return res.sendFile(filePath); 
     }
     console.log(` Not in cache. Downloading and streaming: ${videoId}`);
@@ -248,6 +282,7 @@ app.get('/stream', (req, res) => {
         req.on('close',(code) => {
         if (code === 0) {
             console.log(` Successfully cached: ${videoId}`);
+            manageAudioCache(50);
         } else {
             console.error(` process exited with code ${code}`);
             if (fs.existsSync(filePath)) fs.unlinkSync(filePath);

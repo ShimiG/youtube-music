@@ -1,17 +1,11 @@
 const express = require('express');
 const initDB = require('./config/db');
+const streamingController = require('./controllers/streamingController');
 const cors = require('cors');
 const { google } = require('googleapis');
-const { spawn, execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs');
-const ffmpegPath = require('ffmpeg-static');
 require('dotenv').config();
-const cacheDir = path.join(__dirname, 'cache');
-if (!fs.existsSync(cacheDir)) {
-    fs.mkdirSync(cacheDir);
-    console.log('Audio cache directory created.');
-}
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -29,36 +23,6 @@ const REDIRECT_URI = 'http://localhost:3000/auth/google/callback';
 const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
 
 
-function manageAudioCache(maxFiles = 50) {
-    fs.readdir(cacheDir, (err, files) => {
-        if (err) return console.error('🔍 Error reading cache directory:', err);
-        const audioFiles = files.filter(f => f.endsWith('.m4a') || f.endsWith('.mp3'));
-        
-        if (audioFiles.length > maxFiles) {
-            const filesWithStats = audioFiles.map(file => {
-                const fullPath = path.join(cacheDir, file);
-                return {
-                    path: fullPath,
-                    time: fs.statSync(fullPath).mtime.getTime() 
-                };
-            });
-
-            filesWithStats.sort((a, b) => a.time - b.time);
-
-            const filesToDelete = filesWithStats.slice(0, filesWithStats.length - maxFiles);
-
-            filesToDelete.forEach(fileObj => {
-                fs.unlink(fileObj.path, err => {
-                    if (err) {
-                        console.error(` Failed to delete old cache file: ${fileObj.path}`, err);
-                    } else {
-                        console.log(`Cache Manager deleted old track: ${path.basename(fileObj.path)}`);
-                    }
-                });
-            });
-        }
-    });
-}
 
 // --- AUTHENTICATION ROUTES ---
 app.get('/auth/google', (req, res) => {
@@ -217,80 +181,7 @@ app.get('/playlists/:id/tracks', authMiddleware, async (req, res) => {
     }
 });
 
-// --- AUDIO STREAMING ENDPOINT ---
-
-app.get('/stream', (req, res) => {
-    const videoId = req.query.videoId;
-    const seekTime = Math.floor(Number(req.query.seek || 0)); 
-
-    if (!videoId) return res.status(400).send("Missing videoId");
-
-    console.log(`\nSTREAM REQUEST: Video ${videoId} | Seek: ${seekTime}s`);
-
-    const isWindows = process.platform === 'win32';
-    const ytDlpPath = path.join(__dirname, 'bin', isWindows ? 'yt-dlp.exe' : 'yt-dlp_macos');
-    const filePath = path.join(cacheDir, `${videoId}.m4a`);
-    if (fs.existsSync(filePath)) {
-        console.log(` Serving from local cache: ${videoId}`);
-        const now = new Date();
-        fs.utimesSync(filePath, now, now);
-        return res.sendFile(filePath); 
-    }
-    console.log(` Not in cache. Downloading and streaming: ${videoId}`);
-
-    const args = [
-        '-g',                            
-        `https://www.youtube.com/watch?v=${videoId}`
-    ];
-
-    execFile(ytDlpPath, args, (error, stdout, stderr) => {
-        if (error) {
-            console.error("Scout Error:", stderr);
-            return res.status(500).send("Could not find audio URL");
-        }   
-
-        const audioUrl = stdout.trim();
-        if (!audioUrl) return res.status(500).send("No URL found");
-
-        const ffmpegArgs = [
-            '-reconnect_streamed', '1',
-            '-reconnect_delay_max', '5',
-            '-ss', seekTime.toString(),      
-            '-i', audioUrl,      
-            '-vn',
-            '-c:a', 'aac',        
-            '-b:a', '128k',         
-            '-f', 'adts',       
-            '-'                  
-        ];
-
-        const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs);
-
-        res.setHeader('Content-Type', 'audio/aac');
-        res.setHeader('Transfer-Encoding', 'chunked');
-        
-        ffmpegProcess.stdout.pipe(res);
-        const fileStream = fs.createWriteStream(filePath);
-        ffmpegProcess.stdout.pipe(fileStream);
-        ffmpegProcess.stderr.on('data', (data) => {
-            const msg = data.toString();
-            if (msg.includes('Error') || msg.includes('Invalid')) {
-                console.error(`FFmpeg Error: ${msg}`);
-            }
-        });
-
-        req.on('close',(code) => {
-        if (code === 0) {
-            console.log(` Successfully cached: ${videoId}`);
-            manageAudioCache(50);
-        } else {
-            console.error(` process exited with code ${code}`);
-            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-        }
-            ffmpegProcess.kill('SIGKILL');
-        });
-    });
-});
+app.get('/stream', streamingController.handleStream);
 
 // --- LOG LISTENING HISTORY ---
 app.post('/history', async (req, res) => {

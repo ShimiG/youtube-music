@@ -10,51 +10,56 @@ async function initDB() {
         driver: sqlite3.Database
     });
 
-    console.log('Connected to SQLite database.');
     await db.exec(`
-        -- 1. USERS TABLE
+        CREATE TABLE IF NOT EXISTS sources (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS user_connections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, source_id INTEGER,
+            access_token TEXT, refresh_token TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE CASCADE,
+            UNIQUE(user_id, source_id)
+        );
+    `);
+
+    await db.run(`INSERT OR IGNORE INTO sources (id, name) VALUES (1, 'youtube'), (2, 'spotify')`);
+    
+    await db.exec(`
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             oauth_id TEXT UNIQUE NOT NULL,
             display_name TEXT,
             email TEXT,
-            platform TEXT, -- e.g., 'google' or 'spotify'
+            platform TEXT, 
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
-        -- 2. PLAYLISTS TABLE
+        CREATE TABLE IF NOT EXISTS tracks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, source_id INTEGER, external_id TEXT NOT NULL,
+            title TEXT NOT NULL, artist TEXT, thumbnail TEXT,
+            FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE CASCADE,
+            UNIQUE(source_id, external_id)
+        );
+
         CREATE TABLE IF NOT EXISTS playlists (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            name TEXT NOT NULL,
-            thumbnail TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, name TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
-        -- 3. PLAYLIST_TRACKS TABLE (Junction Table)
         CREATE TABLE IF NOT EXISTS playlist_tracks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            playlist_id INTEGER,
-            track_id TEXT NOT NULL, -- The YouTube or Spotify ID
-            title TEXT NOT NULL,
-            artist TEXT,
-            thumbnail TEXT,
-            duration TEXT,
-            added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE
-        );
+            id INTEGER PRIMARY KEY AUTOINCREMENT, playlist_id INTEGER, track_id INTEGER, sort_order INTEGER DEFAULT 0,
+            FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
+            FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
+        ); -- <-- THIS WAS MISSING IN YOUR FILE!
 
-        -- 4. HISTORY TABLE
         CREATE TABLE IF NOT EXISTS history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
-            track_id TEXT NOT NULL,
-            title TEXT NOT NULL,
-            artist TEXT,
-            thumbnail TEXT, 
+            track_id INTEGER, 
             played_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
         );
     `);
 

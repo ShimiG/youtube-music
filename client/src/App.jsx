@@ -17,6 +17,8 @@ function App() {
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
   const [playlistTracks, setPlaylistTracks] = useState([]);
   const [recentTracks, setRecentTracks] = useState([]);
+  const [activeSource, setActiveSource] = useState('custom');
+  const [customPlaylists, setCustomPlaylists] = useState([]);
   const { 
     currentTrack, isPlaying, isLoading, togglePlay, playTrack, playNext, playPrev, 
     currentTime, duration, volume, updateVolume, toggleMute, seek, 
@@ -34,9 +36,9 @@ useEffect(() => {
         activeToken = null;
     }
 
-    console.log("🔑 URL Token:", urlToken);
-    console.log("💾 Local Token:", localToken);
-    console.log("🚀 Active Token being used:", activeToken);
+    console.log(" URL Token:", urlToken);
+    console.log("Local Token:", localToken);
+    console.log("Active Token being used:", activeToken);
 
     // Save new token if it came from the URL and is valid
     if (urlToken && urlToken !== 'undefined') {
@@ -58,7 +60,7 @@ useEffect(() => {
           return res.json();
       })
       .then(data => {
-          console.log("✅ Google Data Received:", data);
+          console.log("Google Data Received:", data);
           if (data.id) {
               localStorage.setItem('googleId', data.id);
               localStorage.setItem('userName', data.name);
@@ -66,7 +68,7 @@ useEffect(() => {
           }
       })
       .catch(err => {
-          console.error("❌ Auth check failed:", err.message);
+          console.error("Auth check failed:", err.message);
           // (Auto-logout removed temporarily so you can read these logs!)
       });
     }
@@ -127,19 +129,30 @@ useEffect(() => {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
-useEffect(() => {
-    if(view === 'library') {
-      const token = localStorage.getItem('userToken');
-      if (!token) return;
 
-      fetch('http://localhost:3000/playlists', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      .then(res => res.json())
-      .then(data => setPlaylists(data)) 
-      .catch(err => console.error("Failed to fetch playlists:", err));
+  useEffect(() => {
+    if (view === 'library') {
+      const token = localStorage.getItem('userToken');
+      const googleId = localStorage.getItem('googleId');
+      if (!token || !googleId) return;
+
+      if (activeSource === 'youtube') {
+          fetch('http://localhost:3000/playlists', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          })
+          .then(res => res.json())
+          .then(data => setPlaylists(data))
+          .catch(err => console.error("Failed to fetch YT playlists:", err));
+      } else if (activeSource === 'custom') {
+          fetch('http://localhost:3000/api/custom-playlists', { 
+            headers: { 'x-google-id': googleId }
+          })
+          .then(res => res.json())
+          .then(data => setCustomPlaylists(data))
+          .catch(err => console.error("Failed to fetch Custom playlists:", err));
+      }
     }
-  }, [view]);
+  }, [view, activeSource]);
 
 const handleViewPlaylist = async (playlist) => {
     const token = localStorage.getItem('userToken');
@@ -342,32 +355,61 @@ return (
             )}
 
             {/* LIBRARY VIEW */}
+{/* LIBRARY VIEW */}
             {view === 'library' && (
-                <div className="library-view">
+                <div className="library-view" style={{ padding: '20px' }}>
+                    
                     {!selectedPlaylist ? (
                         <>
-                            <h1 style={{ marginTop: 0 }}>Your Library</h1>
-                            {playlists.length === 0 ? (
-                                <p style={{ color: '#888', fontStyle: 'italic' }}>No playlists found in your library.</p>
-                            ) : (
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '20px', marginTop: '20px' }}>
-                                    {playlists.map(playlist => (
-                                        <div 
-                                            key={playlist.id} 
-                                            onClick={() => handleViewPlaylist(playlist)}
-                                            style={{ display: 'flex', gap: '15px', padding: '10px', background: '#282828', borderRadius: '8px', alignItems: 'center', cursor: 'pointer', border: '1px solid #333' }}
-                                        >
-                                            <img src={playlist.thumbnail || playlist.image} style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: '4px' }} alt="thumbnail" />
-                                            <div>
-                                                <div style={{ fontWeight: 'bold' }}>{playlist.title}</div>
-                                                <div style={{ fontSize: '12px', color: '#aaa' }}>{playlist.itemCount} songs</div>
-                                            </div>
+                            {/* --- HEADER & DROPDOWN --- */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                                <h1 style={{ marginTop: 0, marginBottom: 0 }}>Your Library</h1>
+                                <select 
+                                    value={activeSource} 
+                                    onChange={(e) => setActiveSource(e.target.value)}
+                                    style={{ padding: '10px', borderRadius: '8px', background: '#333', color: 'white', border: 'none', outline: 'none', cursor: 'pointer', fontWeight: 'bold' }}
+                                >
+                                    <option value="custom">Custom Playlists</option>
+                                    <option value="youtube">YouTube Music</option>
+                                </select>
+                            </div>
+
+                            {/* --- CUSTOM PLAYLISTS GRID --- */}
+                            {activeSource === 'custom' && (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '20px' }}>
+                                    <div 
+                                        onClick={() => {/* Trigger Create Playlist Modal/Prompt */}}
+                                        style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: '#1db95420', borderRadius: '8px', cursor: 'pointer', border: '2px dashed #1db954', minHeight: '200px' }}
+                                    >
+                                        <span style={{ fontSize: '40px', color: '#1db954' }}>+</span>
+                                        <span style={{ color: '#1db954', fontWeight: 'bold' }}>Create Playlist</span>
+                                    </div>
+                                    
+                                    {customPlaylists?.map(playlist => (
+                                        <div key={`custom-${playlist.id}`} onClick={() => handleViewPlaylist(playlist, 'custom')} style={{ background: '#282828', padding: '15px', borderRadius: '8px', cursor: 'pointer' }}>
+                                            <img src={playlist.thumbnail || 'https://via.placeholder.com/150'} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '4px', marginBottom: '10px' }} alt="thumbnail" />
+                                            <div style={{ fontWeight: 'bold' }}>{playlist.name}</div>
+                                            <div style={{ fontSize: '12px', color: '#aaa' }}>{playlist.itemCount || 0} songs</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* --- YOUTUBE PLAYLISTS GRID --- */}
+                            {activeSource === 'youtube' && (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '20px' }}>
+                                    {(!playlists || playlists.length === 0) ? <p style={{ color: '#888' }}>No YouTube playlists found.</p> : null}
+                                    {playlists?.map(playlist => (
+                                        <div key={`yt-${playlist.id}`} onClick={() => handleViewPlaylist(playlist, 'youtube')} style={{ background: '#282828', padding: '15px', borderRadius: '8px', cursor: 'pointer' }}>
+                                            <img src={playlist.thumbnail || playlist.snippet?.thumbnails?.high?.url} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '4px', marginBottom: '10px' }} alt="thumbnail" />
+                                            <div style={{ fontWeight: 'bold' }}>{playlist.title || playlist.snippet?.title}</div>
+                                            <div style={{ fontSize: '12px', color: '#aaa' }}>YouTube Music</div>
                                         </div>
                                     ))}
                                 </div>
                             )}
                         </>
-                    ) : (
+                    ) : selectedPlaylist ? ( // Added double-check here
                         <>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '1px solid #333', paddingBottom: '15px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
@@ -377,15 +419,16 @@ return (
                                     >
                                         ← Back
                                     </button>
-                                    <h2 style={{ margin: 0 }}>{selectedPlaylist.title}</h2>
+                                    {/* Added ? optional chaining below! */}
+                                    <h2 style={{ margin: 0 }}>{selectedPlaylist?.title || selectedPlaylist?.name || "Playlist"}</h2>
                                 </div>
                                 <button 
                                     onClick={handlePlayAll}
-                                    disabled={playlistTracks.length === 0}
+                                    disabled={!playlistTracks || playlistTracks.length === 0}
                                     style={{ 
                                         background: '#1db954', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '20px', 
-                                        cursor: playlistTracks.length === 0 ? 'not-allowed' : 'pointer', fontWeight: 'bold',
-                                        opacity: playlistTracks.length === 0 ? 0.5 : 1
+                                        cursor: (!playlistTracks || playlistTracks.length === 0) ? 'not-allowed' : 'pointer', fontWeight: 'bold',
+                                        opacity: (!playlistTracks || playlistTracks.length === 0) ? 0.5 : 1
                                     }}
                                 >
                                     ▶ Play All
@@ -393,12 +436,12 @@ return (
                             </div>
                             
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                {playlistTracks.length === 0 ? (
+                                {!playlistTracks || playlistTracks.length === 0 ? (
                                     <div style={{ textAlign: 'center', padding: '20px', color: '#888' }}>Loading tracks...</div>
                                 ) : (
                                     playlistTracks.map((track, index) => (
                                         <div key={`${track.id}-${index}`} style={{ display: 'flex', gap: '15px', padding: '10px', borderBottom: '1px solid #333', alignItems: 'center' }}>
-                                            <img src={track.thumbnail || track.image} style={{ width: 50, borderRadius: '4px', cursor: 'pointer' }} onClick={() => playTrack(track)} />
+                                            <img src={track.thumbnail || track.image} style={{ width: 50, borderRadius: '4px', cursor: 'pointer' }} onClick={() => playTrack(track)} alt="thumbnail" />
                                             <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => playTrack(track)}>
                                                 <div style={{ fontWeight: 'bold' }}>{track.title}</div>
                                                 <div style={{ fontSize: '12px', color: '#aaa' }}>{track.channelTitle || track.artist}</div>
@@ -414,7 +457,7 @@ return (
                                 )}
                             </div>
                         </>
-                    )}
+                    ) : null}
                 </div>
             )}
           </main>

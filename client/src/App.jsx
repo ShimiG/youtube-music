@@ -165,10 +165,16 @@ const handleViewPlaylist = async (playlist) => {
         const res = await fetch(`http://localhost:3000/playlists/${playlist.id}/tracks`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
-        const tracks = await res.json();
-        setPlaylistTracks(tracks);
+        const data = await res.json();
+        if (res.ok && Array.isArray(data)) {
+            setPlaylistTracks(data);
+        } else {
+            console.error("Failed to load tracks:", data.error || "Unknown error");
+            setPlaylistTracks([]); // Keep it an empty array so .map() doesn't crash
+        }
     } catch (err) {
         console.error("Failed to load playlist tracks:", err);
+        setPlaylistTracks([]);
     }
   };
 
@@ -401,7 +407,7 @@ return (
                                     {(!playlists || playlists.length === 0) ? <p style={{ color: '#888' }}>No YouTube playlists found.</p> : null}
                                     {playlists?.map(playlist => (
                                         <div key={`yt-${playlist.id}`} onClick={() => handleViewPlaylist(playlist, 'youtube')} style={{ background: '#282828', padding: '15px', borderRadius: '8px', cursor: 'pointer' }}>
-                                            <img src={playlist.thumbnail || playlist.snippet?.thumbnails?.high?.url} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '4px', marginBottom: '10px' }} alt="thumbnail" />
+                                            <img src={playlist.thumbnail || playlist.snippet?.thumbnails?.high?.url} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '4px', marginBottom: '10px' }}  alt="thumbnail" />
                                             <div style={{ fontWeight: 'bold' }}>{playlist.title || playlist.snippet?.title}</div>
                                             <div style={{ fontSize: '12px', color: '#aaa' }}>YouTube Music</div>
                                         </div>
@@ -441,7 +447,7 @@ return (
                                 ) : (
                                     playlistTracks.map((track, index) => (
                                         <div key={`${track.id}-${index}`} style={{ display: 'flex', gap: '15px', padding: '10px', borderBottom: '1px solid #333', alignItems: 'center' }}>
-                                            <img src={track.thumbnail || track.image} style={{ width: 50, borderRadius: '4px', cursor: 'pointer' }} onClick={() => playTrack(track)} alt="thumbnail" />
+                                            <img src={track.thumbnail || track.image} style={{ width: 50, borderRadius: '4px', cursor: 'pointer' }} onClick={() => playTrack(track)} alt="thumbnail" onError={(e) => { e.target.src = 'https://via.placeholder.com/50?text=🎵'; }}/>
                                             <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => playTrack(track)}>
                                                 <div style={{ fontWeight: 'bold' }}>{track.title}</div>
                                                 <div style={{ fontSize: '12px', color: '#aaa' }}>{track.channelTitle || track.artist}</div>

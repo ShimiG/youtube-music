@@ -109,15 +109,14 @@ const getPlaylistTracks = async (req, res) => {
         if (!authHeader) return res.status(401).json({ error: "No token" });
         const token = authHeader.replace('Bearer ', '');
 
-        const { playlistId } = req.params; 
-
-        if (!playlistId) return res.status(400).json({ error: "Missing Playlist ID" });
+        const { id } = req.params;
+        if (!id) return res.status(400).json({ error: "Missing Playlist ID" });
 
         const youtube = getYouTubeClient(token);
 
         const response = await youtube.playlistItems.list({
             part: 'snippet,contentDetails',
-            playlistId: playlistId, // Now this variable exists
+            playlistId: id, 
             maxResults: 50
         });
 

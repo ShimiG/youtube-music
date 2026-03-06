@@ -1,21 +1,22 @@
 {
-  "name": "code",
+  "name": "music-manager",
   "version": "1.0.0",
-  "description": "",
-  "main": "main.js",
-  "bin": "server.js",
+  "description": "Hybrid React, Node, and Tauri Music Player",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "server": "node server.js",
     "client": "npm run dev --prefix client",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
-    "build": "pkg . --targets node18-win-x64 --output MusicApp.exe --public",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build:server:win": "pkg ./server.js --target node18-win-x64 --output ./bin/music-server-x86_64-pc-windows-msvc.exe",
+    "build:server:mac": "pkg ./server.js --target node18-macos-x64 --output ./bin/music-server-x86_64-apple-darwin",
+    "build:all": "npm run build:server:win && npm run build:server:mac && cd client && npm run build",
+    "tauri:build": "npm run build:all && tauri build",
+    "test": "jest",
+    "test:watch": "jest --watchAll"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
+    "@tauri-apps/api": "^2.10.1",
     "axios": "^1.13.4",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
@@ -25,42 +26,23 @@
     "googleapis": "^170.1.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
-    "mongoose": "^9.1.5",
     "node-cache": "^5.1.2",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^1.6.3",
     "auto-changelog": "^2.5.0",
     "concurrently": "^9.2.1",
-    "electron": "^40.1.0",
-    "electron-builder": "^26.7.0",
     "husky": "^9.1.7",
     "jest": "^30.2.0",
     "supertest": "^7.2.2"
-  },
-  "build": {
-    "appId": "com.musicmanager.app",
-    "productName": "Music Manager",
-    "win": {
-      "target": "nsis",
-      "icon": "public/logo.png"
-    },
-    "directories": {
-      "output": "dist"
-    },
-    "extraResources": [
-      "./bin/**"
-    ]
   },
   "pkg": {
     "assets": [
       "public/**/*",
       "views/**/*",
       "bin/**/*"
-    ],
-    "targets": [
-      "node18-win-x64"
     ]
   }
 }

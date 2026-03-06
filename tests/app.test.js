@@ -3,10 +3,12 @@ const app = require('../app');
 
 describe('Sanity Checks', () => {
     
-    it('GET / should return 200 and serve HTML', async () => {
+    it('GET / should return 200 and serve JSON status', async () => {
         const res = await request(app).get('/');
         expect(res.statusCode).toEqual(200);
-        expect(res.header['content-type']).toContain('text/html');
+        // Updated to expect JSON instead of HTML
+        expect(res.header['content-type']).toContain('application/json');
+        expect(res.body.status).toEqual('Running');
     });
 
     it('GET /test should return 200', async () => {
@@ -19,9 +21,8 @@ describe('Sanity Checks', () => {
         const res = await request(app).get('/this-does-not-exist');
         expect(res.statusCode).toEqual(404);
     });
-
-    
 });
+
 describe('Database API Security Checks', () => {
     it('GET /history should return 401 Unauthorized without x-google-id header', async () => {
         const res = await request(app).get('/history');
@@ -32,7 +33,21 @@ describe('Database API Security Checks', () => {
         const res = await request(app)
             .post('/history')
             .set('x-google-id', 'test-user-id')
-            .send({}); // Empty body
+            .send({}); 
         expect(res.statusCode).toEqual(400);
+    });
+});
+
+describe('Tauri Sidecar Integration', () => {
+    // Updated to use the virtual 'app' instead of API_URL
+    it('Should establish connection to the Node sidecar', async () => {
+        const res = await request(app).get('/test');
+        expect(res.statusCode).toEqual(200);
+        expect(res.text).toContain('Server is working!');
+    });
+
+    it('Should reject database writes without auth', async () => {
+        const res = await request(app).post('/history').send({ trackId: "123" });
+        expect(res.statusCode).toEqual(400); 
     });
 });

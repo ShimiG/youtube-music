@@ -5,8 +5,11 @@ const path = require('path');
 const helmet = require('helmet'); 
 const rateLimit = require('express-rate-limit'); 
 
+const historyController = require('./controllers/historyController');
+const streamingController = require('./controllers/streamingController');
+// --- Custom Playlist Routes ---
+const playlistController = require('./controllers/playlistController');
 
-const { streamAudio } = require('./controllers/playController');
 
 
 const searchRoute = require('./routes/search');
@@ -54,9 +57,13 @@ app.get('/test', (req, res) => {
 app.use('/search', searchRoute);
 app.use('/playlist', playlistRoutes);
 app.use('/auth', authRoutes);
-
-app.get('/play', limiter, validateVideoId, streamAudio);
-
+app.post('/history', historyController.logHistory);
+app.get('/history', historyController.getHistory);
+app.get('/play', limiter, validateVideoId, streamingController);
+app.get('/api/custom-playlists', playlistController.getCustomPlaylists);
+app.post('/api/custom-playlists', playlistController.createCustomPlaylist);
+app.get('/api/custom-playlists/:id/tracks', playlistController.getCustomPlaylistTracks);
+app.post('/api/custom-playlists/:id/tracks', playlistController.addTrackToPlaylist);
 app.get('/', (req, res) => {
     res.json({ 
         status: "Running", 

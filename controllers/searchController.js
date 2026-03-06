@@ -1,54 +1,66 @@
-require('dotenv').config();
 const { google } = require('googleapis');
-const NodeCache = require('node-cache');
 
-const searchCache = new NodeCache({ stdTTL: 3600 });
-
-const searchYouTube = async (req, res) => {
-    const userQuery = req.query.q;
-    const token = req.oauthToken;
-
-    if (!userQuery) return res.status(400).json({ error: "Missing query" });
-
-    const cacheKey = `search_${userQuery.toLowerCase()}`;
-
-    const cachedData = searchCache.get(cacheKey);
-    if (cachedData)
-        return res.status(200).json(cachedData);
+const parseDuration = (isoDuration) => {
+    const regex = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/;
+    const matches = isoDuration.match(regex);
+    if (!matches) return 0;
     
+    const hours = parseInt(matches[1] || 0);
+    const minutes = parseInt(matches[2] || 0);
+    const seconds = parseInt(matches[3] || 0);
+    
+    return (hours * 3600) + (minutes * 60) + seconds;
+};
+
+const getYouTubeClient = (token) => {
+    const oauth2Client = new google.auth.OAuth2();
+    oauth2Client.setCredentials({ access_token: token });
+    return google.youtube({ version: 'v3', auth: oauth2Client });
+};
+
+const searchTracks = async (req, res) => {
+    const query = req.query.q;
+    const token = req.oauthToken; 
+
+    if (!token) return res.status(401).send("Unauthorized: No token provided");
 
     try {
+        const youtube = getYouTubeClient(token);
 
-        let youtube;
-        if (token && token !== 'null' && token !== 'undefined') {
-            const oauth2Client = new google.auth.OAuth2();
-            oauth2Client.setCredentials({ access_token: token });
-            youtube = google.youtube({ version: 'v3', auth: oauth2Client });
-        } else {
-            youtube = google.youtube({ version: 'v3', auth: process.env.YOUTUBE_API_KEY });
-        }
-
-        const response = await youtube.search.list({
+        const searchResponse = await youtube.search.list({
             part: 'snippet',
-            q: userQuery,
+            q: query,
             type: 'video',
-            videoCategoryId: '10', 
-            maxResults: 10
+            maxResults: 30
         });
 
-        searchCache.set(cacheKey, response.data);
+        const items = searchResponse.data.items;
+        if (!items || items.length === 0) return res.json([]);
 
-        res.status(200).json(response.data);
+        const videoIds = items.map(item => item.id.videoId).join(',');
+
+        const videosResponse = await youtube.videos.list({
+            part: 'contentDetails,snippet',
+            id: videoIds
+        });
+
+        const cleanResults = videosResponse.data.items.map(video => ({
+            id: video.id,
+            title: video.snippet.title,
+            channelTitle: video.snippet.channelTitle,
+            thumbnail: video.snippet.thumbnails.default.url,
+            duration: parseDuration(video.contentDetails.duration) 
+        }));
+
+        res.json(cleanResults);
 
     } catch (error) {
-        console.error("Search API Error:", error.message);
-        if (error.code === 403) {
-            return res.status(403).json({ error: "Quota exceeded or Invalid Permissions." });
+        console.error('Search API Error:', error);
+        if (error.message && (error.message.includes('Invalid Credentials') || error.code === 401)) {
+            return res.status(401).json({ error: "Token expired or invalid" });
         }
-        res.status(error.code || 500).json({ 
-            error: error.message || "Search failed" 
-        });
+        res.status(500).send(error.message);
     }
 };
 
-module.exports = { searchYouTube };
+module.exports = { searchTracks };

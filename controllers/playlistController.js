@@ -109,15 +109,14 @@ const getPlaylistTracks = async (req, res) => {
         if (!authHeader) return res.status(401).json({ error: "No token" });
         const token = authHeader.replace('Bearer ', '');
 
-        const { playlistId } = req.params; 
-
-        if (!playlistId) return res.status(400).json({ error: "Missing Playlist ID" });
+        const { id } = req.params;
+        if (!id) return res.status(400).json({ error: "Missing Playlist ID" });
 
         const youtube = getYouTubeClient(token);
 
         const response = await youtube.playlistItems.list({
             part: 'snippet,contentDetails',
-            playlistId: playlistId, // Now this variable exists
+            playlistId: id, 
             maxResults: 50
         });
 
@@ -136,10 +135,100 @@ const getPlaylistTracks = async (req, res) => {
     }
 };
 
+    const addTrackToPlaylist = async (req, res) => {
+        const db = req.app.locals.db;
+        const { playlistId } = req.params;
+        const { sourceName, externalId, title, artist, thumbnail } = req.body;
+
+        try {
+            const source = await db.get(`SELECT id FROM sources WHERE name = ?`, [sourceName]);
+            if (!source) return res.status(400).json({ error: "Invalid source" });
+            await db.run(
+                `INSERT OR IGNORE INTO tracks (source_id, external_id, title, artist, thumbnail) VALUES (?, ?, ?, ?, ?)`,
+                [source.id, externalId, title, artist, thumbnail]
+            );
+            const track = await db.get(`SELECT id FROM tracks WHERE source_id = ? AND external_id = ?`, [source.id, externalId]);
+
+            await db.run(`INSERT INTO playlist_tracks (playlist_id, track_id) VALUES (?, ?)`, [playlistId, track.id]);
+            
+            res.status(201).json({ success: true, message: "Track added to playlist" });
+        } catch (error) {
+            res.status(500).json({ error: error.message });
+        }
+    };
+
+    const createCustomPlaylist = async (req, res) => {
+    const db = req.app.locals.db;
+    const googleId = req.headers['x-google-id'];
+    const { name, thumbnail } = req.body;
+
+    try {
+        const user = await db.get(`SELECT id FROM users WHERE oauth_id = ?`, [googleId]);
+        if (!user) return res.status(404).json({ error: "User not found in DB" });
+
+        const result = await db.run(
+            `INSERT INTO playlists (user_id, name, thumbnail) VALUES (?, ?, ?)`, 
+            [user.id, name, thumbnail || 'https://via.placeholder.com/150']
+        );
+        res.status(201).json({ id: result.lastID, name, thumbnail });
+    } catch (error) {
+        console.error("Create Playlist Error:", error.message);
+        res.status(500).json({ error: "Failed to create playlist" });
+    }
+};
+
+const getCustomPlaylists = async (req, res) => {
+    const db = req.app.locals.db;
+    const googleId = req.headers['x-google-id'];
+
+    try {
+        const playlists = await db.all(`
+            SELECT p.id, p.name, p.thumbnail, COUNT(pt.track_id) as itemCount 
+            FROM playlists p
+            JOIN users u ON p.user_id = u.id
+            LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id
+            WHERE u.oauth_id = ?
+            GROUP BY p.id
+            ORDER BY p.created_at DESC
+        `, [googleId]);
+        
+        res.json(playlists);
+    } catch (error) {
+        console.error("Fetch Custom Playlists Error:", error.message);
+        res.status(500).json({ error: "Failed to fetch custom playlists" });
+    }
+};
+
+const getCustomPlaylistTracks = async (req, res) => {
+    const db = req.app.locals.db;
+    const { playlistId } = req.params;
+
+    try {
+        const tracks = await db.all(`
+            SELECT 
+                t.external_id as id, t.title, t.artist as channelTitle, t.thumbnail as image, s.name as source
+            FROM playlist_tracks pt
+            JOIN tracks t ON pt.track_id = t.id
+            JOIN sources s ON t.source_id = s.id
+            WHERE pt.playlist_id = ?
+            ORDER BY pt.sort_order ASC, pt.added_at ASC
+        `, [playlistId]);
+        
+        res.json(tracks);
+    } catch (error) {
+        console.error("Fetch Custom Tracks Error:", error.message);
+        res.status(500).json({ error: "Failed to fetch custom tracks" });
+    }
+};
+
 module.exports = { 
-    getYouTubeLikes, 
-    likeVideo, 
-    getUserPlaylists,   
-    getPlaylistTracks   
+    getYouTubeLikes,
+    likeVideo,
+    getUserPlaylists, 
+    getPlaylistTracks,
+    addTrackToPlaylist,
+    createCustomPlaylist,
+    getCustomPlaylists,
+    getCustomPlaylistTracks
 };
 

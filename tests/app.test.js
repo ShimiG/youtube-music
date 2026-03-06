@@ -19,4 +19,20 @@ describe('Sanity Checks', () => {
         const res = await request(app).get('/this-does-not-exist');
         expect(res.statusCode).toEqual(404);
     });
+
+    
+});
+describe('Database API Security Checks', () => {
+    it('GET /history should return 401 Unauthorized without x-google-id header', async () => {
+        const res = await request(app).get('/history');
+        expect(res.statusCode).toEqual(401);
+    });
+
+    it('POST /history should return 400 Bad Request if track data is missing', async () => {
+        const res = await request(app)
+            .post('/history')
+            .set('x-google-id', 'test-user-id')
+            .send({}); // Empty body
+        expect(res.statusCode).toEqual(400);
+    });
 });

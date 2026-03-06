@@ -16,19 +16,61 @@ function App() {
   const [playlists, setPlaylists] = useState([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
   const [playlistTracks, setPlaylistTracks] = useState([]);
+  const [recentTracks, setRecentTracks] = useState([]);
+  const [activeSource, setActiveSource] = useState('custom');
+  const [customPlaylists, setCustomPlaylists] = useState([]);
   const { 
     currentTrack, isPlaying, isLoading, togglePlay, playTrack, playNext, playPrev, 
     currentTime, duration, volume, updateVolume, toggleMute, seek, 
     queue, queueIndex, playQueueIndex, removeFromQueue, addToQueue, isShuffle, toggleShuffle 
   } = useMusic();
 
-  useEffect(() => {
+useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const accessToken = params.get('access_token');
+    const urlToken = params.get('access_token');
+    const localToken = localStorage.getItem('userToken');
 
-    if (accessToken) {
-      localStorage.setItem('userToken', accessToken);
+    // Prevent literal strings "undefined" or "null" from breaking the app
+    let activeToken = urlToken || localToken;
+    if (activeToken === 'undefined' || activeToken === 'null') {
+        activeToken = null;
+    }
+
+    console.log(" URL Token:", urlToken);
+    console.log("Local Token:", localToken);
+    console.log("Active Token being used:", activeToken);
+
+    // Save new token if it came from the URL and is valid
+    if (urlToken && urlToken !== 'undefined') {
+      localStorage.setItem('userToken', urlToken);
+      setToken(urlToken); 
       window.history.replaceState({}, document.title, "/");
+    }
+
+    // Fetch the Google Profile if we have a token
+    if (activeToken && !localStorage.getItem('googleId')) {
+      console.log("🌐 Pinging Google for Profile...");
+      
+      fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+          headers: { Authorization: `Bearer ${activeToken}` }
+      })
+      .then(res => {
+          console.log("📡 Google Response Status:", res.status);
+          if (!res.ok) throw new Error("Google rejected the token! Status: " + res.status);
+          return res.json();
+      })
+      .then(data => {
+          console.log("Google Data Received:", data);
+          if (data.id) {
+              localStorage.setItem('googleId', data.id);
+              localStorage.setItem('userName', data.name);
+              localStorage.setItem('userEmail', data.email);
+          }
+      })
+      .catch(err => {
+          console.error("Auth check failed:", err.message);
+          // (Auto-logout removed temporarily so you can read these logs!)
+      });
     }
   }, []);
 
@@ -87,19 +129,30 @@ function App() {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
-useEffect(() => {
-    if(view === 'library') {
-      const token = localStorage.getItem('userToken');
-      if (!token) return;
 
-      fetch('http://localhost:3000/playlists', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      .then(res => res.json())
-      .then(data => setPlaylists(data)) 
-      .catch(err => console.error("Failed to fetch playlists:", err));
+  useEffect(() => {
+    if (view === 'library') {
+      const token = localStorage.getItem('userToken');
+      const googleId = localStorage.getItem('googleId');
+      if (!token || !googleId) return;
+
+      if (activeSource === 'youtube') {
+          fetch('http://localhost:3000/playlists', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          })
+          .then(res => res.json())
+          .then(data => setPlaylists(data))
+          .catch(err => console.error("Failed to fetch YT playlists:", err));
+      } else if (activeSource === 'custom') {
+          fetch('http://localhost:3000/api/custom-playlists', { 
+            headers: { 'x-google-id': googleId }
+          })
+          .then(res => res.json())
+          .then(data => setCustomPlaylists(data))
+          .catch(err => console.error("Failed to fetch Custom playlists:", err));
+      }
     }
-  }, [view]);
+  }, [view, activeSource]);
 
 const handleViewPlaylist = async (playlist) => {
     const token = localStorage.getItem('userToken');
@@ -112,10 +165,16 @@ const handleViewPlaylist = async (playlist) => {
         const res = await fetch(`http://localhost:3000/playlists/${playlist.id}/tracks`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
-        const tracks = await res.json();
-        setPlaylistTracks(tracks);
+        const data = await res.json();
+        if (res.ok && Array.isArray(data)) {
+            setPlaylistTracks(data);
+        } else {
+            console.error("Failed to load tracks:", data.error || "Unknown error");
+            setPlaylistTracks([]); // Keep it an empty array so .map() doesn't crash
+        }
     } catch (err) {
         console.error("Failed to load playlist tracks:", err);
+        setPlaylistTracks([]);
     }
   };
 
@@ -127,13 +186,29 @@ const handleViewPlaylist = async (playlist) => {
         });
     };
 
+    useEffect(() => {
+    if (view === 'history') {
+        const googleId = localStorage.getItem('googleId'); 
+        if (!googleId) return;
+
+        fetch('http://localhost:3000/history', {
+            headers: { 
+                'x-google-id': googleId 
+            }
+        })
+        .then(res => res.json())
+        .then(data => setRecentTracks(data))
+        .catch(err => console.error("Failed to fetch history:", err));
+    }
+  }, [view]);
+
   useEffect(() => {
     if (!isDragging) {
       setSliderValue(currentTime);
     }
   }, [currentTime, isDragging]);
 
-  return (
+return (
     <div className="app-container">
       {!token ? (
         <div className="auth-screen">
@@ -142,64 +217,118 @@ const handleViewPlaylist = async (playlist) => {
         </div>
       ) : (
         <>
+          {/* FIXED SIDEBAR: Removed duplicates and moved Exit to the bottom */}
           <nav className="sidebar">
             <h2>🎵 Music</h2>
+            
             <button 
-                onClick={() => setView('search')}
-                style={{ color: view === 'search' ? 'white' : '#b3b3b3' }}
+                onClick={() => setView('search')} 
+                style={{ color: view === 'search' ? 'white' : '#b3b3b3', background: 'transparent', border: 'none', cursor: 'pointer', display: 'block', marginBottom: '15px', fontSize: '16px', fontWeight: 'bold', textAlign: 'left' }}
             >
                 🔍 Search
             </button>
             <button 
                 onClick={() => { setView('library'); setSelectedPlaylist(null); }} 
-                style={{ color: view === 'library' ? 'white' : '#b3b3b3' }}
+                style={{ color: view === 'library' ? 'white' : '#b3b3b3', background: 'transparent', border: 'none', cursor: 'pointer', display: 'block', marginBottom: '15px', fontSize: '16px', fontWeight: 'bold', textAlign: 'left' }}
             >
                 📚 My Library
             </button>
+            <button 
+                onClick={() => setView('history')} 
+                style={{ color: view === 'history' ? 'white' : '#b3b3b3', background: 'transparent', border: 'none', cursor: 'pointer', display: 'block', marginBottom: '15px', fontSize: '16px', fontWeight: 'bold', textAlign: 'left' }}
+            >
+                🕒 Recently Played
+            </button>
+
+            {/* Pushes the Exit button to the very bottom */}
             <div style={{ flex: 1 }}></div> 
-            <button onClick={handleLogout}>Exit</button>
+            <button 
+                onClick={handleLogout}
+                style={{ background: 'transparent', border: 'none', color: '#ff4d4d', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', textAlign: 'left' }}
+            >
+                Exit
+            </button>
           </nav>
 
-          <main className="content">
+          <main className="content" style={{ padding: '20px' }}>
+            
+            {/* ONLY SHOW SEARCH BAR IN SEARCH VIEW */}
             {view === 'search' && (
-                <div className="search-view">
-                    <form onSubmit={handleSearch} style={{ marginBottom: '20px' }}>
-                        <input 
-                            type="text" 
-                            placeholder="Search songs..." 
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            style={{ padding: '10px', width: '300px', borderRadius: '20px', border: 'none', outline: 'none' }}
-                        />
-                    </form>
+                <form onSubmit={handleSearch} style={{ marginBottom: '20px' }}>
+                    <input 
+                        type="text" 
+                        placeholder="Search songs..." 
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        style={{ padding: '10px 20px', width: '300px', borderRadius: '20px', border: 'none', outline: 'none' }}
+                    />
+                </form>
+            )}
+            
+            {/* SHARED SPLIT LAYOUT: For Search Results AND History */}
+            {(view === 'search' || view === 'history') && (
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', width: '100%', boxSizing: 'border-box' }}> 
                     
-                    {/* MAIN CONTENT AREA */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', padding: '20px', width: '100%', boxSizing: 'border-box' }}> 
-                      
-                      {/* SEARCH RESULTS */}
-                      <div>
-                        <h2 style={{ borderBottom: '1px solid #eee', paddingBottom: '10px' }}>Search Results</h2>
-                        <div style={{ display: 'grid', gap: '10px', marginTop: '10px' }}>
-                          {searchResults.map(video => (
-                            <div key={video.id} style={{ display: 'flex', gap: '10px', padding: '10px', borderBottom: '1px solid #eee', alignItems: 'center' }}>
-                              <img src={video.thumbnail || video.image} style={{ width: 80, borderRadius: '4px', cursor: 'pointer' }} onClick={() => playTrack(video)} alt="thumbnail" />
-                              <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => playTrack(video)}>
-                                <div style={{ fontWeight: 'bold' }}>{video.title}</div>
-                                <div style={{ fontSize: '12px', color: '#666' }}>{video.channelTitle || video.artist}</div>
-                              </div>
-                              <button 
-                                onClick={() => addToQueue(video)}
-                                style={{ padding: '8px 12px', borderRadius: '4px', border: '1px solid #1db954', background: 'transparent', color: '#1db954', cursor: 'pointer', fontWeight: 'bold' }}
-                              >
-                                + Queue
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                    {/* LEFT COLUMN: Switches between Search Results and History */}
+                    <div>
+                        {/* 1. SEARCH VIEW */}
+                        {view === 'search' && (
+                            <>
+                                {searchResults.length > 0 && (
+                                    <h2 style={{ borderBottom: '1px solid #333', paddingBottom: '10px', marginTop: 0 }}>Search Results</h2>
+                                )}
+                                <div style={{ display: 'grid', gap: '10px', marginTop: '10px' }}>
+                                    {searchResults.map(video => (
+                                        <div key={video.id} style={{ display: 'flex', gap: '10px', padding: '10px', borderBottom: '1px solid #eee', alignItems: 'center' }}>
+                                            <img src={video.thumbnail || video.image} style={{ width: 80, borderRadius: '4px', cursor: 'pointer' }} onClick={() => playTrack(video)} alt="thumbnail" />
+                                            <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => playTrack(video)}>
+                                                <div style={{ fontWeight: 'bold' }}>{video.title}</div>
+                                                <div style={{ fontSize: '12px', color: '#666' }}>{video.channelTitle || video.artist}</div>
+                                            </div>
+                                            <button 
+                                                onClick={() => addToQueue(video)}
+                                                style={{ padding: '8px 12px', borderRadius: '4px', border: '1px solid #1db954', background: 'transparent', color: '#1db954', cursor: 'pointer', fontWeight: 'bold' }}
+                                            >
+                                                + Queue
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        )}
 
-                      {/* QUEUE PANEL */}
-                      <div style={{ background: '#f9f9f9', padding: '15px', borderRadius: '8px', height: 'fit-content' }}>
+                        {/* 2. HISTORY VIEW */}
+                        {view === 'history' && (
+                            <>
+                                <h1 style={{ marginTop: 0, borderBottom: '1px solid #333', paddingBottom: '10px' }}>Recently Played</h1>
+                                {recentTracks.length === 0 ? (
+                                    <p style={{ color: '#888', fontStyle: 'italic' }}>Search for a song to start your history!</p>
+                                ) : (
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '15px', marginTop: '15px' }}>
+                                        {recentTracks.map((track, idx) => (
+                                            <div 
+                                                key={`history-${track.id}-${idx}`}
+                                                onClick={() => playTrack(track)}
+                                                style={{ background: '#181818', padding: '15px', borderRadius: '8px', cursor: 'pointer', transition: 'background 0.3s' }}
+                                                className="history-card"
+                                            >
+                                                <img src={track.image} alt={track.title} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '4px', marginBottom: '10px' }} />
+                                                <div style={{ fontWeight: 'bold', fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                    {track.title}
+                                                </div>
+                                                <div style={{ color: '#b3b3b3', fontSize: '12px', marginTop: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                    {track.channelTitle}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
+                      
+                    {/* RIGHT COLUMN: Up Next Queue (Persists across Search and History) */}
+                    <div style={{ background: '#f9f9f9', padding: '15px', borderRadius: '8px', height: 'fit-content' }}>
                         <h2 style={{ borderBottom: '1px solid #ddd', paddingBottom: '10px', marginTop: 0, color: 'black' }}>Up Next</h2>
                         
                         {queue && queue.length === 0 ? (
@@ -226,83 +355,103 @@ const handleViewPlaylist = async (playlist) => {
                             })}
                           </div>
                         )}
-                      </div>
                     </div>
+
                 </div>
             )}
 
+            {/* LIBRARY VIEW */}
+{/* LIBRARY VIEW */}
             {view === 'library' && (
                 <div className="library-view" style={{ padding: '20px' }}>
                     
                     {!selectedPlaylist ? (
                         <>
-                            <h1 style={{ marginTop: 0 }}>Your Library</h1>
-                            {playlists.length === 0 ? (
-                                <p style={{ color: '#0d0d0d', fontStyle: 'italic' }}>No playlists found in your library.</p>
-                            ) : (
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '20px', marginTop: '20px' }}>
-                                    {playlists.map(playlist => (
-                                        <div 
-                                            key={playlist.id} 
-                                            onClick={() => handleViewPlaylist(playlist)}
-                                            style={{ display: 'flex', gap: '15px', padding: '10px', background: '#605151', borderRadius: '8px', alignItems: 'center', cursor: 'pointer', border: '1px solid #eee' }}
-                                        >
-                                            <img src={playlist.thumbnail || playlist.image} style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: '4px' }} alt="thumbnail" />
-                                            <div>
-                                                <div style={{ fontWeight: 'bold' }}>{playlist.title}</div>
-                                                <div style={{ fontSize: '12px', color: '#666' }}>{playlist.itemCount} songs</div>
-                                            </div>
+                            {/* --- HEADER & DROPDOWN --- */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                                <h1 style={{ marginTop: 0, marginBottom: 0 }}>Your Library</h1>
+                                <select 
+                                    value={activeSource} 
+                                    onChange={(e) => setActiveSource(e.target.value)}
+                                    style={{ padding: '10px', borderRadius: '8px', background: '#333', color: 'white', border: 'none', outline: 'none', cursor: 'pointer', fontWeight: 'bold' }}
+                                >
+                                    <option value="custom">Custom Playlists</option>
+                                    <option value="youtube">YouTube Music</option>
+                                </select>
+                            </div>
+
+                            {/* --- CUSTOM PLAYLISTS GRID --- */}
+                            {activeSource === 'custom' && (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '20px' }}>
+                                    <div 
+                                        onClick={() => {/* Trigger Create Playlist Modal/Prompt */}}
+                                        style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: '#1db95420', borderRadius: '8px', cursor: 'pointer', border: '2px dashed #1db954', minHeight: '200px' }}
+                                    >
+                                        <span style={{ fontSize: '40px', color: '#1db954' }}>+</span>
+                                        <span style={{ color: '#1db954', fontWeight: 'bold' }}>Create Playlist</span>
+                                    </div>
+                                    
+                                    {customPlaylists?.map(playlist => (
+                                        <div key={`custom-${playlist.id}`} onClick={() => handleViewPlaylist(playlist, 'custom')} style={{ background: '#282828', padding: '15px', borderRadius: '8px', cursor: 'pointer' }}>
+                                            <img src={playlist.thumbnail || 'https://via.placeholder.com/150'} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '4px', marginBottom: '10px' }} alt="thumbnail" />
+                                            <div style={{ fontWeight: 'bold' }}>{playlist.name}</div>
+                                            <div style={{ fontSize: '12px', color: '#aaa' }}>{playlist.itemCount || 0} songs</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* --- YOUTUBE PLAYLISTS GRID --- */}
+                            {activeSource === 'youtube' && (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '20px' }}>
+                                    {(!playlists || playlists.length === 0) ? <p style={{ color: '#888' }}>No YouTube playlists found.</p> : null}
+                                    {playlists?.map(playlist => (
+                                        <div key={`yt-${playlist.id}`} onClick={() => handleViewPlaylist(playlist, 'youtube')} style={{ background: '#282828', padding: '15px', borderRadius: '8px', cursor: 'pointer' }}>
+                                            <img src={playlist.thumbnail || playlist.snippet?.thumbnails?.high?.url} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '4px', marginBottom: '10px' }}  alt="thumbnail" />
+                                            <div style={{ fontWeight: 'bold' }}>{playlist.title || playlist.snippet?.title}</div>
+                                            <div style={{ fontSize: '12px', color: '#aaa' }}>YouTube Music</div>
                                         </div>
                                     ))}
                                 </div>
                             )}
                         </>
-                    ) : (
+                    ) : selectedPlaylist ? ( // Added double-check here
                         <>
-
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '1px solid #eee', paddingBottom: '15px' }}>
-                                
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '1px solid #333', paddingBottom: '15px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                                     <button 
                                         onClick={() => setSelectedPlaylist(null)} 
-                                        style={{ background: '#eee', color: '#333', border: 'none', padding: '8px 15px', borderRadius: '20px', cursor: 'pointer', fontWeight: 'bold' }}
+                                        style={{ background: '#333', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '20px', cursor: 'pointer', fontWeight: 'bold' }}
                                     >
                                         ← Back
                                     </button>
-                                    <h2 style={{ margin: 0 }}>{selectedPlaylist.title}</h2>
+                                    {/* Added ? optional chaining below! */}
+                                    <h2 style={{ margin: 0 }}>{selectedPlaylist?.title || selectedPlaylist?.name || "Playlist"}</h2>
                                 </div>
                                 <button 
                                     onClick={handlePlayAll}
-                                    disabled={playlistTracks.length === 0}
+                                    disabled={!playlistTracks || playlistTracks.length === 0}
                                     style={{ 
-                                        background: '#1db954', 
-                                        color: 'white', 
-                                        border: 'none', 
-                                        padding: '10px 20px', 
-                                        borderRadius: '20px', 
-                                        cursor: playlistTracks.length === 0 ? 'not-allowed' : 'pointer', 
-                                        fontWeight: 'bold',
-                                        opacity: playlistTracks.length === 0 ? 0.5 : 1
+                                        background: '#1db954', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '20px', 
+                                        cursor: (!playlistTracks || playlistTracks.length === 0) ? 'not-allowed' : 'pointer', fontWeight: 'bold',
+                                        opacity: (!playlistTracks || playlistTracks.length === 0) ? 0.5 : 1
                                     }}
                                 >
                                     ▶ Play All
                                 </button>
-                                
                             </div>
                             
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                {playlistTracks.length === 0 ? (
+                                {!playlistTracks || playlistTracks.length === 0 ? (
                                     <div style={{ textAlign: 'center', padding: '20px', color: '#888' }}>Loading tracks...</div>
                                 ) : (
                                     playlistTracks.map((track, index) => (
-                                        <div key={`${track.id}-${index}`} style={{ display: 'flex', gap: '15px', padding: '10px', borderBottom: '1px solid #eee', alignItems: 'center' }}>
-                                            <img src={track.thumbnail || track.image} style={{ width: 50, borderRadius: '4px', cursor: 'pointer' }} onClick={() => playTrack(track)} />
-                                            
+                                        <div key={`${track.id}-${index}`} style={{ display: 'flex', gap: '15px', padding: '10px', borderBottom: '1px solid #333', alignItems: 'center' }}>
+                                            <img src={track.thumbnail || track.image} style={{ width: 50, borderRadius: '4px', cursor: 'pointer' }} onClick={() => playTrack(track)} alt="thumbnail" onError={(e) => { e.target.src = 'https://via.placeholder.com/50?text=🎵'; }}/>
                                             <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => playTrack(track)}>
                                                 <div style={{ fontWeight: 'bold' }}>{track.title}</div>
-                                                <div style={{ fontSize: '12px', color: '#666' }}>{track.channelTitle || track.artist}</div>
+                                                <div style={{ fontSize: '12px', color: '#aaa' }}>{track.channelTitle || track.artist}</div>
                                             </div>
-                                            
                                             <button 
                                                 onClick={() => addToQueue(track)}
                                                 style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #1db954', background: 'transparent', color: '#1db954', cursor: 'pointer', fontSize: '12px' }}
@@ -314,7 +463,7 @@ const handleViewPlaylist = async (playlist) => {
                                 )}
                             </div>
                         </>
-                    )}
+                    ) : null}
                 </div>
             )}
           </main>
@@ -379,7 +528,7 @@ const handleViewPlaylist = async (playlist) => {
                 </div>
               </div>
 
-            {/*  Volume Controls */}
+            {/* Volume Controls */}
              <div className="volume-container">
                  <button 
                      className={`sound-btn ${volume === 0 ? 'sound-mute' : ''}`} 
@@ -414,5 +563,6 @@ const handleViewPlaylist = async (playlist) => {
     </div>
   );
 }
+
 
 export default App;

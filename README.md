@@ -1,87 +1,64 @@
-# Music Manager
+# Hybrid Cross-Platform Music Manager
 
-A web-based music player application that integrates with YouTube to stream audio, manage playlists, and control playback queues. Built with Node.js, Express, and Vanilla JavaScript.
+A unified, full-stack music streaming application designed to bridge disparate music ecosystems. Currently built on top of the YouTube Data API v3 with a robust custom streaming pipeline, the application allows users to search, manage playlists, and stream audio through a highly optimized React frontend.
 
-## Features
+## Architecture & API Roadmap
 
-* **YouTube Integration:** Search for songs and stream audio directly from YouTube.
-* **User Library:** Log in with Google to access your YouTube Playlists and "Liked" videos.
-* **Smart Queue System:** Full "History" and "Up Next" queue management with shuffle-free navigation.
-* **Playback Controls:** Play, Pause, Next, Previous, and Queue management.
-* **Responsive UI:** Features a sidebar navigation and an expandable "Now Playing" drawer that reveals high-quality album art and the current queue.
-* **Authentication:** Secure OAuth2 login with auto-token refreshing.
+View the full system architecture, API data flow, and divergent streaming strategy diagram here:  
+**[Eraser.io Architecture Diagram](https://app.eraser.io/workspace/xs7pg6H8yMwvnJquAMfJ)**
 
-## Prerequisites
+## Key Features (Phase 2 Complete)
 
-Before running the application, ensure you have the following installed:
+### Advanced Playback Engine
+* **Gapless Preloading:** A hidden background engine listens for the `progress` event of the active track and silently preloads the next song in the queue into the browser's RAM, ensuring zero-latency, gapless transitions.
+* **Smart Audio Caching:** Dragging the seek bar calculates if the target timestamp exists in the browser's native `<audio>` buffer. If yes, it performs an instant "Native Seek" without hitting the server.
+* **OS Media Controls:** Full integration with the **Media Session API**. Control playback, skip tracks, and view album art directly from your Mac Control Center, Windows Media Overlay, or mobile lock screen.
 
-* [Node.js](https://nodejs.org/) (v14 or higher)
-* A Google Cloud Project with the **YouTube Data API v3** enabled.
+### Library & Queue Management
+* **My Library:** Authenticated OAuth users can fetch their personal YouTube playlists, view precise song counts, and drill down into playlist contents.
+* **Intelligent Shuffle:** Uses the Fisher-Yates algorithm to randomize the upcoming queue while perfectly retaining the currently playing song. Toggling shuffle off instantly restores the original playlist order.
+* **"Play All" & Queueing:** Instantly clear the queue and play a full playlist, or silently queue tracks up next.
 
-## Installation
+### Premium UI/UX
+* **Responsive Dashboard:** A dark-mode, edge-to-edge layout built with CSS Grid/Flexbox inspired by modern streaming giants.
+* **Custom SVG Controls:** Buttery smooth CSS transitions, hover states, and a fully custom SVG volume slider featuring animated sound waves that react to mute states.
 
-1.  **Clone the repository:**
+## Tech Stack
+
+**Frontend:**
+* React.js (Vite)
+* Context API (Global Audio & Queue State)
+* HTML5 Audio API (Native Buffering & Playback)
+
+**Backend:**
+* Node.js & Express
+* `yt-dlp` + `ffmpeg` (Raw audio extraction and ADTS streaming pipeline)
+* `googleapis` (Official YouTube Data v3 API for metadata)
+* OAuth 2.0 (Persistent background authentication)
+
+## Getting Started
+
+### Prerequisites
+* Node.js (v18+)
+* `ffmpeg` and `yt-dlp` installed on your system
+* Google Cloud Console Project with YouTube Data API v3 enabled and OAuth credentials
+
+### Installation
+1. Clone the repository.
+2. Install backend dependencies:
+   ```bash
+   cd server
+   npm install
+ 3. Install frontend dependencies:
     ```bash
-    git clone <your-repo-url>
-    cd <your-project-folder>
-    ```
-
-2.  **Install dependencies:**
-    ```bash
+    cd client
     npm install
-    ```
+4. Create a .env file in the root of the server directory with your Google API credentials and session secrets.
+5. Start the backend (npm start) and frontend (npm run dev).
 
-3.  **Setup yt-dlp:**
-    This project requires the `yt-dlp` binary to handle audio streaming.
-    * Create a folder named `bin` in the root of your project.
-    * Download the latest release of `yt-dlp` for your OS from [GitHub Releases](https://github.com/yt-dlp/yt-dlp/releases).
-    * **Windows:** Rename the file to `yt-dlp.exe` and place it in `/bin`.
-    * **Mac/Linux:** Rename the file to `yt-dlp`, place it in `/bin`, and run `chmod +x bin/yt-dlp`.
+6. Roadmap: Phase 3 (Upcoming)
+Backend Refactor: Decoupling routing from business logic (Transitioning to /routes, /controllers, and /services).
 
-4.  **Environment Configuration:**
-    Create a `.env` file in the root directory and add your Google API credentials:
+Database Integration: Provisioning PostgreSQL/MongoDB for persistent cross-platform playlist storage.
 
-    ```env
-    PORT=3000
-    GOOGLE_CLIENT_ID=your_google_client_id
-    GOOGLE_CLIENT_SECRET=your_google_client_secret
-    REDIRECT_URI=http://localhost:3000/auth/google/callback
-    ```
-
-## Usage
-
-1.  **Start the server:**
-    ```bash
-    npm start
-    ```
-
-2.  **Open the application:**
-    Open your browser and navigate to: `http://localhost:3000`
-
-3.  **Log In:**
-    Click the "Login with Google" button to authorize access to your YouTube account.
-
-## Project Structure
-
-* **`server.js`**: Main entry point for the Express server.
-* **`routes/`**: API route definitions (`auth.js`, `playlist.js`, `search.js`).
-* **`controllers/`**: Backend logic for handling API requests and streaming.
-* **`public/`**: Frontend assets.
-    * `index.html`: Main UI structure.
-    * `js/PlayerManager.js`: Core logic for queue, history, and UI state.
-    * `js/YouTubeAdapter.js`: Handles HTML5 audio playback.
-
-## Troubleshooting
-
-* **Audio not playing / "Spawn Error":**
-    Ensure the `yt-dlp` binary is in the `bin` folder and has the correct permissions.
-
-* **"Signature solving failed" (Console Log):**
-    YouTube updates their code frequently. If streams stop working, download the latest `yt-dlp` binary and replace the old one in your `bin` folder.
-
-* **"Invalid Authentication Credentials":**
-    If you see 401 errors, try logging out and logging back in. The application handles token refreshing automatically, but a clean login resolves most permission issues.
-
-## License
-
-[MIT](https://choosealicense.com/licenses/mit/)
+Spotify Integration: Implementing the Spotify Web Playback SDK to allow hybrid YouTube/Spotify queues.

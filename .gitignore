@@ -6,3 +6,7 @@ out/
 build/
 *.app
 Electron Framework
+*.sqlite
+*.sqlite3
+*.db
+database.sqlite

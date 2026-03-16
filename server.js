@@ -12,6 +12,7 @@ const searchController = require('./controllers/searchController');
 const playlistController = require('./controllers/playlistController');
 const historyController = require('./controllers/historyController');
 const streamingController = require('./controllers/streamingController');
+const YouTubeController = require('./controllers/YouTubeController');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -33,6 +34,9 @@ app.get('/search', authMiddleware, searchController.searchTracks);
 // YouTube Playlist Routes
 app.get('/playlists', authMiddleware, playlistController.getUserPlaylists);
 app.get('/playlists/:id/tracks', authMiddleware, playlistController.getPlaylistTracks);
+
+// YouTube Duration Route
+app.get('/duration', YouTubeController.getDuration);
 
 // Custom Playlist Routes (Local DB)
 app.get('/api/custom-playlists', playlistController.getCustomPlaylists);

@@ -38,23 +38,27 @@ function manageAudioCache(maxFiles = 50) {
     });
 }
 
-    const streamTrack = async (req, res) => {
+const streamTrack = async (req, res) => {
         const videoId = req.query.videoId;
+        if (!videoId || videoId === 'undefined') {
+            console.error("❌ [YouTube] Stream rejected: Missing videoId in request!");
+            return res.status(400).send("Missing videoId");
+        }
         const seekTime = Math.floor(Number(req.query.seek || 0)); 
 
         if (!videoId) return res.status(400).send("Missing videoId");
 
         console.log(`\n[YouTube] STREAM REQUEST: Video ${videoId} | Seek: ${seekTime}s`);
 
-        const filePath = path.join(cacheDir, `${videoId}.m4a`);
+        const finalFilePath = path.join(cacheDir, `${videoId}.mp3`);
+        const partFilePath = path.join(cacheDir, `${videoId}_${Date.now()}.part`);
 
-        if (fs.existsSync(filePath)) {
-            console.log(`[YouTube] Serving from local cache: ${videoId}`);
+        if (fs.existsSync(finalFilePath)) {
+            console.log(`[YouTube] Serving MP3 from local cache: ${videoId}`);
             const now = new Date();
-            fs.utimesSync(filePath, now, now);
-            return res.sendFile(filePath); 
+            fs.utimesSync(finalFilePath, now, now);
+            return res.sendFile(finalFilePath); 
         }
-
         console.log(`[YouTube] Not in cache. Downloading and streaming: ${videoId}`);
         const args = ['-g', `https://www.youtube.com/watch?v=${videoId}`];
 
@@ -73,43 +77,87 @@ function manageAudioCache(maxFiles = 50) {
                 '-ss', seekTime.toString(),      
                 '-i', audioUrl,      
                 '-vn',
-                '-c:a', 'aac',        
+                '-c:a', 'libmp3lame',        
                 '-b:a', '128k',          
-                '-f', 'adts',        
+                '-f', 'mp3',        
                 '-'                  
             ];
 
             const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs);
+            
             ffmpegProcess.on('error', (err) => {
-                console.error(`[YouTube] Failed to start FFmpeg. Is it installed?`, err.message);
-                if (!res.headersSent) {
-                    res.status(500).send("Audio processor missing (FFmpeg).");
-                }
+                console.error(`[YouTube] Failed to start FFmpeg.`, err.message);
+                if (!res.headersSent) res.status(500).send("Audio processor missing.");
             });
-            res.setHeader('Content-Type', 'audio/aac');
+
+            res.setHeader('Content-Type', 'audio/mpeg');
             res.setHeader('Transfer-Encoding', 'chunked');
+
             ffmpegProcess.stdout.pipe(res);
-            const fileStream = fs.createWriteStream(filePath);
-            ffmpegProcess.stdout.pipe(fileStream);
+            const uniquePartId = `${videoId}_${Date.now()}.part`;
+            const partFilePath = path.join(cacheDir, uniquePartId);
+            let fileStream = null;
+            if (seekTime === 0) {
+                fileStream = fs.createWriteStream(partFilePath);
+                ffmpegProcess.stdout.pipe(fileStream);
+            }
+
             ffmpegProcess.stderr.on('data', (data) => {
                 const msg = data.toString();
                 if (msg.includes('Error') || msg.includes('Invalid')) {
                     console.error(`[YouTube] FFmpeg Error: ${msg}`);
                 }
             });
-
-            req.on('close', (code) => {
-                if (code === 0) {
-                    console.log(`[YouTube] Successfully cached: ${videoId}`);
-                     manageAudioCache(50); 
-                } else {
-                    console.error(`[YouTube] Process exited with code ${code}`);
-                    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            req.isAborted = false;
+            req.on('close', () => {
+                console.log(`[YouTube] Client paused connection. Letting FFmpeg finish caching in background...`);
+                ffmpegProcess.stdout.unpipe(res);
+            });
+            ffmpegProcess.on('close', (code) => {
+                if (fileStream) {
+                    fileStream.end();
+                    
+                    setTimeout(() => {
+                        if (fs.existsSync(partFilePath)) {
+                            const stats = fs.statSync(partFilePath);
+                            if (code === 0 && stats.size > 100000) {
+                                console.log(`[YouTube] Download complete. Caching: ${videoId}`);
+                                if (!fs.existsSync(finalFilePath)) {
+                                    fs.renameSync(partFilePath, finalFilePath);
+                                    manageAudioCache(50); 
+                                } else {
+                                    fs.unlinkSync(partFilePath);
+                                }
+                            } else {
+                                console.log(`[YouTube] Trashing broken stream (Code: ${code}, Size: ${stats.size} bytes).`);
+                                fs.unlinkSync(partFilePath);
+                            }
+                        }
+                    }, 250);
                 }
-                ffmpegProcess.kill('SIGKILL');
             });
         });
     }
 
+    const getDuration = (req, res) => {
+        const videoId = req.query.videoId;
+        if (!videoId){
+            console.error("❌ [YouTube] Duration rejected: Missing videoId in request!");
+            return res.status(400).send("Missing videoId");
+        }
 
-module.exports = { streamTrack };
+        const args = ['--print', 'duration', `https://www.youtube.com/watch?v=${videoId}`];
+        
+        execFile(ytDlpPath, args, (error, stdout) => {
+            if (error) {
+                console.error("[YouTube] Failed to fetch duration:", error);
+                return res.status(500).json({ duration: 0 });
+            }
+
+            const durationInSeconds = parseInt(stdout.trim(), 10);
+            res.json({ duration: durationInSeconds });
+        });
+    };
+
+
+module.exports = { streamTrack, getDuration };

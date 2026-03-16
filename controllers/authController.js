@@ -24,7 +24,13 @@ const googleCallback = async (req, res) => {
     const { code } = req.query;
     try {
         const { tokens } = await oauth2Client.getToken(code);
-        // We don't strictly need to setCredentials here if we recreate the client statelessly later
+        
+
+        if (!tokens || !tokens.access_token) {
+            console.error('Google did not return an access token.');
+            return res.status(400).send("Authentication failed: No access token provided by Google.");
+        }
+
         res.redirect(`http://localhost:5173?access_token=${tokens.access_token}`);
     } catch (error) {
         console.error('Error retrieving access token', error);

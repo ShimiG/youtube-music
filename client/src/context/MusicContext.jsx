@@ -18,21 +18,33 @@ export const MusicProvider = ({ children }) => {
     const audioRef = useRef(new Audio());
     const preloadAudioRef = useRef(new Audio());
     const hasPreloadedNext = useRef(false);
+    const playStartTime = useRef(0);
     
     
     const loadAudio = useCallback((track) => {
+        playStartTime.current = Date.now();
         setCurrentTrack(track);
         setIsLoading(true); 
         setOffset.current = 0; 
         setCurrentTime(0);
         hasPreloadedNext.current = false;
+        setDuration(0);
+        const safeId = track.id || track.videoId;
         if (track.duration) {
             setDuration(track.duration);
         } else {
-            setDuration(0);
+            fetch(`http://localhost:3000/duration?videoId=${safeId}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.duration) {
+                        setDuration(data.duration);
+                        track.duration = data.duration; 
+                    }
+                })
+                .catch(err => console.error("Failed to fetch true duration:", err));
         }
         const googleId = localStorage.getItem('googleId');
-        
+        console.log("🕵️ Checking Google ID before saving history:", googleId);
         if (googleId) {
             fetch('http://localhost:3000/history', {
                 method: 'POST',
@@ -51,9 +63,9 @@ export const MusicProvider = ({ children }) => {
             }).catch(err => console.error("Failed to log history:", err));
         }
         
-        const streamUrl = `http://localhost:3000/stream?videoId=${track.id}`;
+        const streamUrl = `http://localhost:3000/stream?videoId=${safeId}`;
         audioRef.current.src = streamUrl;
-        audioRef.current.load();
+
         
         audioRef.current.play()
             .then(() => setIsPlaying(true))
@@ -66,6 +78,7 @@ export const MusicProvider = ({ children }) => {
     const playTrack = useCallback((track) => {
         if (currentTrack?.id !== track.id) {
             setQueue([track]); 
+            setDuration(0);
             setQueueIndex(0);
             setIsShuffle(false);
             loadAudio(track);
@@ -188,10 +201,12 @@ const seek = useCallback((time) => {
         const targetInternalTime = cleanTime - setOffset.current;
 
         let isBuffered = false;
-        for (let i = 0; i < audio.buffered.length; i++) {
-            if (targetInternalTime >= audio.buffered.start(i) && targetInternalTime <= audio.buffered.end(i)) {
-                isBuffered = true;
-                break;
+        if (targetInternalTime >= 0) {
+            for (let i = 0; i < audio.buffered.length; i++) {
+                if (targetInternalTime >= audio.buffered.start(i) && targetInternalTime <= audio.buffered.end(i)) {
+                    isBuffered = true;
+                    break;
+                }
             }
         }
 
@@ -203,11 +218,11 @@ const seek = useCallback((time) => {
             setOffset.current = cleanTime; 
             setIsLoading(true);
 
-            const streamUrl = `http://localhost:3000/stream?videoId=${currentTrack.id}&seek=${cleanTime}`;
+            const safeId = currentTrack.id || currentTrack.videoId;
+            const streamUrl = `http://localhost:3000/stream?videoId=${safeId}&seek=${cleanTime}`;
             
             audio.pause();
             audio.src = streamUrl;
-            audio.load();
             
             audio.play()
                 .then(() => setIsPlaying(true))
@@ -222,11 +237,21 @@ const seek = useCallback((time) => {
     useEffect(() => {
         const audio = audioRef.current;
 
-        const handleEnded = () => playNext();
+        const handleEnded = () => {
+            const expectedDuration = duration || 0;
+            const actualTime = audio.currentTime || 0;
+            
+            if (expectedDuration > 0 && actualTime < (expectedDuration - 3)) {
+                console.error(`Stream dropped prematurely at ${actualTime}s / ${expectedDuration}s. Halting queue to prevent infinite loop.`);
+                setIsPlaying(false);
+                setIsLoading(false);
+                return; 
+            }
+            playNext();
+        };
         const handleWaiting = () => setIsLoading(true);   
         const handlePlaying = () => setIsLoading(false);  
         const handleCanPlay = () => setIsLoading(false);  
-        const handleSeek = () => setOffset.current=seek;
         const handleTimeUpdate = () => {
             const time = audio.currentTime;
             if (!isNaN(time)) {
@@ -235,9 +260,15 @@ const seek = useCallback((time) => {
             }
         };
         const handleLoadedMetadata = () => {
-            const d = audio.duration;
-            if (!isNaN(d) && d !== Infinity && d > 0) {
-                setDuration(d);
+            if (audio) {
+                const rawDuration = audio.duration;
+                if (Number.isFinite(rawDuration) && rawDuration > 0) {
+                    setDuration((prevDuration) => prevDuration > 0 ? prevDuration : rawDuration);
+                } else if (currentTrack?.duration) {
+                    setDuration(currentTrack.duration);
+                } else {
+                    setDuration(0);
+                }
             }
         };
         const handleProgress = () => {
@@ -254,15 +285,20 @@ const seek = useCallback((time) => {
                 }
             }
         };
+        const handleError = (e) => {
+            console.error("Native Audio Element Error:", e);
+            setIsLoading(false);
+            setIsPlaying(false);
+        };
         audio.addEventListener('ended', handleEnded);
         audio.addEventListener('waiting', handleWaiting);
         audio.addEventListener('playing', handlePlaying);
         audio.addEventListener('canplay', handleCanPlay);
         audio.addEventListener('timeupdate', handleTimeUpdate);
         audio.addEventListener('loadedmetadata', handleLoadedMetadata);
-        audio.addEventListener('seekoffset', handleSeek);
         audio.addEventListener('durationchange', handleLoadedMetadata);
         audio.addEventListener('progress', handleProgress);
+        audio.addEventListener('error', handleError);
         return () => {
             audio.removeEventListener('ended', handleEnded);
             audio.removeEventListener('waiting', handleWaiting);
@@ -270,11 +306,11 @@ const seek = useCallback((time) => {
             audio.removeEventListener('canplay', handleCanPlay);
             audio.removeEventListener('timeupdate', handleTimeUpdate);
             audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
-            audio.removeEventListener('seekoffset', handleSeek);
             audio.removeEventListener('durationchange', handleLoadedMetadata);
             audio.removeEventListener('progress', handleProgress);
+            audio.removeEventListener('error', handleError);
         };
-    }, [playNext, setOffset, seek, queue, queueIndex]);
+    }, [playNext, setOffset, seek, queue, queueIndex, duration, currentTrack]);
 
     useEffect(() => {
         if ('mediaSession' in navigator && currentTrack) {

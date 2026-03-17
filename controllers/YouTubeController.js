@@ -7,6 +7,7 @@ const ffmpegPath = require('ffmpeg-static');
 const ytDlpPath = path.join(__dirname, '../bin', isWindows ? 'yt-dlp.exe' : 'yt-dlp_macos');
 
 const resolvedCacheDir = path.resolve(cacheDir);
+const MAX_SEEK_SECONDS = 24 * 60 * 60; // 24 hours, adjust as needed
 
 if (!fs.existsSync(cacheDir)) {
     fs.mkdirSync(cacheDir, { recursive: true });
@@ -57,7 +58,20 @@ const streamTrack = async (req, res) => {
             return res.status(400).send("Invalid videoId");
         }
 
-        const seekTime = Math.floor(Number(req.query.seek || 0)); 
+        const rawSeek = req.query.seek;
+        let seekTime = 0;
+        if (rawSeek !== undefined) {
+            const parsedSeek = Number(rawSeek);
+            if (!Number.isFinite(parsedSeek)) {
+                console.error("❌ [YouTube] Stream rejected: Non-numeric seek parameter!");
+                return res.status(400).send("Invalid seek parameter");
+            }
+            seekTime = Math.floor(parsedSeek);
+            if (seekTime < 0 || seekTime > MAX_SEEK_SECONDS) {
+                console.error(`❌ [YouTube] Stream rejected: Out-of-range seek parameter (${seekTime})!`);
+                return res.status(400).send("Invalid seek parameter");
+            }
+        }
 
         console.log(`\n[YouTube] STREAM REQUEST: Video ${videoId} | Seek: ${seekTime}s`);
 

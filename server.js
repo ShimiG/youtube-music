@@ -5,6 +5,7 @@ require('dotenv').config();
 // --- IMPORT CONFIG & MIDDLEWARE ---
 const initDB = require('./config/db');
 const authMiddleware = require('./middleware/auth');
+const rateLimit = require('express-rate-limit');
 
 // --- IMPORT CONTROLLERS ---
 const authController = require('./controllers/authController');
@@ -16,6 +17,12 @@ const YouTubeController = require('./controllers/YouTubeController');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Rate limiter for duration endpoint (expensive system command)
+const durationLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 30, // limit each IP to 30 requests per windowMs
+});
 
 app.use(cors());
 app.use(express.json());
@@ -36,7 +43,7 @@ app.get('/playlists', authMiddleware, playlistController.getUserPlaylists);
 app.get('/playlists/:id/tracks', authMiddleware, playlistController.getPlaylistTracks);
 
 // YouTube Duration Route
-app.get('/duration', YouTubeController.getDuration);
+app.get('/duration', durationLimiter, YouTubeController.getDuration);
 
 // Custom Playlist Routes (Local DB)
 app.get('/api/custom-playlists', playlistController.getCustomPlaylists);

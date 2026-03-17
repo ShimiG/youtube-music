@@ -140,10 +140,13 @@ const streamTrack = async (req, res) => {
             ffmpegProcess.stdout.pipe(res);
             const safeVideoId = toSafeFilenameComponent(videoId);
             const uniquePartId = `${safeVideoId}_${Date.now()}.part`;
-            const partFilePath = path.join(cacheDir, uniquePartId);
+            const candidatePartPath = path.resolve(cacheDir, uniquePartId);
+            const safePartFilePath = candidatePartPath.startsWith(resolvedCacheDir + path.sep)
+                ? candidatePartPath
+                : null;
             let fileStream = null;
-            if (seekTime === 0) {
-                fileStream = fs.createWriteStream(partFilePath);
+            if (seekTime === 0 && safePartFilePath) {
+                fileStream = fs.createWriteStream(safePartFilePath);
                 ffmpegProcess.stdout.pipe(fileStream);
             }
 
@@ -163,19 +166,19 @@ const streamTrack = async (req, res) => {
                     fileStream.end();
                     
                     setTimeout(() => {
-                        if (fs.existsSync(partFilePath)) {
-                            const stats = fs.statSync(partFilePath);
+                        if (safePartFilePath && fs.existsSync(safePartFilePath)) {
+                            const stats = fs.statSync(safePartFilePath);
                             if (code === 0 && stats.size > 100000) {
                                 console.log(`[YouTube] Download complete. Caching: ${videoId}`);
                                 if (!fs.existsSync(finalFilePath)) {
-                                    fs.renameSync(partFilePath, finalFilePath);
+                                    fs.renameSync(safePartFilePath, finalFilePath);
                                     manageAudioCache(50); 
                                 } else {
-                                    fs.unlinkSync(partFilePath);
+                                    fs.unlinkSync(safePartFilePath);
                                 }
                             } else {
                                 console.log(`[YouTube] Trashing broken stream (Code: ${code}, Size: ${stats.size} bytes).`);
-                                fs.unlinkSync(partFilePath);
+                                fs.unlinkSync(safePartFilePath);
                             }
                         }
                     }, 250);

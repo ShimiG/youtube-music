@@ -6,8 +6,15 @@ const isWindows = process.platform === 'win32';
 const ffmpegPath = require('ffmpeg-static');
 const ytDlpPath = path.join(__dirname, '../bin', isWindows ? 'yt-dlp.exe' : 'yt-dlp_macos');
 
+const resolvedCacheDir = path.resolve(cacheDir);
+
 if (!fs.existsSync(cacheDir)) {
     fs.mkdirSync(cacheDir, { recursive: true });
+}
+
+function isValidVideoId(videoId) {
+    // Allow only URL-safe characters typically used in YouTube IDs, with a sane length limit
+    return typeof videoId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(videoId);
 }
 
 function manageAudioCache(maxFiles = 50) {
@@ -44,14 +51,23 @@ const streamTrack = async (req, res) => {
             console.error("❌ [YouTube] Stream rejected: Missing videoId in request!");
             return res.status(400).send("Missing videoId");
         }
-        const seekTime = Math.floor(Number(req.query.seek || 0)); 
 
-        if (!videoId) return res.status(400).send("Missing videoId");
+        if (!isValidVideoId(videoId)) {
+            console.error("❌ [YouTube] Stream rejected: Invalid videoId format!");
+            return res.status(400).send("Invalid videoId");
+        }
+
+        const seekTime = Math.floor(Number(req.query.seek || 0)); 
 
         console.log(`\n[YouTube] STREAM REQUEST: Video ${videoId} | Seek: ${seekTime}s`);
 
-        const finalFilePath = path.join(cacheDir, `${videoId}.mp3`);
-        const partFilePath = path.join(cacheDir, `${videoId}_${Date.now()}.part`);
+        const finalFilePath = path.resolve(resolvedCacheDir, `${videoId}.mp3`);
+        const partFilePath = path.resolve(resolvedCacheDir, `${videoId}_${Date.now()}.part`);
+
+        if (!finalFilePath.startsWith(resolvedCacheDir) || !partFilePath.startsWith(resolvedCacheDir)) {
+            console.error("❌ [YouTube] Stream rejected: Computed file path escaped cache directory!");
+            return res.status(400).send("Invalid videoId");
+        }
 
         if (fs.existsSync(finalFilePath)) {
             console.log(`[YouTube] Serving MP3 from local cache: ${videoId}`);
@@ -144,6 +160,11 @@ const streamTrack = async (req, res) => {
         if (!videoId){
             console.error("❌ [YouTube] Duration rejected: Missing videoId in request!");
             return res.status(400).send("Missing videoId");
+        }
+
+        if (!isValidVideoId(videoId)) {
+            console.error("❌ [YouTube] Duration rejected: Invalid videoId format!");
+            return res.status(400).send("Invalid videoId");
         }
 
         const args = ['--print', 'duration', `https://www.youtube.com/watch?v=${videoId}`];

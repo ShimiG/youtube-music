@@ -9,6 +9,20 @@ const ytDlpPath = path.join(__dirname, '../bin', isWindows ? 'yt-dlp.exe' : 'yt-
 const resolvedCacheDir = path.resolve(cacheDir);
 const MAX_SEEK_SECONDS = 24 * 60 * 60; // 24 hours, adjust as needed
 
+/**
+ * Derive a safe filename component from a videoId by allowing only
+ * alphanumeric characters, dash and underscore, and trimming length.
+ */
+function toSafeFilenameComponent(videoId) {
+    if (typeof videoId !== 'string') {
+        return 'unknown';
+    }
+    // Replace any disallowed character with underscore
+    const sanitized = videoId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    // Limit length to avoid excessively long filenames
+    return sanitized.substring(0, 64) || 'unknown';
+}
+
 if (!fs.existsSync(cacheDir)) {
     fs.mkdirSync(cacheDir, { recursive: true });
 }
@@ -124,7 +138,8 @@ const streamTrack = async (req, res) => {
             res.setHeader('Transfer-Encoding', 'chunked');
 
             ffmpegProcess.stdout.pipe(res);
-            const uniquePartId = `${videoId}_${Date.now()}.part`;
+            const safeVideoId = toSafeFilenameComponent(videoId);
+            const uniquePartId = `${safeVideoId}_${Date.now()}.part`;
             const partFilePath = path.join(cacheDir, uniquePartId);
             let fileStream = null;
             if (seekTime === 0) {

@@ -9,8 +9,8 @@
     "client": "npm run dev --prefix client",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "build:server:win": "pkg ./server.js --target node18-win-x64 --output ./bin/music-server-x86_64-pc-windows-msvc.exe",
-    "build:server:mac": "pkg ./server.js --target node18-macos-x64 --output ./bin/music-server-x86_64-apple-darwin",
-    "build:all": "npm run build:server:win && npm run build:server:mac && cd client && npm run build",
+    "build:server:mac": "pkg ./server.js --target node18-macos-arm64 --output ./bin/music-server-aarch64-apple-darwin",
+    "build:all": "npm run build:server:win && npm run build:server:mac && cd client",
     "tauri:build": "npm run build:all && tauri build",
     "test": "jest",
     "test:watch": "jest --watchAll"
@@ -36,6 +36,7 @@
     "concurrently": "^9.2.1",
     "husky": "^9.1.7",
     "jest": "^30.2.0",
+    "pkg": "^5.8.1",
     "supertest": "^7.2.2"
   },
   "pkg": {

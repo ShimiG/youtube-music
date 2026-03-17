@@ -6,7 +6,6 @@ describe('Sanity Checks', () => {
     it('GET / should return 200 and serve JSON status', async () => {
         const res = await request(app).get('/');
         expect(res.statusCode).toEqual(200);
-        // Updated to expect JSON instead of HTML
         expect(res.header['content-type']).toContain('application/json');
         expect(res.body.status).toEqual('Running');
     });
@@ -39,7 +38,6 @@ describe('Database API Security Checks', () => {
 });
 
 describe('Tauri Sidecar Integration', () => {
-    // Updated to use the virtual 'app' instead of API_URL
     it('Should establish connection to the Node sidecar', async () => {
         const res = await request(app).get('/test');
         expect(res.statusCode).toEqual(200);

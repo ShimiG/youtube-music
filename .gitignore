@@ -10,3 +10,4 @@ Electron Framework
 *.sqlite3
 *.db
 database.sqlite
+bin/

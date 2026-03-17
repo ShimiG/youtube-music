@@ -6,8 +6,30 @@ const isWindows = process.platform === 'win32';
 const ffmpegPath = require('ffmpeg-static');
 const ytDlpPath = path.join(__dirname, '../bin', isWindows ? 'yt-dlp.exe' : 'yt-dlp_macos');
 
+const resolvedCacheDir = path.resolve(cacheDir);
+const MAX_SEEK_SECONDS = 24 * 60 * 60; // 24 hours, adjust as needed
+
+/**
+ * Derive a safe filename component from a videoId by allowing only
+ * alphanumeric characters, dash and underscore, and trimming length.
+ */
+function toSafeFilenameComponent(videoId) {
+    if (typeof videoId !== 'string') {
+        return 'unknown';
+    }
+    // Replace any disallowed character with underscore
+    const sanitized = videoId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    // Limit length to avoid excessively long filenames
+    return sanitized.substring(0, 64) || 'unknown';
+}
+
 if (!fs.existsSync(cacheDir)) {
     fs.mkdirSync(cacheDir, { recursive: true });
+}
+
+function isValidVideoId(videoId) {
+    // Allow only URL-safe characters typically used in YouTube IDs, with a sane length limit
+    return typeof videoId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(videoId);
 }
 
 function manageAudioCache(maxFiles = 50) {
@@ -38,23 +60,49 @@ function manageAudioCache(maxFiles = 50) {
     });
 }
 
-    const streamTrack = async (req, res) => {
+const streamTrack = async (req, res) => {
         const videoId = req.query.videoId;
-        const seekTime = Math.floor(Number(req.query.seek || 0)); 
+        if (!videoId || videoId === 'undefined') {
+            console.error("❌ [YouTube] Stream rejected: Missing videoId in request!");
+            return res.status(400).send("Missing videoId");
+        }
 
-        if (!videoId) return res.status(400).send("Missing videoId");
+        if (!isValidVideoId(videoId)) {
+            console.error("❌ [YouTube] Stream rejected: Invalid videoId format!");
+            return res.status(400).send("Invalid videoId");
+        }
+
+        const rawSeek = req.query.seek;
+        let seekTime = 0;
+        if (rawSeek !== undefined) {
+            const parsedSeek = Number(rawSeek);
+            if (!Number.isFinite(parsedSeek)) {
+                console.error("❌ [YouTube] Stream rejected: Non-numeric seek parameter!");
+                return res.status(400).send("Invalid seek parameter");
+            }
+            seekTime = Math.floor(parsedSeek);
+            if (seekTime < 0 || seekTime > MAX_SEEK_SECONDS) {
+                console.error(`❌ [YouTube] Stream rejected: Out-of-range seek parameter (${seekTime})!`);
+                return res.status(400).send("Invalid seek parameter");
+            }
+        }
 
         console.log(`\n[YouTube] STREAM REQUEST: Video ${videoId} | Seek: ${seekTime}s`);
 
-        const filePath = path.join(cacheDir, `${videoId}.m4a`);
+        const finalFilePath = path.resolve(resolvedCacheDir, `${videoId}.mp3`);
+        const partFilePath = path.resolve(resolvedCacheDir, `${videoId}_${Date.now()}.part`);
 
-        if (fs.existsSync(filePath)) {
-            console.log(`[YouTube] Serving from local cache: ${videoId}`);
-            const now = new Date();
-            fs.utimesSync(filePath, now, now);
-            return res.sendFile(filePath); 
+        if (!finalFilePath.startsWith(resolvedCacheDir) || !partFilePath.startsWith(resolvedCacheDir)) {
+            console.error("❌ [YouTube] Stream rejected: Computed file path escaped cache directory!");
+            return res.status(400).send("Invalid videoId");
         }
 
+        if (fs.existsSync(finalFilePath)) {
+            console.log(`[YouTube] Serving MP3 from local cache: ${videoId}`);
+            const now = new Date();
+            fs.utimesSync(finalFilePath, now, now);
+            return res.sendFile(finalFilePath); 
+        }
         console.log(`[YouTube] Not in cache. Downloading and streaming: ${videoId}`);
         const args = ['-g', `https://www.youtube.com/watch?v=${videoId}`];
 
@@ -73,43 +121,96 @@ function manageAudioCache(maxFiles = 50) {
                 '-ss', seekTime.toString(),      
                 '-i', audioUrl,      
                 '-vn',
-                '-c:a', 'aac',        
+                '-c:a', 'libmp3lame',        
                 '-b:a', '128k',          
-                '-f', 'adts',        
+                '-f', 'mp3',        
                 '-'                  
             ];
 
             const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs);
+            
             ffmpegProcess.on('error', (err) => {
-                console.error(`[YouTube] Failed to start FFmpeg. Is it installed?`, err.message);
-                if (!res.headersSent) {
-                    res.status(500).send("Audio processor missing (FFmpeg).");
-                }
+                console.error(`[YouTube] Failed to start FFmpeg.`, err.message);
+                if (!res.headersSent) res.status(500).send("Audio processor missing.");
             });
-            res.setHeader('Content-Type', 'audio/aac');
+
+            res.setHeader('Content-Type', 'audio/mpeg');
             res.setHeader('Transfer-Encoding', 'chunked');
+
             ffmpegProcess.stdout.pipe(res);
-            const fileStream = fs.createWriteStream(filePath);
-            ffmpegProcess.stdout.pipe(fileStream);
+            const safeVideoId = toSafeFilenameComponent(videoId);
+            const uniquePartId = `${safeVideoId}_${Date.now()}.part`;
+            const candidatePartPath = path.resolve(cacheDir, uniquePartId);
+            const safePartFilePath = candidatePartPath.startsWith(resolvedCacheDir + path.sep)
+                ? candidatePartPath
+                : null;
+            let fileStream = null;
+            if (seekTime === 0 && safePartFilePath) {
+                fileStream = fs.createWriteStream(safePartFilePath);
+                ffmpegProcess.stdout.pipe(fileStream);
+            }
+
             ffmpegProcess.stderr.on('data', (data) => {
                 const msg = data.toString();
                 if (msg.includes('Error') || msg.includes('Invalid')) {
                     console.error(`[YouTube] FFmpeg Error: ${msg}`);
                 }
             });
-
-            req.on('close', (code) => {
-                if (code === 0) {
-                    console.log(`[YouTube] Successfully cached: ${videoId}`);
-                     manageAudioCache(50); 
-                } else {
-                    console.error(`[YouTube] Process exited with code ${code}`);
-                    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            req.isAborted = false;
+            req.on('close', () => {
+                console.log(`[YouTube] Client paused connection. Letting FFmpeg finish caching in background...`);
+                ffmpegProcess.stdout.unpipe(res);
+            });
+            ffmpegProcess.on('close', (code) => {
+                if (fileStream) {
+                    fileStream.end();
+                    
+                    setTimeout(() => {
+                        if (safePartFilePath && fs.existsSync(safePartFilePath)) {
+                            const stats = fs.statSync(safePartFilePath);
+                            if (code === 0 && stats.size > 100000) {
+                                console.log(`[YouTube] Download complete. Caching: ${videoId}`);
+                                if (!fs.existsSync(finalFilePath)) {
+                                    fs.renameSync(safePartFilePath, finalFilePath);
+                                    manageAudioCache(50); 
+                                } else {
+                                    fs.unlinkSync(safePartFilePath);
+                                }
+                            } else {
+                                console.log(`[YouTube] Trashing broken stream (Code: ${code}, Size: ${stats.size} bytes).`);
+                                fs.unlinkSync(safePartFilePath);
+                            }
+                        }
+                    }, 250);
                 }
-                ffmpegProcess.kill('SIGKILL');
             });
         });
     }
 
+    const getDuration = (req, res) => {
+        const videoId = req.query.videoId;
+        if (!videoId){
+            console.error("❌ [YouTube] Duration rejected: Missing videoId in request!");
+            return res.status(400).send("Missing videoId");
+        }
 
-module.exports = { streamTrack };
+        if (!isValidVideoId(videoId)) {
+            console.error("❌ [YouTube] Duration rejected: Invalid videoId format!");
+            return res.status(400).send("Invalid videoId");
+        }
+
+        const args = ['--print', 'duration', `https://www.youtube.com/watch?v=${videoId}`];
+        
+        execFile(ytDlpPath, args, (error, stdout) => {
+            if (error) {
+                console.error("[YouTube] Failed to fetch duration:", error);
+                return res.status(500).json({ duration: 0 });
+            }
+
+            const durationInSeconds = parseInt(stdout.trim(), 10);
+            res.json({ duration: durationInSeconds });
+        });
+    };
+
+
+module.exports = { streamTrack, getDuration };

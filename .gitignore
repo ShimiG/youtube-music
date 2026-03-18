@@ -11,3 +11,4 @@ Electron Framework
 *.db
 database.sqlite
 bin/
+cache/

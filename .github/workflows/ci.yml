@@ -1,6 +1,5 @@
 name: CI - Build & Test
 
-# Trigger on Push (to main) OR Pull Request (any branch)
 on:
   push:
     branches: [ main ]
@@ -18,17 +17,15 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: 22
+        node-version: 18
         cache: 'npm'
 
     - name: Install Dependencies
       run: npm ci
 
-    # 1. RUN UNIT TESTS
     - name: Run Tests
       run: npm test
 
-    # 2. VERIFY BUILD
     - name: Install Pkg
       run: npm install -g pkg
 

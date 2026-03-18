@@ -212,7 +212,7 @@ const getCustomPlaylistTracks = async (req, res) => {
             JOIN tracks t ON pt.track_id = t.id
             JOIN sources s ON t.source_id = s.id
             WHERE pt.playlist_id = ?
-            ORDER BY pt.sort_order ASC, pt.added_at ASC
+            ORDER BY pt.sort_order ASC
         `, [playlistId]);
         
         res.json(tracks);

@@ -12,7 +12,7 @@ app.locals.db = mockDb;
 describe('Custom Playlist API Endpoints', () => {
   
     beforeEach(() => {
-        jest.clearAllMocks();
+        jest.resetAllMocks();
     });
 
     describe('POST /api/custom-playlists', () => {
@@ -22,7 +22,7 @@ describe('Custom Playlist API Endpoints', () => {
 
             const res = await request(app)
                 .post('/api/custom-playlists')
-                .set('x-google-id', 'test-google-id')
+                .set('x-user-id', '1')
                 .send({ name: 'Coding Focus', thumbnail: 'http://image.com/img.jpg' });
 
             expect(res.statusCode).toEqual(201);
@@ -35,7 +35,7 @@ describe('Custom Playlist API Endpoints', () => {
 
             const res = await request(app)
                 .post('/api/custom-playlists')
-                .set('x-google-id', 'unknown-user-id')
+                .set('x-user-id', '1')
                 .send({ name: 'Ghost Playlist' });
 
             expect(res.statusCode).toEqual(404);
@@ -53,7 +53,7 @@ describe('Custom Playlist API Endpoints', () => {
 
             const res = await request(app)
                 .get('/api/custom-playlists')
-                .set('x-google-id', 'test-google-id');
+                .set('x-user-id', '1');
 
             expect(res.statusCode).toEqual(200);
             expect(res.body).toHaveLength(2);

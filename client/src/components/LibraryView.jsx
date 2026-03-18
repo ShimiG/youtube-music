@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { PlaylistCard, TrackRow } from './SharedUI';
-import { useMusic } from '../context/hook'; // Adjust path if necessary
+import { useMusic } from '../context/hook'; 
 
 export default function LibraryView() {
-    // Bring in the player context so we can play tracks directly from here
     const { playTrack, addToQueue } = useMusic();
 
     // Local State
@@ -13,15 +12,14 @@ export default function LibraryView() {
     
     const [customPlaylists, setCustomPlaylists] = useState([]);
     const [youtubePlaylists, setYoutubePlaylists] = useState([]);
-    
+    const [youtubeError, setYoutubeError] = useState(null);
     const [selectedPlaylist, setSelectedPlaylist] = useState(null);
     const [playlistTracks, setPlaylistTracks] = useState([]);
 
-    // 1. Fetch Connected Sources (from your abandoned file logic)
     useEffect(() => {
-        const googleId = localStorage.getItem('googleId');
-        if (googleId) {
-            fetch('http://localhost:3000/api/user/connections', { headers: { 'x-google-id': googleId } })
+        const userId = localStorage.getItem('localUserId');
+        if (userId) {
+            fetch('http://localhost:3000/api/user/connections', { headers: { 'x-user-id': userId } })
                 .then(res => {
                     if (res.ok) return res.json();
                     throw new Error("Connections endpoint missing or failing");
@@ -36,39 +34,66 @@ export default function LibraryView() {
         }
     }, []);
 
-    // 2. Fetch Playlists based on Active Source
     useEffect(() => {
-        const token = localStorage.getItem('userToken');
-        const googleId = localStorage.getItem('googleId');
-        if (!token || !googleId) return;
-
+        const loadLibraryData = async () => {
         if (activeSource === 'youtube') {
+            const token = localStorage.getItem('userToken');
+            if (!token) {
+                setYoutubeError("Please link your YouTube account to view these playlists.");
+                setYoutubePlaylists([]);
+                return; 
+            }
+            
+            setYoutubeError(null); 
+            
             fetch('http://localhost:3000/playlists', {
                 headers: { 'Authorization': `Bearer ${token}` }
             })
-            .then(res => res.json())
-            .then(data => setYoutubePlaylists(data))
-            .catch(err => console.error("Failed to fetch YT playlists:", err));
-        } else if (activeSource === 'custom') {
-            fetch('http://localhost:3000/api/custom-playlists', { 
-                headers: { 'x-google-id': googleId }
+            .then(async res => {
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Failed to fetch");
+                return data;
             })
-            .then(res => res.json())
-            .then(data => setCustomPlaylists(data))
+            .then(data => {
+                if (Array.isArray(data)) {
+                    setYoutubePlaylists(data);
+                } else {
+                    setYoutubePlaylists([]);
+                }
+            })
+            .catch(err => {
+                console.error("Failed to fetch YT playlists:", err);
+                setYoutubePlaylists([]);
+                setYoutubeError("Your YouTube session has expired. Please reconnect your account.");
+            });
+            
+        } else if (activeSource === 'custom') {
+            const userId = localStorage.getItem('localUserId');
+            if (!userId) return;
+
+            fetch('http://localhost:3000/api/custom-playlists', { 
+                headers: { 'x-user-id': userId }
+            })
+            .then(async res => {
+                const data = await res.json();
+                if (!res.ok) throw new Error("Failed to fetch custom playlists");
+                return data;
+            })
+            .then(data => setCustomPlaylists(Array.isArray(data) ? data : [])) 
             .catch(err => console.error("Failed to fetch Custom playlists:", err));
         }
+    }
+    loadLibraryData();
     }, [activeSource]);
 
-    // 3. Handle Clicking a Playlist
     const handleViewPlaylist = async (playlist, type) => {
         const token = localStorage.getItem('userToken');
         if (!token) return;
 
         setSelectedPlaylist(playlist);
-        setPlaylistTracks([]); // Clear old tracks
+        setPlaylistTracks([]); 
 
         try {
-            // Note: You will need a custom endpoint later for custom playlist tracks!
             const endpoint = type === 'custom' 
                 ? `http://localhost:3000/api/custom-playlists/${playlist.id}/tracks` 
                 : `http://localhost:3000/playlists/${playlist.id}/tracks`;
@@ -128,8 +153,7 @@ export default function LibraryView() {
 
                     {/* --- GRID RENDERING --- */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '20px' }}>
-                        
-                        {/* Always show the "Create" button on custom view */}
+
                         {activeSource === 'custom' && (
                             <div 
                                 onClick={() => console.log("Open Create Modal")}
@@ -144,7 +168,18 @@ export default function LibraryView() {
                             <PlaylistCard key={`custom-${playlist.id}`} playlist={playlist} type="custom" onClick={handleViewPlaylist} />
                         ))}
 
-                        {activeSource === 'youtube' && youtubePlaylists?.map(playlist => (
+                        {activeSource === 'youtube' && youtubeError && (
+                            <div style={{ gridColumn: '1 / -1', padding: '20px', background: '#ff4d4d20', color: '#ff4d4d', borderRadius: '8px', textAlign: 'center', border: '1px solid #ff4d4d' }}>
+                                <h3>Connection Error</h3>
+                                <p>{youtubeError}</p>
+                                {/* We will hook this button up to our new OAuth linker soon! */}
+                                <button style={{ marginTop: '10px', padding: '10px 20px', background: '#ff4d4d', color: 'white', border: 'none', borderRadius: '20px', cursor: 'pointer', fontWeight: 'bold' }}>
+                                    Reconnect YouTube
+                                </button>
+                            </div>
+                        )}
+
+                        {activeSource === 'youtube' && !youtubeError && youtubePlaylists?.map(playlist => (
                             <PlaylistCard key={`yt-${playlist.id}`} playlist={playlist} type="youtube" onClick={handleViewPlaylist} />
                         ))}
                     </div>

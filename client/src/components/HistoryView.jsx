@@ -6,11 +6,13 @@ export default function HistoryView() {
     const [recentTracks, setRecentTracks] = useState([]);
     const { playTrack } = useMusic();
 
-    useEffect(() => {
-        const googleId = localStorage.getItem('googleId'); 
-        if (!googleId) return;
+useEffect(() => {
+        const userId = localStorage.getItem('localUserId'); 
+        if (!userId) return;
 
-        fetch('http://localhost:3000/history', { headers: { 'x-google-id': googleId } })
+        fetch('http://localhost:3000/history', { 
+            headers: { 'x-user-id': userId } 
+        })
             .then(res => res.json())
             .then(data => setRecentTracks(data))
             .catch(err => console.error("Failed to fetch history:", err));

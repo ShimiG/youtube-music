@@ -10,7 +10,6 @@ use tauri::{
 };
 use std::sync::Mutex;
 
-// 1. Create a secure wrapper for our Node process
 struct NodeProcess(Mutex<Option<CommandChild>>);
 
 fn main() {
@@ -72,7 +71,6 @@ fn main() {
                 }
             });
 
-            // 2. Wrap the child process in our Mutex and give it to Tauri
             app.manage(NodeProcess(Mutex::new(Some(child))));
             Ok(())
         })
@@ -80,7 +78,6 @@ fn main() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let RunEvent::Exit = event {
-                // 3. Securely take ownership of the process out of the Mutex and kill it
                 if let Some(process) = app_handle.try_state::<NodeProcess>() {
                     if let Some(child) = process.0.lock().unwrap().take() {
                         child.kill().expect("Failed to kill Node.js server");

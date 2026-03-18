@@ -19,7 +19,7 @@ const { google } = require('googleapis');
             const response = await youtube.videos.list({
                 part: 'snippet,contentDetails,statistics',
                 myRating: 'like',
-                maxResults: 50 // Fetch more to ensure we have enough after filtering
+                maxResults: 50 
             });
 
             const musicVideos = response.data.items.filter(video => 
@@ -54,7 +54,7 @@ const likeVideo = async (req, res) => {
         
         const token = authHeader.replace('Bearer ', '');
         
-        const { videoId } = req.body; // <--- MUST MATCH Frontend JSON
+        const { videoId } = req.body; 
         console.log(`[Backend] Liking video ID: ${videoId}`);
 
         if (!videoId) {
@@ -159,11 +159,12 @@ const getPlaylistTracks = async (req, res) => {
 
     const createCustomPlaylist = async (req, res) => {
     const db = req.app.locals.db;
-    const googleId = req.headers['x-google-id'];
+    const userId = req.headers['x-user-id']; 
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
     const { name, thumbnail } = req.body;
 
     try {
-        const user = await db.get(`SELECT id FROM users WHERE oauth_id = ?`, [googleId]);
+        const user = await db.get(`SELECT id FROM users WHERE id = ?`, [userId]);
         if (!user) return res.status(404).json({ error: "User not found in DB" });
 
         const result = await db.run(
@@ -179,18 +180,18 @@ const getPlaylistTracks = async (req, res) => {
 
 const getCustomPlaylists = async (req, res) => {
     const db = req.app.locals.db;
-    const googleId = req.headers['x-google-id'];
+    const userId = req.headers['x-user-id']; 
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     try {
         const playlists = await db.all(`
             SELECT p.id, p.name, p.thumbnail, COUNT(pt.track_id) as itemCount 
             FROM playlists p
-            JOIN users u ON p.user_id = u.id
             LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id
-            WHERE u.oauth_id = ?
+            WHERE p.user_id = ?
             GROUP BY p.id
             ORDER BY p.created_at DESC
-        `, [googleId]);
+        `, [userId]);
         
         res.json(playlists);
     } catch (error) {

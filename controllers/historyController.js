@@ -57,7 +57,7 @@ const getHistory = async (req, res) => {
             JOIN tracks t ON h.track_id = t.id
             JOIN sources s ON t.source_id = s.id
             JOIN users u ON h.user_id = u.id
-            WHERE u.oauth_id = ?
+            WHERE u.id = ?
             ORDER BY h.played_at DESC
             LIMIT 50
         `, [googleId]);

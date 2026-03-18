@@ -14,7 +14,7 @@ const playlistController = require('./controllers/playlistController');
 const historyController = require('./controllers/historyController');
 const streamingController = require('./controllers/streamingController');
 const YouTubeController = require('./controllers/YouTubeController');
-
+const { registerUser, loginUser } = require('./controllers/UserController');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -34,7 +34,8 @@ app.use(express.json());
 // Auth Routes
 app.get('/auth/google', authController.googleLogin);
 app.get('/auth/google/callback', authController.googleCallback);
-
+app.post('/api/register', registerUser);
+app.post('/api/login', loginUser);
 // Search Route
 app.get('/search', authMiddleware, searchController.searchTracks);
 

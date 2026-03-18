@@ -43,14 +43,13 @@ export const MusicProvider = ({ children }) => {
                 })
                 .catch(err => console.error("Failed to fetch true duration:", err));
         }
-        const googleId = localStorage.getItem('googleId');
-        console.log("🕵️ Checking Google ID before saving history:", googleId);
-        if (googleId) {
+        const userId = localStorage.getItem('localUserId');
+        if (userId) {
             fetch('http://localhost:3000/history', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-google-id': googleId 
+                    'x-user-id': userId 
                 },
                 body: JSON.stringify({
                     trackId: track.id,

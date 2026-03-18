@@ -26,12 +26,11 @@ async function initDB() {
     await db.run(`INSERT OR IGNORE INTO sources (id, name) VALUES (1, 'youtube'), (2, 'spotify')`);
     
     await db.exec(`
+        -- FIX: Completely rewritten for Local Authentication
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            oauth_id TEXT UNIQUE NOT NULL,
-            display_name TEXT,
-            email TEXT,
-            platform TEXT, 
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -42,7 +41,7 @@ async function initDB() {
             UNIQUE(source_id, external_id)
         );
 
-CREATE TABLE IF NOT EXISTS playlists (
+        CREATE TABLE IF NOT EXISTS playlists (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
             user_id INTEGER, 
             name TEXT NOT NULL, 
@@ -67,7 +66,7 @@ CREATE TABLE IF NOT EXISTS playlists (
         );
     `);
 
-    console.log(' Database schemas initialized.');
+    console.log('Database schemas initialized.');
     return db;
 }
 

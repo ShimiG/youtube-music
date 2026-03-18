@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Hybrid React, Node, and Tauri Music Player",
   "main": "server.js",
+  "bin": "server.js",
+  "author": "Shimi G",
+  "license": "MIT",
   "scripts": {
     "start": "node server.js",
     "server": "node server.js",
@@ -10,7 +13,7 @@
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "build:server:win": "pkg ./server.js --target node18-win-x64 --output ./bin/music-server-x86_64-pc-windows-msvc.exe",
     "build:server:mac": "pkg ./server.js --target node18-macos-arm64 --output ./bin/music-server-aarch64-apple-darwin",
-    "build:all": "npm run build:server:win && npm run build:server:mac && cd client",
+    "build:all": "npm run build:server:win && npm run build:server:mac && cd client && npm run build",
     "tauri:build": "npm run build:all && tauri build",
     "test": "jest",
     "test:watch": "jest --watchAll"

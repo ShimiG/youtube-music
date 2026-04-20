@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 export default function AuthScreen({ onLoginSuccess }) {
     const [isLogin, setIsLogin] = useState(true);
     const [username, setUsername] = useState('');
+    const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -13,12 +14,16 @@ export default function AuthScreen({ onLoginSuccess }) {
         setIsLoading(true);
 
         const endpoint = isLogin ? '/api/login' : '/api/register';
+        const body = isLogin 
+            ? { username, password }
+            : { username, email, password };
 
         try {
             const res = await fetch(`http://localhost:3000${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password })
+                credentials: 'include',  // Include cookies
+                body: JSON.stringify(body)
             });
 
             const data = await res.json();
@@ -27,13 +32,18 @@ export default function AuthScreen({ onLoginSuccess }) {
                 throw new Error(data.error || "Authentication failed");
             }
 
-            onLoginSuccess(data.userId, data.username);
+            onLoginSuccess(data.userId, data.email);
 
         } catch (err) {
             setError(err.message);
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const handleGoogleLogin = () => {
+        // Redirect to Google OAuth
+        window.location.href = 'http://localhost:3000/auth/google';
     };
 
     return (
@@ -54,6 +64,17 @@ export default function AuthScreen({ onLoginSuccess }) {
                     style={{ padding: '12px', borderRadius: '6px', border: '1px solid #333', background: '#282828', color: 'white', outline: 'none' }}
                 />
                 
+                {!isLogin && (
+                    <input 
+                        type="email" 
+                        placeholder="Email" 
+                        value={email} 
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                        style={{ padding: '12px', borderRadius: '6px', border: '1px solid #333', background: '#282828', color: 'white', outline: 'none' }}
+                    />
+                )}
+                
                 <input 
                     type="password" 
                     placeholder="Password" 
@@ -63,12 +84,31 @@ export default function AuthScreen({ onLoginSuccess }) {
                     style={{ padding: '12px', borderRadius: '6px', border: '1px solid #333', background: '#282828', color: 'white', outline: 'none' }}
                 />
 
+                {!isLogin && (
+                    <div style={{ fontSize: '12px', color: '#b3b3b3', background: '#282828', padding: '10px', borderRadius: '6px' }}>
+                        ✓ Password must be 12+ characters<br/>
+                        ✓ Must include uppercase and lowercase<br/>
+                        ✓ Must include a number and special character (@$!%*?&)
+                    </div>
+                )}
+
                 <button 
                     type="submit" 
                     disabled={isLoading}
                     style={{ background: '#1db954', color: 'black', padding: '12px', border: 'none', borderRadius: '24px', fontWeight: 'bold', fontSize: '16px', cursor: isLoading ? 'not-allowed' : 'pointer', marginTop: '10px' }}
                 >
                     {isLoading ? '...' : (isLogin ? 'Log In' : 'Sign Up')}
+                </button>
+
+                <div style={{ textAlign: 'center', fontSize: '12px', color: '#666', margin: '10px 0' }}>or</div>
+
+                <button 
+                    type="button"
+                    onClick={handleGoogleLogin}
+                    disabled={isLoading}
+                    style={{ background: '#fff', color: '#121212', padding: '12px', border: 'none', borderRadius: '24px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}
+                >
+                    Continue with Google
                 </button>
 
                 <div style={{ textAlign: 'center', fontSize: '14px', color: '#b3b3b3', marginTop: '10px', cursor: 'pointer' }} onClick={() => { setIsLogin(!isLogin); setError(''); }}>

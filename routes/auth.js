@@ -1,7 +1,8 @@
-
 const express = require('express');
 const router = express.Router();
 const { google } = require('googleapis');
+const crypto = require('crypto');
+const logger = require('../services/logger');
 
 const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -16,34 +17,50 @@ router.get('/google', (req, res) => {
         'https://www.googleapis.com/auth/youtube.force-ssl',
         'https://www.googleapis.com/auth/userinfo.profile'
     ];
+    
+    // SECURITY: Generate CSRF state token
+    const state = crypto.randomBytes(16).toString('hex');
+    req.session.oauthState = state;
+    req.session.save();
 
     const url = oauth2Client.generateAuthUrl({
         access_type: 'offline', 
-        prompt: 'consent',      
-        scope: scopes
+        prompt: 'consent',
+        scope: scopes,
+        state: state // SECURITY: Add CSRF protection
     });
-
 
     res.redirect(url); 
 });
 
 router.get('/google/callback', async (req, res) => {
-    const { code } = req.query;
+    const { code, state } = req.query;
     if (!code) return res.status(400).send('No code received');
+
+    // SECURITY: Verify CSRF state parameter
+    const sessionState = req.session?.oauthState;
+    if (!state || state !== sessionState) {
+        return res.status(403).send('CSRF state mismatch. Authentication failed.');
+    }
 
     try {
         const { tokens } = await oauth2Client.getToken(code);
         
+        // SECURITY: Store tokens in HTTP-only session, never expose in URL
+        req.session.accessToken = tokens.access_token;
+        req.session.refreshToken = tokens.refresh_token || null;
+        req.session.tokenExpiry = Date.now() + (tokens.expires_in || 3600) * 1000;
 
-        const params = new URLSearchParams({
-            access_token: tokens.access_token,
-            refresh_token: tokens.refresh_token || '' 
-        });
-
-       res.redirect(`http://localhost:5173?access_token=${tokens.access_token}&refresh_token=${tokens.refresh_token}`);
+        // SECURITY: Mark as authenticated
+        req.session.authenticated = true;
+        
+        logger.info('Google OAuth successful', { ip: req.ip });
+        
+        // Redirect to frontend without tokens in URL
+        res.redirect('http://localhost:5173/dashboard?authenticated=true');
 
     } catch (error) {
-        console.error('Error retrieving token', error);
+        logger.error('OAuth callback error', { error: error.message });
         res.status(500).send('Authentication failed');
     }
 });

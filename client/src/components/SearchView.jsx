@@ -10,12 +10,10 @@ export default function SearchView() {
     const handleSearch = async (e) => {
         e.preventDefault();
         if (!searchQuery) return;
-        const token = localStorage.getItem('userToken');
-        if (!token) return;
 
         try {
-            const res = await fetch(`http://localhost:3000/search?q=${searchQuery}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+            const res = await fetch(`http://localhost:3000/search?q=${encodeURIComponent(searchQuery)}`, {
+                credentials: 'include'  // Include JWT cookie
             });
             if (!res.ok) throw new Error("Search failed");
             const data = await res.json();

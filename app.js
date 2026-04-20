@@ -22,7 +22,23 @@ app.use(express.json());
 app.use(cors());         
 
 app.use(helmet({
-    contentSecurityPolicy: false, 
+    contentSecurityPolicy: {
+        directives: {
+            scriptSrc: ["'self'"],
+            styleSrc: ["'self'"],
+            imgSrc: ["'self'", 'data:', 'https:'],
+            connectSrc: ["'self'"],
+            fontSrc: ["'self'"],
+            objectSrc: ["'none'"],
+            mediaSrc: ["'self'"],
+            frameSrc: ["'none'"]
+        }
+    },
+    hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+    noSniff: true,
+    xssFilter: true,
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    frameguard: { action: 'deny' }
 }));
 
 app.use(express.static('public'));
@@ -49,16 +65,17 @@ const validateVideoId = (req, res, next) => {
     next();
 };
 
+const jwtAuth = require('./middleware/jwtAuth'); // Add JWT middleware
+
 app.get('/test', (req, res) => {
-    console.log("Server is working!");
     res.send("Server is working!");
 });
 
 app.use('/search', searchRoute);
 app.use('/playlist', playlistRoutes);
 app.use('/auth', authRoutes);
-app.post('/history', historyController.logHistory);
-app.get('/history', historyController.getHistory);
+app.post('/history', jwtAuth, historyController.logHistory);
+app.get('/history', jwtAuth, historyController.getHistory);
 app.get('/play', limiter, validateVideoId, streamingController);
 app.get('/api/custom-playlists', playlistController.getCustomPlaylists);
 app.post('/api/custom-playlists', playlistController.createCustomPlaylist);

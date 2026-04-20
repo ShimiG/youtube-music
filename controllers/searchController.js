@@ -1,4 +1,6 @@
 const { google } = require('googleapis');
+const sanitizer = require('../services/sanitizer');
+const logger = require('../services/logger');
 
 const parseDuration = (isoDuration) => {
     const regex = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/;
@@ -23,13 +25,23 @@ const searchTracks = async (req, res) => {
     const token = req.oauthToken; 
 
     if (!token) return res.status(401).send("Unauthorized: No token provided");
+    
+    // Input validation: Sanitize search query
+    if (!query || typeof query !== 'string') {
+        return res.status(400).json({ error: 'Invalid search query' });
+    }
+    
+    const sanitizedQuery = query.trim();
+    if (sanitizedQuery.length === 0 || sanitizedQuery.length > 500) {
+        return res.status(400).json({ error: 'Search query must be 1-500 characters' });
+    }
 
     try {
         const youtube = getYouTubeClient(token);
 
         const searchResponse = await youtube.search.list({
             part: 'snippet',
-            q: query,
+            q: sanitizedQuery,
             type: 'video',
             maxResults: 30
         });
@@ -44,10 +56,11 @@ const searchTracks = async (req, res) => {
             id: videoIds
         });
 
+        // PHASE 2: Sanitize response to prevent XSS
         const cleanResults = videosResponse.data.items.map(video => ({
             id: video.id,
-            title: video.snippet.title,
-            channelTitle: video.snippet.channelTitle,
+            title: sanitizer.encodeHTML(video.snippet.title),
+            channelTitle: sanitizer.encodeHTML(video.snippet.channelTitle),
             thumbnail: video.snippet.thumbnails.default.url,
             duration: parseDuration(video.contentDetails.duration) 
         }));
@@ -55,7 +68,7 @@ const searchTracks = async (req, res) => {
         res.json(cleanResults);
 
     } catch (error) {
-        console.error('Search API Error:', error);
+        logger.error('Search API Error', { error: error.message });
         if (error.message && (error.message.includes('Invalid Credentials') || error.code === 401)) {
             return res.status(401).json({ error: "Token expired or invalid" });
         }

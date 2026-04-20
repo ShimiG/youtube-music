@@ -33,7 +33,10 @@ export const MusicProvider = ({ children }) => {
         if (track.duration) {
             setDuration(track.duration);
         } else {
-            fetch(`http://localhost:3000/duration?videoId=${safeId}`)
+            // Fetch duration with credentials
+            fetch(`http://localhost:3000/duration?videoId=${safeId}`, {
+                credentials: 'include'  // Include cookies for authentication
+            })
                 .then(res => res.json())
                 .then(data => {
                     if (data.duration) {
@@ -43,29 +46,25 @@ export const MusicProvider = ({ children }) => {
                 })
                 .catch(err => console.error("Failed to fetch true duration:", err));
         }
-        const userId = localStorage.getItem('localUserId');
-        if (userId) {
-            fetch('http://localhost:3000/history', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-user-id': userId 
-                },
-                body: JSON.stringify({
-                    trackId: track.id,
-                    title: track.title,
-                    artist: track.channelTitle || track.artist || 'Unknown Artist',
-                    thumbnail: track.thumbnail || track.image,
-                    email: localStorage.getItem('userEmail'),
-                    displayName: localStorage.getItem('userName')
-                })
-            }).catch(err => console.error("Failed to log history:", err));
-        }
+        
+        // Log to history (JWT auth via cookies)
+        fetch('http://localhost:3000/history', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include',  // Include JWT cookie
+            body: JSON.stringify({
+                trackId: track.id,
+                title: track.title,
+                artist: track.channelTitle || track.artist || 'Unknown Artist',
+                thumbnail: track.thumbnail || track.image
+            })
+        }).catch(err => console.error("Failed to log history:", err));
         
         const streamUrl = `http://localhost:3000/stream?videoId=${safeId}`;
         audioRef.current.src = streamUrl;
 
-        
         audioRef.current.play()
             .then(() => setIsPlaying(true))
             .catch(e => {

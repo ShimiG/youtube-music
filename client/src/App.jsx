@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import LibraryView from './components/LibraryView';
 import SearchView from './components/SearchView';
 import HistoryView from './components/HistoryView';
@@ -10,25 +10,49 @@ import './App.css';
 
 function App() {
     const [view, setView] = useState('search'); 
-    
-    // Simple Local Auth State
-    const [localUser, setLocalUser] = useState(() => {
-        const storedId = localStorage.getItem('localUserId');
-        const storedName = localStorage.getItem('localUserName');
-        return storedId ? { id: storedId, username: storedName } : null;
-    });
+    const [localUser, setLocalUser] = useState(null);
+    const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
-    const handleLoginSuccess = (userId, username) => {
-        localStorage.setItem('localUserId', userId);
-        localStorage.setItem('localUserName', username);
-        setLocalUser({ id: userId, username });
+    // Check if user is authenticated on mount
+    useEffect(() => {
+        const checkAuth = async () => {
+            try {
+                const res = await fetch('http://localhost:3000/auth/success', {
+                    credentials: 'include'  // Include cookies
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    setLocalUser({ 
+                        id: data.userId, 
+                        email: data.email 
+                    });
+                }
+            } catch (err) {
+                console.error('Auth check failed:', err);
+            } finally {
+                setIsCheckingAuth(false);
+            }
+        };
+        checkAuth();
+    }, []);
+
+    const handleLoginSuccess = (userId, email) => {
+        setLocalUser({ id: userId, email });
     };
 
     const handleLogout = () => { 
-        localStorage.removeItem('localUserId');
-        localStorage.removeItem('localUserName');
-        setLocalUser(null); 
+        // Call logout endpoint
+        fetch('http://localhost:3000/auth/logout', {
+            method: 'POST',
+            credentials: 'include'
+        }).finally(() => {
+            setLocalUser(null);
+        });
     };
+
+    if (isCheckingAuth) {
+        return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#121212', color: 'white' }}>Loading...</div>;
+    }
 
     return (
         <div className="app-container">

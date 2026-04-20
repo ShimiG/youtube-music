@@ -1,17 +1,16 @@
 const logHistory = async (req, res) => {
     const db = req.app.locals.db; 
-    const googleId = req.headers['x-google-id']; 
-    const { trackId, title, artist, thumbnail, email, displayName } = req.body;
+    const userId = req.userId; // From verified JWT token
+    const userEmail = req.userEmail; // From verified JWT token
+    const { trackId, title, artist, thumbnail } = req.body;
     const sourceName = 'youtube'; // Defaulting to youtube
 
-    if (!googleId || !trackId) return res.status(400).send("Missing user or track data");
+    if (!userId || !trackId) return res.status(400).send("Missing user or track data");
 
     try {
-        await db.run(
-            `INSERT OR IGNORE INTO users (oauth_id, display_name, email, platform) VALUES (?, ?, ?, 'google')`,
-            [googleId, displayName || 'User', email || '']
-        );
-        const user = await db.get(`SELECT id FROM users WHERE oauth_id = ?`, [googleId]);
+        // User already authenticated via JWT, get from verified token
+        const user = await db.get(`SELECT id FROM users WHERE id = ?`, [userId]);
+        if (!user) return res.status(401).json({ error: 'User not found in session' });
         
         const source = await db.get(`SELECT id FROM sources WHERE name = ?`, [sourceName]);
 
@@ -41,11 +40,15 @@ const logHistory = async (req, res) => {
 
 const getHistory = async (req, res) => {
     const db = req.app.locals.db;
-    const googleId = req.headers['x-google-id']; 
+    const userId = req.userId; // From verified JWT token
 
-    if (!googleId) return res.status(401).send("Unauthorized: Missing Google ID");
+    if (!userId) return res.status(401).json({ error: 'Unauthorized: Missing authentication' });
 
     try {
+        // Verify user exists
+        const user = await db.get(`SELECT id FROM users WHERE id = ?`, [userId]);
+        if (!user) return res.status(401).json({ error: 'User not found' });
+
         const history = await db.all(`
             SELECT 
                 t.external_id as id, 

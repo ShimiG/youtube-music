@@ -26,11 +26,13 @@ async function initDB() {
     await db.run(`INSERT OR IGNORE INTO sources (id, name) VALUES (1, 'youtube'), (2, 'spotify')`);
     
     await db.exec(`
-        -- FIX: Completely rewritten for Local Authentication
+        -- Users table with support for local and OAuth authentication
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
+            email TEXT UNIQUE,
+            password TEXT,
+            auth_provider TEXT DEFAULT 'local',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 

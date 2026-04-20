@@ -1,5 +1,7 @@
 
 const { google } = require('googleapis');
+const sanitizer = require('../services/sanitizer');
+const logger = require('../services/logger');
 
     const getYouTubeClient = (token) => {
         if (!token) throw new Error("No token provided");
@@ -26,36 +28,33 @@ const { google } = require('googleapis');
                 video.snippet.categoryId === '10'
             );
 
+            // PHASE 2: Sanitize response to prevent XSS
             const normalizedItems = musicVideos.map(video => ({
                 ...video,
-                snippet: {
+                snippet: sanitizer.encodeResponse({
                     ...video.snippet,
                     resourceId: { videoId: video.id } 
-                }
+                })
             }));
 
             res.json(normalizedItems);
 
         } catch (error) {
-            console.error("Fetch Likes Error:", error.message);
+            logger.error("Fetch Likes Error", { error: error.message });
             res.status(500).json({ error: "Failed to fetch liked videos." });
         }
     };
 
 const likeVideo = async (req, res) => {
-    console.log("[Backend] Received like request...");
-
     try {
         const authHeader = req.header('Authorization');
         if (!authHeader) {
-            console.error("[Backend] Error: No token provided");
             return res.status(401).json({ error: "No token" });
         }
         
         const token = authHeader.replace('Bearer ', '');
         
         const { videoId } = req.body; 
-        console.log(`[Backend] Liking video ID: ${videoId}`);
 
         if (!videoId) {
             return res.status(400).json({ error: "Missing videoId" });
@@ -67,11 +66,9 @@ const likeVideo = async (req, res) => {
             rating: 'like'
         });
 
-        console.log("[Backend] Success! Video liked.");
         res.sendStatus(200);
 
     } catch (error) {
-        console.error("[Backend] Google API Error:", error.message);
         res.status(500).json({ error: "Could not like video" });
     }
 };
@@ -92,8 +89,6 @@ const getUserPlaylists = async (req, res) => {
 
         res.json(response.data.items);
     } catch (error) {
-        console.error("Fetch Playlists Error:", error.message);
-        
         if (error.code === 401 || error.code === 403) {
             return res.status(401).json({ error: "Token expired or invalid" });
         }
@@ -120,27 +115,36 @@ const getPlaylistTracks = async (req, res) => {
             maxResults: 50
         });
 
+        // PHASE 2: Sanitize response to prevent XSS
         const tracks = response.data.items.map(item => ({
             id: item.snippet.resourceId.videoId,
-            title: item.snippet.title,
-            artist: item.snippet.videoOwnerChannelTitle,
+            title: sanitizer.encodeHTML(item.snippet.title),
+            artist: sanitizer.encodeHTML(item.snippet.videoOwnerChannelTitle),
             image: item.snippet.thumbnails?.high?.url || item.snippet.thumbnails?.default?.url,
             source: 'youtube'
         }));
 
         res.json(tracks);
     } catch (error) {
-        console.error("Fetch Tracks Error:", error.message);
+        logger.error("Fetch Tracks Error", { error: error.message });
         res.status(500).json({ error: "Failed to fetch tracks" });
     }
 };
 
     const addTrackToPlaylist = async (req, res) => {
         const db = req.app.locals.db;
+        const userId = req.userId; // From verified JWT (MEDIUM: Use JWT)
         const { playlistId } = req.params;
         const { sourceName, externalId, title, artist, thumbnail } = req.body;
 
         try {
+            // MEDIUM: Verify ownership - user can only modify their own playlists
+            const playlist = await db.get(
+                'SELECT id FROM playlists WHERE id = ? AND user_id = ?',
+                [playlistId, userId]
+            );
+            if (!playlist) return res.status(403).json({ error: "Access denied" });
+
             const source = await db.get(`SELECT id FROM sources WHERE name = ?`, [sourceName]);
             if (!source) return res.status(400).json({ error: "Invalid source" });
             await db.run(
@@ -159,31 +163,39 @@ const getPlaylistTracks = async (req, res) => {
 
     const createCustomPlaylist = async (req, res) => {
     const db = req.app.locals.db;
-    const userId = req.headers['x-user-id']; 
+    const userId = req.userId; // From verified JWT (MEDIUM: Use JWT)
+    
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
     const { name, thumbnail } = req.body;
 
     try {
+        // Verify user exists
         const user = await db.get(`SELECT id FROM users WHERE id = ?`, [userId]);
-        if (!user) return res.status(404).json({ error: "User not found in DB" });
+        if (!user) return res.status(404).json({ error: "User not found" });
+
+        // Validate playlist name
+        if (!name || typeof name !== 'string' || name.trim().length === 0 || name.length > 100) {
+            return res.status(400).json({ error: "Invalid playlist name" });
+        }
 
         const result = await db.run(
             `INSERT INTO playlists (user_id, name, thumbnail) VALUES (?, ?, ?)`, 
-            [user.id, name, thumbnail || 'https://via.placeholder.com/150']
+            [user.id, name.trim(), thumbnail || 'https://via.placeholder.com/150']
         );
-        res.status(201).json({ id: result.lastID, name, thumbnail });
+        res.status(201).json({ id: result.lastID, name: name.trim(), thumbnail });
     } catch (error) {
-        console.error("Create Playlist Error:", error.message);
         res.status(500).json({ error: "Failed to create playlist" });
     }
 };
 
 const getCustomPlaylists = async (req, res) => {
     const db = req.app.locals.db;
-    const userId = req.headers['x-user-id']; 
+    const userId = req.userId; // From verified JWT (MEDIUM: Use JWT instead of header)
+    
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     try {
+        // MEDIUM: Add authorization check - user can only access own playlists
         const playlists = await db.all(`
             SELECT p.id, p.name, p.thumbnail, COUNT(pt.track_id) as itemCount 
             FROM playlists p
@@ -195,16 +207,23 @@ const getCustomPlaylists = async (req, res) => {
         
         res.json(playlists);
     } catch (error) {
-        console.error("Fetch Custom Playlists Error:", error.message);
         res.status(500).json({ error: "Failed to fetch custom playlists" });
     }
 };
 
-const getCustomPlaylistTracks = async (req, res) => {
+    const getCustomPlaylistTracks = async (req, res) => {
     const db = req.app.locals.db;
+    const userId = req.userId; // From verified JWT (MEDIUM: Use JWT)
     const { playlistId } = req.params;
 
     try {
+        // MEDIUM: Verify ownership - user can only access their own playlist
+        const playlist = await db.get(
+            'SELECT id FROM playlists WHERE id = ? AND user_id = ?',
+            [playlistId, userId]
+        );
+        if (!playlist) return res.status(403).json({ error: "Access denied" });
+
         const tracks = await db.all(`
             SELECT 
                 t.external_id as id, t.title, t.artist as channelTitle, t.thumbnail as image, s.name as source
@@ -217,7 +236,6 @@ const getCustomPlaylistTracks = async (req, res) => {
         
         res.json(tracks);
     } catch (error) {
-        console.error("Fetch Custom Tracks Error:", error.message);
         res.status(500).json({ error: "Failed to fetch custom tracks" });
     }
 };

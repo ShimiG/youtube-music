@@ -7,11 +7,11 @@ export default function HistoryView() {
     const { playTrack } = useMusic();
 
 useEffect(() => {
-        const userId = localStorage.getItem('localUserId'); 
-        if (!userId) return;
+        const authToken = localStorage.getItem('authToken');
+        if (!authToken) return;
 
-        fetch('http://localhost:3000/history', { 
-            headers: { 'x-user-id': userId } 
+        fetch('http://localhost:3000/history', {
+            headers: { 'Authorization': `Bearer ${authToken}` }
         })
             .then(res => res.json())
             .then(data => setRecentTracks(data))

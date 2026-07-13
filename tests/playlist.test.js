@@ -1,5 +1,9 @@
 const request = require('supertest');
+const jwt = require('jsonwebtoken');
 const app = require('../app');
+
+const validToken = jwt.sign({ userId: 1 }, process.env.JWT_SECRET, { expiresIn: '1h' });
+const auth = { Authorization: `Bearer ${validToken}` };
 
 const mockDb = {
     get: jest.fn(),
@@ -9,109 +13,111 @@ const mockDb = {
 
 app.locals.db = mockDb;
 
-describe('Custom Playlist API Endpoints', () => {
-  
+describe('Custom Playlist API (authenticated)', () => {
     beforeEach(() => {
         jest.resetAllMocks();
     });
 
     describe('POST /api/custom-playlists', () => {
-        it('should create a new playlist and return 201', async () => {
-            mockDb.get.mockResolvedValueOnce({ id: 1 }); 
+        it('creates a playlist for the logged-in user and returns 201', async () => {
             mockDb.run.mockResolvedValueOnce({ lastID: 10 });
 
             const res = await request(app)
                 .post('/api/custom-playlists')
-                .set('x-user-id', '1')
+                .set(auth)
                 .send({ name: 'Coding Focus', thumbnail: 'http://image.com/img.jpg' });
 
-            expect(res.statusCode).toEqual(201);
+            expect(res.statusCode).toBe(201);
             expect(res.body).toHaveProperty('id', 10);
             expect(res.body).toHaveProperty('name', 'Coding Focus');
+            // The playlist must be inserted against the token's userId (1), not any client input.
+            expect(mockDb.run.mock.calls[0][1][0]).toBe(1);
         });
 
-        it('should return 404 if the user is not found in the database', async () => {
-            mockDb.get.mockResolvedValueOnce(null); 
-
-            const res = await request(app)
-                .post('/api/custom-playlists')
-                .set('x-user-id', '1')
-                .send({ name: 'Ghost Playlist' });
-
-            expect(res.statusCode).toEqual(404);
-            expect(res.body).toHaveProperty('error', 'User not found in DB');
+        it('rejects an empty playlist name with 400', async () => {
+            const res = await request(app).post('/api/custom-playlists').set(auth).send({ name: '' });
+            expect(res.statusCode).toBe(400);
         });
     });
 
     describe('GET /api/custom-playlists', () => {
-        it('should return a list of custom playlists for the user', async () => {
-            const fakePlaylists = [
+        it('returns the current user playlists', async () => {
+            mockDb.all.mockResolvedValueOnce([
                 { id: 1, name: 'Gym Mix', itemCount: 12 },
                 { id: 2, name: 'Chill', itemCount: 5 }
-            ];
-            mockDb.all.mockResolvedValueOnce(fakePlaylists);
+            ]);
 
-            const res = await request(app)
-                .get('/api/custom-playlists')
-                .set('x-user-id', '1');
+            const res = await request(app).get('/api/custom-playlists').set(auth);
 
-            expect(res.statusCode).toEqual(200);
+            expect(res.statusCode).toBe(200);
             expect(res.body).toHaveLength(2);
-            expect(res.body[0].name).toEqual('Gym Mix');
+            expect(res.body[0].name).toBe('Gym Mix');
+            // The query must be scoped to the token's userId.
+            expect(mockDb.all.mock.calls[0][1]).toEqual([1]);
         });
     });
 
-    describe('POST /api/custom-playlists/:id/tracks', () => {
-        it('should successfully add a track to the universal registry and playlist', async () => {
-            mockDb.get.mockResolvedValueOnce({ id: 1 }); 
-            mockDb.run.mockResolvedValueOnce({}); 
-            mockDb.get.mockResolvedValueOnce({ id: 99 }); 
-            mockDb.run.mockResolvedValueOnce({}); 
+    describe('POST /api/custom-playlists/:playlistId/tracks', () => {
+        it('adds a track when the playlist belongs to the user', async () => {
+            mockDb.get
+                .mockResolvedValueOnce({ id: 10 })   // ownership check passes
+                .mockResolvedValueOnce({ id: 1 })    // source lookup
+                .mockResolvedValueOnce({ id: 99 });  // track lookup
+            mockDb.run.mockResolvedValue({});
 
             const res = await request(app)
                 .post('/api/custom-playlists/10/tracks')
-                .send({
-                    sourceName: 'youtube',
-                    externalId: 'dQw4w9WgXcQ',
-                    title: 'Never Gonna Give You Up',
-                    artist: 'Rick Astley'
-                });
+                .set(auth)
+                .send({ sourceName: 'youtube', externalId: 'dQw4w9WgXcQ', title: 'Never Gonna Give You Up', artist: 'Rick Astley' });
 
-            expect(res.statusCode).toEqual(201);
+            expect(res.statusCode).toBe(201);
             expect(res.body).toHaveProperty('success', true);
-            expect(mockDb.get).toHaveBeenCalledTimes(2);
-            expect(mockDb.run).toHaveBeenCalledTimes(2);
         });
 
-        it('should reject invalid source names gracefully', async () => {
-            mockDb.get.mockResolvedValueOnce(null);
+        it('returns 404 when the playlist does not belong to the user', async () => {
+            mockDb.get.mockResolvedValueOnce(undefined); // ownership check fails
 
             const res = await request(app)
                 .post('/api/custom-playlists/10/tracks')
-                .send({
-                    sourceName: 'limewire',
-                    externalId: '123',
-                    title: 'Hacked Song'
-                });
+                .set(auth)
+                .send({ sourceName: 'youtube', externalId: '123', title: 'Song' });
 
-            expect(res.statusCode).toEqual(400);
+            expect(res.statusCode).toBe(404);
+        });
+
+        it('rejects an unknown source with 400', async () => {
+            mockDb.get
+                .mockResolvedValueOnce({ id: 10 })   // ownership passes
+                .mockResolvedValueOnce(undefined);   // source not found
+
+            const res = await request(app)
+                .post('/api/custom-playlists/10/tracks')
+                .set(auth)
+                .send({ sourceName: 'limewire', externalId: '123', title: 'Hacked Song' });
+
+            expect(res.statusCode).toBe(400);
             expect(res.body).toHaveProperty('error', 'Invalid source');
         });
     });
 
-    describe('GET /api/custom-playlists/:id/tracks', () => {
-        it('should return tracks sorted correctly', async () => {
-            const fakeTracks = [
+    describe('GET /api/custom-playlists/:playlistId/tracks', () => {
+        it('returns tracks when the playlist belongs to the user', async () => {
+            mockDb.get.mockResolvedValueOnce({ id: 10 }); // ownership passes
+            mockDb.all.mockResolvedValueOnce([
                 { id: 'xyz', title: 'Song 1', source: 'youtube' },
                 { id: 'abc', title: 'Song 2', source: 'youtube' }
-            ];
-            mockDb.all.mockResolvedValueOnce(fakeTracks);
+            ]);
 
-            const res = await request(app).get('/api/custom-playlists/10/tracks');
+            const res = await request(app).get('/api/custom-playlists/10/tracks').set(auth);
 
-            expect(res.statusCode).toEqual(200);
+            expect(res.statusCode).toBe(200);
             expect(res.body).toHaveLength(2);
-            expect(res.body[1].title).toEqual('Song 2');
+        });
+
+        it('returns 404 for a playlist the user does not own', async () => {
+            mockDb.get.mockResolvedValueOnce(undefined);
+            const res = await request(app).get('/api/custom-playlists/99/tracks').set(auth);
+            expect(res.statusCode).toBe(404);
         });
     });
 });

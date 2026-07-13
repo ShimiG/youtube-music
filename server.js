@@ -1,73 +1,35 @@
-const express = require('express');
-const cors = require('cors');
 require('dotenv').config();
 
-// --- IMPORT CONFIG & MIDDLEWARE ---
+const app = require('./app');
 const initDB = require('./config/db');
-const authMiddleware = require('./middleware/auth');
-const rateLimit = require('express-rate-limit');
 
-// --- IMPORT CONTROLLERS ---
-const authController = require('./controllers/authController');
-const searchController = require('./controllers/searchController');
-const playlistController = require('./controllers/playlistController');
-const historyController = require('./controllers/historyController');
-const streamingController = require('./controllers/streamingController');
-const YouTubeController = require('./controllers/YouTubeController');
-const { registerUser, loginUser } = require('./controllers/UserController');
-const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Rate limiter for duration endpoint (expensive system command)
-const durationLimiter = rateLimit({
-    windowMs: 1 * 60 * 1000, // 1 minute
-    max: 30, // limit each IP to 30 requests per windowMs
-});
+// Fail fast if a required secret is missing, instead of crashing later on the
+// first request that needs it.
+function validateEnv() {
+    const missing = [];
+    if (!process.env.JWT_SECRET) missing.push('JWT_SECRET');
+    if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
+        console.warn('Warning: JWT_SECRET is short; use at least 32 random characters.');
+    }
+    if (missing.length) {
+        console.error(`Missing required environment variables: ${missing.join(', ')}`);
+        console.error('Copy .env.example to .env and fill in the values.');
+        process.exit(1);
+    }
+}
 
-app.use(cors());
-app.use(express.json());
+validateEnv();
 
-// ==========================================
-// ROUTES
-// ==========================================
-
-// Auth Routes
-app.get('/auth/google', authController.googleLogin);
-app.get('/auth/google/callback', authController.googleCallback);
-app.post('/api/register', registerUser);
-app.post('/api/login', loginUser);
-// Search Route
-app.get('/search', authMiddleware, searchController.searchTracks);
-
-// YouTube Playlist Routes
-app.get('/playlists', authMiddleware, playlistController.getUserPlaylists);
-app.get('/playlists/:id/tracks', authMiddleware, playlistController.getPlaylistTracks);
-
-// YouTube Duration Route
-app.get('/duration', durationLimiter, YouTubeController.getDuration);
-
-// Custom Playlist Routes (Local DB)
-app.get('/api/custom-playlists', playlistController.getCustomPlaylists);
-app.post('/api/custom-playlists', playlistController.createCustomPlaylist);
-app.get('/api/custom-playlists/:playlistId/tracks', playlistController.getCustomPlaylistTracks);
-app.post('/api/custom-playlists/:playlistId/tracks', playlistController.addTrackToPlaylist);
-
-// History Routes
-app.post('/history', historyController.logHistory);
-app.get('/history', historyController.getHistory);
-
-// Streaming Route
-app.get('/stream', streamingController.handleStream);
-
-
-// ==========================================
-// SERVER INITIALIZATION
-// ==========================================
-initDB().then(db => {
-    app.locals.db = db; 
-    app.listen(PORT, () => {
-        console.log(`Server running on http://localhost:${PORT}`);
+initDB()
+    .then((db) => {
+        app.locals.db = db;
+        app.listen(PORT, () => {
+            console.log(`Server running on http://localhost:${PORT}`);
+        });
+    })
+    .catch((err) => {
+        console.error('Failed to initialize database:', err);
+        process.exit(1);
     });
-}).catch(err => {
-    console.error('Failed to initialize database:', err);
-});

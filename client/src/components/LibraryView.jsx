@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PlaylistCard, TrackRow } from './SharedUI';
-import { useMusic } from '../context/hook'; 
+import { useMusic } from '../context/hook';
+import { connectGoogle } from '../utils/googleAuth';
 
 export default function LibraryView() {
     const { playTrack, addToQueue } = useMusic();
@@ -17,16 +18,20 @@ export default function LibraryView() {
     const [playlistTracks, setPlaylistTracks] = useState([]);
 
     useEffect(() => {
-        const userId = localStorage.getItem('localUserId');
-        if (userId) {
-            fetch('http://localhost:3000/api/user/connections', { headers: { 'x-user-id': userId } })
+        const authToken = localStorage.getItem('authToken');
+        if (authToken) {
+            fetch('http://localhost:3000/api/user/connections', {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            })
                 .then(res => {
                     if (res.ok) return res.json();
                     throw new Error("Connections endpoint missing or failing");
                 })
                 .then(data => {
                     if (Array.isArray(data)) {
-                        const available = ['custom', ...data.map(conn => conn.source_name)];
+                        // youtube stays listed even when not connected, so its tab
+                        // can show the connect prompt instead of disappearing.
+                        const available = [...new Set(['custom', 'youtube', ...data.map(conn => conn.source_name)])];
                         setConnectedSources(available);
                     }
                 })
@@ -37,20 +42,23 @@ export default function LibraryView() {
     useEffect(() => {
         const loadLibraryData = async () => {
         if (activeSource === 'youtube') {
-            const token = localStorage.getItem('userToken');
-            if (!token) {
-                setYoutubeError("Please link your YouTube account to view these playlists.");
-                setYoutubePlaylists([]);
-                return; 
-            }
-            
-            setYoutubeError(null); 
-            
+            // Our own session token; the server looks up the Google token it
+            // stored for this user when the account was connected.
+            const token = localStorage.getItem('authToken');
+            if (!token) return;
+
+            setYoutubeError(null);
+
             fetch('http://localhost:3000/playlists', {
                 headers: { 'Authorization': `Bearer ${token}` }
             })
             .then(async res => {
                 const data = await res.json();
+                if (res.status === 401) {
+                    const err = new Error(data.error || "Unauthorized");
+                    err.code = data.code;
+                    throw err;
+                }
                 if (!res.ok) throw new Error(data.error || "Failed to fetch");
                 return data;
             })
@@ -64,15 +72,17 @@ export default function LibraryView() {
             .catch(err => {
                 console.error("Failed to fetch YT playlists:", err);
                 setYoutubePlaylists([]);
-                setYoutubeError("Your YouTube session has expired. Please reconnect your account.");
+                setYoutubeError(err.code === 'GOOGLE_NOT_CONNECTED'
+                    ? "Link your YouTube account to view these playlists."
+                    : "Your YouTube session has expired. Please reconnect your account.");
             });
-            
-        } else if (activeSource === 'custom') {
-            const userId = localStorage.getItem('localUserId');
-            if (!userId) return;
 
-            fetch('http://localhost:3000/api/custom-playlists', { 
-                headers: { 'x-user-id': userId }
+        } else if (activeSource === 'custom') {
+            const authToken = localStorage.getItem('authToken');
+            if (!authToken) return;
+
+            fetch('http://localhost:3000/api/custom-playlists', {
+                headers: { 'Authorization': `Bearer ${authToken}` }
             })
             .then(async res => {
                 const data = await res.json();
@@ -87,15 +97,17 @@ export default function LibraryView() {
     }, [activeSource]);
 
     const handleViewPlaylist = async (playlist, type) => {
-        const token = localStorage.getItem('userToken');
+        // Both playlist types authenticate with our own JWT now; for YouTube
+        // playlists the server supplies the stored Google token itself.
+        const token = localStorage.getItem('authToken');
         if (!token) return;
 
         setSelectedPlaylist(playlist);
-        setPlaylistTracks([]); 
+        setPlaylistTracks([]);
 
         try {
-            const endpoint = type === 'custom' 
-                ? `http://localhost:3000/api/custom-playlists/${playlist.id}/tracks` 
+            const endpoint = type === 'custom'
+                ? `http://localhost:3000/api/custom-playlists/${playlist.id}/tracks`
                 : `http://localhost:3000/playlists/${playlist.id}/tracks`;
 
             const res = await fetch(endpoint, {
@@ -172,8 +184,10 @@ export default function LibraryView() {
                             <div style={{ gridColumn: '1 / -1', padding: '20px', background: '#ff4d4d20', color: '#ff4d4d', borderRadius: '8px', textAlign: 'center', border: '1px solid #ff4d4d' }}>
                                 <h3>Connection Error</h3>
                                 <p>{youtubeError}</p>
-                                {/* We will hook this button up to our new OAuth linker soon! */}
-                                <button style={{ marginTop: '10px', padding: '10px 20px', background: '#ff4d4d', color: 'white', border: 'none', borderRadius: '20px', cursor: 'pointer', fontWeight: 'bold' }}>
+                                <button
+                                    onClick={connectGoogle}
+                                    style={{ marginTop: '10px', padding: '10px 20px', background: '#ff4d4d', color: 'white', border: 'none', borderRadius: '20px', cursor: 'pointer', fontWeight: 'bold' }}
+                                >
                                     Reconnect YouTube
                                 </button>
                             </div>

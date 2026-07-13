@@ -1,97 +1,104 @@
-Here is the updated `README.md` that reflects your massive architectural shift to a Tauri desktop application, the SQLite database implementation, the testing suites, and your new robust streaming cache pipeline!
+# Music Manager
 
-```markdown
-# Hybrid Cross-Platform Music Manager
+A desktop music player that uses **YouTube as its audio source**. A React UI runs
+inside a **Tauri** desktop window and talks to a local **Node/Express** API, which
+resolves audio with `yt-dlp`, transcodes it to MP3 with `ffmpeg`, and streams it to
+the player. Custom playlists and play history are stored in a local **SQLite** file.
 
-A unified, full-stack music streaming application designed to bridge disparate music ecosystems. Originally built as a web application, it has evolved into a highly optimized, native desktop application using Tauri and Rust. Currently built on top of the YouTube Data API v3 with a robust custom streaming pipeline, the application allows users to search, manage playlists, and stream audio through a highly optimized React frontend.
-
-## Architecture & API Roadmap
-
-View the full system architecture, API data flow, and divergent streaming strategy diagram here:  
-**[Eraser.io Architecture Diagram](https://app.eraser.io/workspace/xs7pg6H8yMwvnJquAMfJ)**
-
-## Key Features (Phase 3 Complete)
-
-### 🖥️ Native Desktop Experience (New!)
-* **Tauri Core:** The React frontend and Node.js backend are bundled into a lightweight, incredibly fast native desktop executable using Tauri and Rust.
-* **Node.js Sidecar:** The Express backend is pre-compiled into a standalone binary using `pkg` and runs securely as a background sidecar process.
-* **System Tray Integration:** Minimizing or closing the window hides the app to the system tray, allowing music to continue playing seamlessly in the background.
-
-### 🎵 Advanced Playback Engine
-* **Bulletproof Audio Caching:** Streams are dynamically piped using `ffmpeg` and saved locally using a `.part` file chunking pattern, allowing for instant seeks and offline caching without broken streams or memory leaks. 
-* **Gapless Preloading:** A hidden background engine listens for the `progress` event of the active track and silently preloads the next song in the queue into the browser's RAM, ensuring zero-latency, gapless transitions.
-* **OS Media Controls:** Full integration with the **Media Session API**. Control playback, skip tracks, and view album art directly from your Mac Control Center, Windows Media Overlay, or mobile lock screen.
-
-### 🗄️ Library & Database Management (New!)
-* **Local SQLite Database:** Fully functional local database for lightning-fast, offline-capable storage of custom user playlists, track history, and a universal song registry.
-* **My Library:** Authenticated OAuth users can fetch their personal YouTube playlists, view precise song counts, and drill down into playlist contents.
-* **Intelligent Shuffle:** Uses the Fisher-Yates algorithm to randomize the upcoming queue while perfectly retaining the currently playing song. Toggling shuffle off instantly restores the original playlist order.
-
-### 🎨 Premium UI/UX
-* **Responsive Dashboard:** A dark-mode, edge-to-edge layout built with CSS Grid/Flexbox inspired by modern streaming giants.
-* **Custom SVG Controls:** Buttery smooth CSS transitions, hover states, and a fully custom SVG volume slider featuring animated sound waves that react to mute states.
-
-## Tech Stack
-
-**Frontend & Desktop Wrapper:**
-* React.js (Vite)
-* Tauri (Rust) for native OS integrations and window management
-* Context API (Global Audio & Queue State)
-* HTML5 Audio API (Native Buffering & Playback)
-
-**Backend & Data Layer:**
-* Node.js & Express (Architected with the Controller/Router pattern)
-* Local SQLite3 Database
-* `yt-dlp` + `ffmpeg` (Raw audio extraction and ADTS streaming pipeline)
-* `googleapis` (Official YouTube Data v3 API for metadata)
-* `pkg` (Compiles Node.js backend into standalone executables)
-* Jest & Supertest (Comprehensive endpoint and database mocking test suites)
-
-## Getting Started
-
-### Prerequisites
-* Node.js (v18+)
-* Rust and `rustup` installed (for Tauri)
-* `ffmpeg` and `yt-dlp` installed on your system
-* Google Cloud Console Project with YouTube Data API v3 enabled and OAuth credentials
-
-### Installation & Development
-1. Clone the repository.
-2. Install all dependencies from the root directory:
-   ```bash
-   npm install
+## Architecture
 
 ```
-
-3. Create a `.env` file in the root directory with your Google API credentials and session secrets.
-4. Run the development server (This automatically spins up both the Node.js backend and the React/Tauri frontend concurrently):
-```bash
-npx tauri dev
-
+┌────────────────────┐      HTTP (localhost:3000)      ┌───────────────────────────┐
+│  React client       │  ───────────────────────────▶  │  Express API (server.js)   │
+│  (Vite, in Tauri)   │                                 │  routes → controllers      │
+└────────────────────┘                                 │  SQLite (database.sqlite)  │
+        ▲                                               │  yt-dlp + ffmpeg (stream)  │
+        │ native webview + Node sidecar                 └───────────────────────────┘
+┌────────────────────┐
+│  Tauri shell (Rust) │
+└────────────────────┘
 ```
 
+- **`server.js`** — entry point: loads env, validates it, opens the DB, starts listening.
+- **`app.js`** — the single Express app (middleware + routes). Exported so tests import
+  the exact app that ships.
+- **`controllers/`** — per-endpoint logic. **`middleware/`** — `requireAuth` (our JWT) and
+  `googleToken` (Google OAuth pass-through). **`config/db.js`** — SQLite schema + indexes.
 
+### Two kinds of login
+- **Local account** (username/password): the API issues a signed **JWT** on register/login.
+  The client sends it as `Authorization: Bearer <token>` to our own endpoints
+  (`/history`, `/api/custom-playlists`). Identity is read from the token, never from a
+  client header.
+- **Google OAuth token**: used only to call the YouTube Data API on the user's behalf
+  (`/search`, `/playlists`). Google validates this token; we pass it through.
 
-### Building for Production
+## Prerequisites
 
-To build the standalone desktop executables (.dmg, .exe, .app):
+- **Node.js 20+**
+- **Rust + `rustup`** (for the Tauri build)
+- A **`yt-dlp` binary** in `bin/` — `bin/yt-dlp_macos` on macOS, `bin/yt-dlp.exe` on Windows.
+  (`ffmpeg` is bundled via the `ffmpeg-static` npm package — no separate install.)
+- A **Google Cloud** project with the **YouTube Data API v3** enabled and OAuth credentials.
+
+## Setup
 
 ```bash
-npm run tauri:build
-
+npm install
+cp .env.example .env      # then fill in the values (see below)
 ```
 
-## Roadmap: Phase 4 (Upcoming)
+Required environment variables (see `.env.example`):
 
-* **Custom Window Styling:** Removing default OS title bars in favor of a custom React drag-bar.
-* **Spotify Integration:** Implementing the Spotify Web Playback SDK to allow hybrid YouTube/Spotify queues.
+| Variable | Purpose |
+|---|---|
+| `PORT` | API port (default 3000) |
+| `JWT_SECRET` | Secret for signing login tokens — use a long random string |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth credentials |
+| `REDIRECT_URI` | OAuth callback, e.g. `http://localhost:3000/auth/google/callback` |
+| `CLIENT_ORIGIN` | Allowed browser origin(s), comma-separated (default `http://localhost:5173`) |
 
+The server refuses to start if `JWT_SECRET` is missing.
+
+## Running
+
+```bash
+npm run dev          # runs the API (:3000) and the Vite client (:5173) together
+npm start            # API only
+npm test             # Jest + Supertest against the real app
+npm run lint         # ESLint (backend)
 ```
 
-**Changes Made:**
-1. **Moved Phase 3 from the roadmap to "Complete"**, specifically highlighting the Tauri desktop migration, SQLite database integration, and the backend Controller refactor.
-2. Added the **Native Desktop Experience** section to highlight the System Tray, Sidecar, and Rust integrations.
-3. Updated the **Tech Stack** to include Tauri, SQLite, `pkg`, and Jest.
-4. Streamlined the **Installation** instructions to reflect your new, clean `package.json` where `npx tauri dev` handles both the client and server!
+Desktop dev/build (Tauri):
 
+```bash
+npx tauri dev        # native window in development
+npm run tauri:build  # standalone desktop app (bundles the pkg-compiled server)
 ```
+
+## API overview
+
+| Method & path | Auth | Purpose |
+|---|---|---|
+| `POST /api/register`, `POST /api/login` | — | Create/log in a local account → returns a JWT |
+| `GET /auth/google`, `GET /auth/google/callback` | — | Connect a Google/YouTube account |
+| `GET /search?q=` | Google token | Search YouTube |
+| `GET /playlists`, `GET /playlists/:id/tracks` | Google token | The user's YouTube playlists |
+| `GET /stream?videoId=`, `GET /duration?videoId=` | rate-limited | Audio stream / duration |
+| `GET /history`, `POST /history` | JWT | Play history |
+| `GET/POST /api/custom-playlists`, `.../:playlistId/tracks` | JWT | Local playlists |
+
+## Notes & known limitations
+
+- **Single-instance by design.** In-memory rate limiting, a local file cache, and local
+  SQLite mean this runs as one process (correct for a desktop app; would need Redis/object
+  storage/Postgres to scale horizontally as a web service).
+- **`pkg` is legacy.** It bundles the server to a Node 18 target and is no longer maintained;
+  a future migration to Node's built-in SEA (single executable applications) is advisable.
+- **`/stream` is not per-user authenticated** because the browser `<audio>` element cannot
+  send an `Authorization` header. It is protected by input validation + rate limiting instead.
+
+## Tech stack
+
+React (Vite) · Tauri (Rust) · Node.js/Express 5 · SQLite (`sqlite`/`sqlite3`) ·
+`googleapis` · `yt-dlp` + `ffmpeg-static` · `jsonwebtoken` + `bcryptjs` · Jest/Supertest.

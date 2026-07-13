@@ -43,21 +43,19 @@ export const MusicProvider = ({ children }) => {
                 })
                 .catch(err => console.error("Failed to fetch true duration:", err));
         }
-        const userId = localStorage.getItem('localUserId');
-        if (userId) {
+        const authToken = localStorage.getItem('authToken');
+        if (authToken) {
             fetch('http://localhost:3000/history', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-user-id': userId 
+                    'Authorization': `Bearer ${authToken}`
                 },
                 body: JSON.stringify({
                     trackId: track.id,
                     title: track.title,
                     artist: track.channelTitle || track.artist || 'Unknown Artist',
-                    thumbnail: track.thumbnail || track.image,
-                    email: localStorage.getItem('userEmail'),
-                    displayName: localStorage.getItem('userName')
+                    thumbnail: track.thumbnail || track.image
                 })
             }).catch(err => console.error("Failed to log history:", err));
         }

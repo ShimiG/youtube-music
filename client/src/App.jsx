@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import LibraryView from './components/LibraryView';
 import SearchView from './components/SearchView';
 import HistoryView from './components/HistoryView';
@@ -18,17 +18,55 @@ function App() {
         return storedId ? { id: storedId, username: storedName } : null;
     });
 
-    const handleLoginSuccess = (userId, username) => {
+    // After the Google connect flow, the backend redirects here with
+    // #google=connected&expires_at=... in the URL fragment. The Google tokens
+    // themselves stay on the server (user_connections table); the client only
+    // records when they expire, then scrubs the fragment from the address bar.
+    useEffect(() => {
+        const hash = window.location.hash;
+        if (!hash.includes('google=')) return;
+
+        const params = new URLSearchParams(hash.slice(1));
+        if (params.get('google') === 'connected' && params.get('expires_at')) {
+            localStorage.setItem('googleExpiresAt', params.get('expires_at'));
+        } else if (params.get('google') === 'error') {
+            console.error('Google account connection failed.');
+        }
+        window.history.replaceState(null, '', window.location.pathname);
+    }, []);
+
+    const handleLoginSuccess = (token, userId, username) => {
+        localStorage.setItem('authToken', token);
         localStorage.setItem('localUserId', userId);
         localStorage.setItem('localUserName', username);
         setLocalUser({ id: userId, username });
     };
 
-    const handleLogout = () => { 
+    const handleLogout = () => {
+        localStorage.removeItem('authToken');
         localStorage.removeItem('localUserId');
         localStorage.removeItem('localUserName');
-        setLocalUser(null); 
+        localStorage.removeItem('googleExpiresAt');
+        localStorage.removeItem('userToken'); // legacy key from the old client-held-token flow
+        setLocalUser(null);
     };
+
+    // Auto-logout when the Google token expires, so the next login forces a
+    // fresh connect and fresh tokens. When more streaming services are added,
+    // this should use the EARLIEST expiry among all connected services.
+    useEffect(() => {
+        if (!localUser) return;
+        const expiresAt = Number(localStorage.getItem('googleExpiresAt'));
+        if (!expiresAt) return;
+
+        const msLeft = expiresAt - Date.now();
+        if (msLeft <= 0) {
+            handleLogout();
+            return;
+        }
+        const timer = setTimeout(handleLogout, msLeft);
+        return () => clearTimeout(timer);
+    }, [localUser]);
 
     return (
         <div className="app-container">

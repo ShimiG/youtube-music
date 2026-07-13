@@ -1,28 +1,24 @@
-const { google } = require('googleapis');
+const { getYouTubeClient } = require('./youtubeClient');
 
 const parseDuration = (isoDuration) => {
     const regex = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/;
-    const matches = isoDuration.match(regex);
+    const matches = (isoDuration || '').match(regex);
     if (!matches) return 0;
-    
+
     const hours = parseInt(matches[1] || 0);
     const minutes = parseInt(matches[2] || 0);
     const seconds = parseInt(matches[3] || 0);
-    
+
     return (hours * 3600) + (minutes * 60) + seconds;
 };
 
-const getYouTubeClient = (token) => {
-    const oauth2Client = new google.auth.OAuth2();
-    oauth2Client.setCredentials({ access_token: token });
-    return google.youtube({ version: 'v3', auth: oauth2Client });
-};
-
-const searchTracks = async (req, res) => {
+const searchTracks = async (req, res, next) => {
     const query = req.query.q;
-    const token = req.oauthToken; 
+    const token = req.oauthToken;
 
-    if (!token) return res.status(401).send("Unauthorized: No token provided");
+    if (typeof query !== 'string' || query.trim().length === 0 || query.length > 200) {
+        return res.status(400).json({ error: 'A search query (q) of 1-200 characters is required' });
+    }
 
     try {
         const youtube = getYouTubeClient(token);
@@ -49,17 +45,16 @@ const searchTracks = async (req, res) => {
             title: video.snippet.title,
             channelTitle: video.snippet.channelTitle,
             thumbnail: video.snippet.thumbnails.default.url,
-            duration: parseDuration(video.contentDetails.duration) 
+            duration: parseDuration(video.contentDetails.duration)
         }));
 
         res.json(cleanResults);
-
     } catch (error) {
-        console.error('Search API Error:', error);
-        if (error.message && (error.message.includes('Invalid Credentials') || error.code === 401)) {
-            return res.status(401).json({ error: "Token expired or invalid" });
+        console.error('Search API Error:', error.message);
+        if (error.code === 401 || (error.message && error.message.includes('Invalid Credentials'))) {
+            return res.status(401).json({ error: 'Token expired or invalid' });
         }
-        res.status(500).send(error.message);
+        res.status(502).json({ error: 'Search provider request failed' });
     }
 };
 

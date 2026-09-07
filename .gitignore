@@ -11,4 +11,7 @@ Electron Framework
 *.db
 database.sqlite
 bin/
+cache/database.sqlite*
+
 cache/
+.claude/settings.local.json

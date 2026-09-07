@@ -5,7 +5,8 @@ import HistoryView from './components/HistoryView';
 import Sidebar from './components/Sidebar';
 import PlayerFooter from './components/PlayerFooter';
 import Queue from './components/Queue';
-import AuthScreen from './components/AuthScreen'; 
+import AuthScreen from './components/AuthScreen';
+import ConnectServices from './components/ConnectServices';
 import './App.css';
 
 function App() {
@@ -78,6 +79,7 @@ function App() {
                     <Sidebar view={view} setView={setView} handleLogout={handleLogout} />
 
                     <main className="content" style={{ padding: '20px' }}>
+                        <ConnectServices />
                         {(view === 'search' || view === 'history') && (
                             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', width: '100%', boxSizing: 'border-box' }}> 
                                 <div>

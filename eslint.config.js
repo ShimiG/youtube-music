@@ -20,7 +20,11 @@ module.exports = [
                 __dirname: 'readonly',
                 setTimeout: 'readonly',
                 clearTimeout: 'readonly',
-                Buffer: 'readonly'
+                Buffer: 'readonly',
+                URL: 'readonly',
+                URLSearchParams: 'readonly',
+                fetch: 'readonly',
+                globalThis: 'readonly'
             }
         },
         rules: {
@@ -40,6 +44,21 @@ module.exports = [
                 afterAll: 'readonly',
                 jest: 'readonly'
             }
+        }
+    },
+    {
+        // Standalone ES-module scripts run by the CI workflows (Node, not the app).
+        files: ['scripts/**/*.mjs'],
+        languageOptions: {
+            ecmaVersion: 2022,
+            sourceType: 'module',
+            globals: {
+                process: 'readonly',
+                console: 'readonly'
+            }
+        },
+        rules: {
+            'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }]
         }
     }
 ];

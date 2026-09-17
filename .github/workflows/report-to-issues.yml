@@ -1,0 +1,81 @@
+name: Report to Issues
+
+# Turns agent findings files into GitHub issues, one per finding. This workflow
+# runs NO Claude / LLM code and needs NO API key: the agents (run by scheduled
+# Claude cloud routines on the owner's own account) commit their findings JSON,
+# and this workflow only reads that JSON and opens issues with the built-in
+# GITHUB_TOKEN. Issue creation is idempotent (fingerprint dedup in the script),
+# so re-runs never duplicate a task.
+
+on:
+  push:
+    paths:
+      - 'reports/**/*.findings.json'
+  workflow_dispatch:
+    inputs:
+      findings_glob:
+        description: 'Glob of findings files to process'
+        required: false
+        default: 'reports/**/*.findings.json'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: report-to-issues-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  file-issues:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Determine findings files
+        id: files
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Only the findings files added or changed in this push.
+            mapfile -t CHANGED < <(git diff --name-only --diff-filter=ACMR \
+              "${{ github.event.before }}" "${{ github.sha }}" 2>/dev/null \
+              | grep -E 'reports/.*\.findings\.json$' || true)
+          else
+            mapfile -t CHANGED < <(ls -1 ${{ github.event.inputs.findings_glob }} 2>/dev/null || true)
+          fi
+          {
+            echo 'files<<EOF'
+            printf '%s\n' "${CHANGED[@]}"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+          printf 'Findings files to process:\n%s\n' "${CHANGED[*]:-<none>}"
+
+      - name: File issues from findings
+        if: steps.files.outputs.files != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SERVER_URL: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            [ -f "$f" ] || { echo "skip missing $f"; continue; }
+            echo "::group::$f"
+            node scripts/report-to-issues.mjs \
+              --input "$f" \
+              --report-url "${SERVER_URL}/${REPO}/blob/${SHA}/${f}"
+            echo "::endgroup::"
+          done <<< "${{ steps.files.outputs.files }}"

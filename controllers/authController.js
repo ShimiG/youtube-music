@@ -82,11 +82,14 @@ const googleCallback = async (req, res, next) => {
 };
 
 // Lists which streaming services the logged-in user has connected, with each
-// token's expiry so the client can schedule its auto-logout.
+// token's expiry so the client can schedule its auto-logout. `refreshable`
+// marks connections the server renews itself (SoundCloud): their expiry
+// passing does not mean the user has to reconnect.
 const getConnections = async (req, res, next) => {
     try {
         const rows = await req.app.locals.db.all(
-            `SELECT s.name AS source_name, uc.expires_at
+            `SELECT s.name AS source_name, uc.expires_at,
+                    CASE WHEN s.name = 'soundcloud' AND uc.refresh_token IS NOT NULL THEN 1 ELSE 0 END AS refreshable
              FROM user_connections uc
              JOIN sources s ON uc.source_id = s.id
              WHERE uc.user_id = ?`,

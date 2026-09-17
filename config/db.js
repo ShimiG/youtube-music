@@ -29,7 +29,19 @@ async function initDB() {
         );
     `);
 
-    await db.run(`INSERT OR IGNORE INTO sources (id, name) VALUES (1, 'youtube'), (2, 'spotify')`);
+    await db.run(`INSERT OR IGNORE INTO sources (id, name) VALUES (1, 'youtube'), (2, 'spotify'), (3, 'soundcloud')`);
+
+    // App-level (client_credentials) tokens, one row per provider. SoundCloud
+    // rate-limits new client_credentials tokens, so the token survives restarts
+    // here and is renewed with its refresh_token instead of re-requested.
+    await db.exec(`
+        CREATE TABLE IF NOT EXISTS app_tokens (
+            provider TEXT PRIMARY KEY,
+            access_token TEXT NOT NULL,
+            refresh_token TEXT,
+            expires_at INTEGER NOT NULL
+        );
+    `);
 
     // Databases created before token expiry tracking lack this column; add it
     // in place. expires_at is a millisecond epoch (googleapis' expiry_date).

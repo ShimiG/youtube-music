@@ -1,26 +1,33 @@
 const YouTubeController = require('./YouTubeController');
-// const SpotifyController = require('./SpotifyController'); // We will create this later!
+const soundcloudController = require('./soundcloudController');
 
-const SUPPORTED_SOURCES = ['youtube', 'spotify'];
+// Every source that plays through the server. Adding one means adding its
+// stream and duration handlers here; app.js never learns service details.
+const SOURCES = {
+    youtube: { stream: YouTubeController.streamTrack, duration: YouTubeController.getDuration },
+    soundcloud: { stream: soundcloudController.streamTrack, duration: soundcloudController.getDuration }
+};
+
+function resolveSource(req, res) {
+    const source = String(req.query.source || 'youtube').toLowerCase();
+    // Never echo the raw parameter back into the response — that is how a
+    // reflected XSS payload gets rendered by a browser.
+    if (!Object.prototype.hasOwnProperty.call(SOURCES, source)) {
+        res.status(400).json({ error: 'Unsupported streaming source' });
+        return null;
+    }
+    return SOURCES[source];
+}
 
 class StreamingController {
     static handleStream(req, res) {
-        const source = (req.query.source || 'youtube').toLowerCase();
+        const provider = resolveSource(req, res);
+        if (provider) return provider.stream(req, res);
+    }
 
-        // Never echo the raw parameter back into the response — that is how a
-        // reflected XSS payload gets rendered by a browser.
-        if (!SUPPORTED_SOURCES.includes(source)) {
-            return res.status(400).json({ error: 'Unsupported streaming source' });
-        }
-
-        switch (source) {
-            case 'youtube':
-                return YouTubeController.streamTrack(req, res);
-            case 'spotify':
-                return res.status(501).json({ error: 'Spotify streaming not implemented yet' });
-            default:
-                return res.status(400).json({ error: 'Unsupported streaming source' });
-        }
+    static handleDuration(req, res) {
+        const provider = resolveSource(req, res);
+        if (provider) return provider.duration(req, res);
     }
 }
 

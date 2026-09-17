@@ -42,7 +42,7 @@ own and leaves the app working.
 | Service | Connect | Playlists | Liked songs source | Paid tier playback | Free / no subscription | Stage |
 |---|---|---|---|---|---|---|
 | YouTube | Google OAuth | Own playlists | `videos.list myRating=like`, music category only. Liking needs the write scope | server-stream (no premium needed) | same | shipped |
-| SoundCloud | saved public profile URL | Public playlists via yt-dlp | `soundcloud.com/<user>/likes` via yt-dlp, read-only | n/a | server-stream; Go+ tracks are 30 s snippets | 1 |
+| SoundCloud | OAuth 2.1 + PKCE (official API); none needed for yt-dlp search/playback | Own playlists via `/me/playlists` (API only) | `/me/likes/tracks`, read-only for now (API only) | n/a | server-stream from `/tracks/{urn}/streams` or yt-dlp (HLS to ffmpeg); Go+ tracks play the preview snippet | shipped |
 | Spotify | OAuth, 1 h token + refresh | Own and followed playlists | `GET /me/tracks`, like via `PUT /me/tracks` | remote (Spotify Connect) | match | 2 |
 | Apple Music | MusicKit user token (minted in client) | Library playlists (subscribers only) | No loved-songs endpoint; `me/library/songs` stands in, labelled Library Songs | client-sdk (DRM) | match, catalog search only | 4 |
 | Tidal | OAuth PKCE | Own playlists | Favorite tracks endpoint | client-sdk (DRM) | match | 5 |
@@ -99,27 +99,34 @@ Effort: 3 to 4 days.
 
 Nothing else changes.
 
-## Stage 1: SoundCloud
+## Stage 1: SoundCloud (shipped: official API, with a yt-dlp fallback)
 
-Goal: a second audio source with zero credentials.
+Goal: a second audio source. Two providers share the same routes and ids:
+the official SoundCloud API (connect flow, the user's playlists and likes,
+stable stream URLs; needs app credentials, which require Artist Pro) and
+yt-dlp (search, playback and duration with no credentials; internal web API,
+so it can break when SoundCloud changes). `SOUNDCLOUD_PROVIDER=auto` prefers
+the API and falls back to yt-dlp when credentials are missing or the API
+returns a rate limit or server error.
 
-Server
-- SoundCloud provider: search with yt-dlp `scsearch30:<q>` using `--flat-playlist -j`; stream via `https://api.soundcloud.com/tracks/<id>` through the existing yt-dlp to ffmpeg path; duration via yt-dlp. Flag Go+ snippets as `preview: true`.
-- Connection kind `profile-url`: the user saves a public SoundCloud profile URL. `getPlaylists` reads the profile's public sets and `getLikedTracks` reads `soundcloud.com/<user>/likes`, both via yt-dlp flat playlists. Read-only, so `like` is not declared.
-- Stream endpoint: require `source`, validate the id per provider, and name cache files `<source>_<id>.mp3` so numeric SoundCloud ids cannot collide with YouTube ids.
-- History and custom playlists: accept `source` from the client and drop the hardcoded `youtube`.
+Server (done)
+- `controllers/soundcloud/client.js`: OAuth 2.1 (PKCE S256), `Authorization: OAuth` header, `linked_partitioning` pagination following `next_href`, bounded exponential back-off on 429/503, track/playlist normalisation with `access` (`playable` / `preview` / `blocked`).
+- `controllers/soundcloud/tokens.js`: per-user tokens in `user_connections` (source id 3) refreshed server-side and single-flight (refresh tokens are single-use); one cached app token (client credentials) in `app_tokens`, renewed with its refresh token to stay inside the 50 per 12 h / 30 per hour token limits.
+- Routes: `/auth/soundcloud/url`, `/auth/soundcloud/callback`, `DELETE /api/user/connections/soundcloud`, `/api/soundcloud/search` (app token, `cursor` for the next page), `/api/soundcloud/playlists` (virtual `liked` first), `/api/soundcloud/playlists/:id/tracks`.
+- Playback: `/stream?source=soundcloud&videoId=<id>` resolves `/tracks/{urn}/streams`, picks HLS MP3, then AAC, then the preview, and pipes it through the shared `controllers/transcode.js`. Cache files are `soundcloud_<id>.mp3`; previews are not cached. `/duration` takes `source` too. History accepts `source`.
+- `controllers/soundcloud/ytdlp.js`: `scsearch30:<q>` with `--flat-playlist -j`, stream URL via `-f bestaudio/best --print urls` on `https://api.soundcloud.com/tracks/<id>`, duration via `--print duration`. Formats suffixed `_preview` (and 30 s flat results) are flagged `preview`. `GET /api/soundcloud/status` tells the client which provider is active and whether connecting is possible.
+- `services/ytdlp.js`: one shared binary path and a background `yt-dlp -U` on every server start (`YTDLP_AUTO_UPDATE`), the self-update Stage 3 had planned.
 
-Client
-- Track objects gain `source`. `MusicContext` includes it in play, seek and preload stream URLs and in the history POST.
-- Search switch shows SoundCloud. Library dropdown shows SoundCloud once a profile URL is saved; the connect action for this source is a small URL form instead of a redirect.
+Client (done)
+- `utils/services.js` registry drives the connect banner, the Search source switch and the Library dropdown. Search results, playlist rows and the player carry `source`. SoundCloud rows link to the track's SoundCloud page and show `Preview` / `Not streamable` badges (attribution and access rules from the API terms).
 
-Tests: stream routing per source, 400 on unknown source, yt-dlp search JSON parsing with fixtures, cache filename prefix, profile likes normalisation.
+Still open for this stage
+- yt-dlp mode has no library. The original idea still applies: let the user save a public profile URL and read its sets and `soundcloud.com/<user>/likes` through yt-dlp flat playlists.
+- Every yt-dlp call pays the bundled binary's start-up cost (about 10 s for the single-file macOS build on the dev machine); search should debounce and show a spinner, or the binary should be replaced with a faster install.
+- Like / unlike from the app (`POST` / `DELETE /likes/tracks/{urn}`), and paging beyond 200 tracks in a playlist or in likes.
+- Display the "Connect with SoundCloud" branded button and logo assets from the Buttons & Logos page before a public release.
 
-Exit criteria: search and play a SoundCloud track with no API keys; a saved profile shows its playlists and likes in the Library. YouTube behaves exactly as before. All tests green.
-
-Risks: yt-dlp breaks when SoundCloud changes (Stage 3 adds self-update). Search spawns a process and takes 2 to 4 s; debounce and show a spinner.
-
-Effort: 2 days.
+Tests: PKCE challenge, token grants, single-use refresh handling, app-token caching and single-flight, 429 back-off and surfacing, pagination, normalisation, route auth, state replay protection, stream/duration routing per source. See `tests/soundcloud.test.js` and `tests/soundcloudRoutes.test.js`.
 
 ## Stage 2: Spotify and the match engine
 

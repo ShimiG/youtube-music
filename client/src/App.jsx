@@ -19,19 +19,24 @@ function App() {
         return storedId ? { id: storedId, username: storedName } : null;
     });
 
-    // After the Google connect flow, the backend redirects here with
-    // #google=connected&expires_at=... in the URL fragment. The Google tokens
-    // themselves stay on the server (user_connections table); the client only
-    // records when they expire, then scrubs the fragment from the address bar.
+    // After a connect flow, the backend redirects here with
+    // #<service>=connected&expires_at=... in the URL fragment. The service
+    // tokens themselves stay on the server (user_connections table). For Google
+    // the client records the expiry to schedule its auto-logout; SoundCloud
+    // tokens are refreshed server-side, so only the outcome matters. The
+    // fragment is scrubbed from the address bar either way.
     useEffect(() => {
         const hash = window.location.hash;
-        if (!hash.includes('google=')) return;
+        if (!hash.includes('google=') && !hash.includes('soundcloud=')) return;
 
         const params = new URLSearchParams(hash.slice(1));
         if (params.get('google') === 'connected' && params.get('expires_at')) {
             localStorage.setItem('googleExpiresAt', params.get('expires_at'));
         } else if (params.get('google') === 'error') {
             console.error('Google account connection failed.');
+        }
+        if (params.get('soundcloud') === 'error') {
+            console.error('SoundCloud account connection failed.');
         }
         window.history.replaceState(null, '', window.location.pathname);
     }, []);

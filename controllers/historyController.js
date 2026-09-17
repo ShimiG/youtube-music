@@ -4,11 +4,15 @@
 const logHistory = async (req, res, next) => {
     const db = req.app.locals.db;
     const userId = req.userId;
-    const { trackId, title, artist, thumbnail } = req.body || {};
-    const sourceName = 'youtube'; // Defaulting to youtube
+    const { trackId, title, artist, thumbnail, source } = req.body || {};
+    // Tracks carry their source; older clients that omit it are YouTube.
+    const sourceName = source === undefined ? 'youtube' : source;
 
     if (!trackId || typeof trackId !== 'string' || !title) {
         return res.status(400).json({ error: 'Missing track data' });
+    }
+    if (typeof sourceName !== 'string' || !/^[a-z]{1,32}$/.test(sourceName)) {
+        return res.status(400).json({ error: 'Invalid source' });
     }
 
     try {

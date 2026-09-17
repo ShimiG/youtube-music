@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 
 const requireAuth = require('./middleware/requireAuth');
 const googleToken = require('./middleware/googleToken');
+const soundcloudToken = require('./middleware/soundcloudToken');
 
 const authController = require('./controllers/authController');
 const { registerUser, loginUser } = require('./controllers/UserController');
@@ -12,7 +13,7 @@ const searchController = require('./controllers/searchController');
 const playlistController = require('./controllers/playlistController');
 const historyController = require('./controllers/historyController');
 const streamingController = require('./controllers/streamingController');
-const YouTubeController = require('./controllers/YouTubeController');
+const soundcloudController = require('./controllers/soundcloudController');
 
 const app = express();
 
@@ -66,10 +67,23 @@ app.get('/search', requireAuth, googleToken, searchController.searchTracks);
 app.get('/playlists', requireAuth, googleToken, playlistController.getUserPlaylists);
 app.get('/playlists/:id/tracks', requireAuth, googleToken, playlistController.getPlaylistTracks);
 
+// --- SoundCloud OAuth 2.1 (PKCE). Same shape as Google: the URL endpoint needs
+// our login; the callback is a bare browser redirect identified by `state`. ---
+app.get('/auth/soundcloud/url', requireAuth, soundcloudController.getAuthUrl);
+app.get('/auth/soundcloud/callback', soundcloudController.callback);
+app.delete('/api/user/connections/soundcloud', requireAuth, soundcloudController.disconnect);
+
+// --- SoundCloud-backed endpoints. Search works with the app token alone;
+// the library needs the user's own token (refreshed server-side). ---
+app.get('/api/soundcloud/status', requireAuth, soundcloudController.getStatus);
+app.get('/api/soundcloud/search', requireAuth, soundcloudController.searchTracks);
+app.get('/api/soundcloud/playlists', requireAuth, soundcloudToken, soundcloudController.getPlaylists);
+app.get('/api/soundcloud/playlists/:id/tracks', requireAuth, soundcloudToken, soundcloudController.getPlaylistTracks);
+
 // --- Media (rate-limited + input-validated; no Bearer header because the
-// browser <audio> element cannot send one) ---
+// browser <audio> element cannot send one). `source` selects the provider. ---
 app.get('/stream', mediaLimiter, streamingController.handleStream);
-app.get('/duration', mediaLimiter, YouTubeController.getDuration);
+app.get('/duration', mediaLimiter, streamingController.handleDuration);
 
 // --- History (our own login required) ---
 app.post('/history', requireAuth, historyController.logHistory);

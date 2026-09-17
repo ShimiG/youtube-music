@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const app = require('./app');
 const initDB = require('./config/db');
+const { updateYtDlp } = require('./services/ytdlp');
 
 const PORT = process.env.PORT || 3000;
 
@@ -12,6 +13,9 @@ function validateEnv() {
     if (!process.env.JWT_SECRET) missing.push('JWT_SECRET');
     if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
         console.warn('Warning: JWT_SECRET is short; use at least 32 random characters.');
+    }
+    if (!process.env.SOUNDCLOUD_CLIENT_ID || !process.env.SOUNDCLOUD_CLIENT_SECRET) {
+        console.warn('SoundCloud: no API credentials (SOUNDCLOUD_CLIENT_ID / SECRET). Search and playback run through yt-dlp; connecting an account and the library need the official API.');
     }
     if (missing.length) {
         console.error(`Missing required environment variables: ${missing.join(', ')}`);
@@ -27,6 +31,9 @@ initDB()
         app.locals.db = db;
         app.listen(PORT, () => {
             console.log(`Server running on http://localhost:${PORT}`);
+            // Best-effort, in the background: a stale yt-dlp is the usual reason
+            // YouTube or SoundCloud playback stops working.
+            updateYtDlp();
         });
     })
     .catch((err) => {

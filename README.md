@@ -1,9 +1,10 @@
 # Music Manager
 
-A desktop music player that uses **YouTube as its audio source**. A React UI runs
+A desktop music player that plays **YouTube** and **SoundCloud**. A React UI runs
 inside a **Tauri** desktop window and talks to a local **Node/Express** API, which
-resolves audio with `yt-dlp`, transcodes it to MP3 with `ffmpeg`, and streams it to
-the player. Custom playlists and play history are stored in a local **SQLite** file.
+resolves audio (YouTube via `yt-dlp`, SoundCloud via its official API), transcodes
+it to MP3 with `ffmpeg`, and streams it to the player. Custom playlists and play
+history are stored in a local **SQLite** file.
 
 ## Architecture
 
@@ -22,8 +23,12 @@ the player. Custom playlists and play history are stored in a local **SQLite** f
 - **`server.js`** — entry point: loads env, validates it, opens the DB, starts listening.
 - **`app.js`** — the single Express app (middleware + routes). Exported so tests import
   the exact app that ships.
-- **`controllers/`** — per-endpoint logic. **`middleware/`** — `requireAuth` (our JWT) and
-  `googleToken` (Google OAuth pass-through). **`config/db.js`** — SQLite schema + indexes.
+- **`controllers/`** — per-endpoint logic. `controllers/transcode.js` is the shared
+  ffmpeg pipeline every server-streamed source uses; `controllers/soundcloud/` holds the
+  SoundCloud HTTP client (`client.js`) and token persistence (`tokens.js`).
+  **`middleware/`** — `requireAuth` (our JWT), `googleToken` (stored Google token) and
+  `soundcloudToken` (stored SoundCloud token, refreshed server-side).
+  **`config/db.js`** — SQLite schema + indexes.
 
 ### Two kinds of login
 - **Local account** (username/password): the API issues a signed **JWT** on register/login.
@@ -32,6 +37,34 @@ the player. Custom playlists and play history are stored in a local **SQLite** f
   client header.
 - **Google OAuth token**: used only to call the YouTube Data API on the user's behalf
   (`/search`, `/playlists`). Google validates this token; we pass it through.
+- **SoundCloud OAuth 2.1 token** (authorization code + PKCE): stored per user and used
+  for `/api/soundcloud/playlists` and likes. Access tokens last about an hour; the
+  server renews them with the single-use refresh token, so the client never sees them.
+  Public search and stream resolution use one cached app-level (client credentials)
+  token in the `app_tokens` table, renewed with its refresh token to stay inside
+  SoundCloud's token rate limits.
+
+### SoundCloud without API credentials
+
+Registering a SoundCloud app requires an Artist Pro subscription. Until you have one,
+leave `SOUNDCLOUD_CLIENT_ID` / `SECRET` blank and the server routes SoundCloud
+**search, playback and duration through yt-dlp** instead (`controllers/soundcloud/ytdlp.js`).
+Track ids are the same numeric ids the official API uses, so cache files, history and
+custom playlists are interchangeable between the two paths.
+
+`SOUNDCLOUD_PROVIDER` controls this: `auto` (default) prefers the official API when
+credentials exist and falls back to yt-dlp when they are missing or when the API returns
+a rate limit or server error; `api` and `ytdlp` force one path. Connecting an account
+and the SoundCloud tab in the Library always need the official API, because yt-dlp has
+no user session. Note that yt-dlp reads SoundCloud's internal web API, which is outside
+the API Terms of Use and can break when SoundCloud changes its site.
+
+### yt-dlp self-update
+
+`yt-dlp` breaks whenever YouTube or SoundCloud change their sites, so the server runs
+`yt-dlp -U` in the background every time it starts (`services/ytdlp.js`). Startup never
+waits on it and a failed update just logs a warning. Set `YTDLP_AUTO_UPDATE=false` to
+turn it off (CI and tests do).
 
 ## Prerequisites
 
@@ -40,6 +73,9 @@ the player. Custom playlists and play history are stored in a local **SQLite** f
 - A **`yt-dlp` binary** in `bin/` — `bin/yt-dlp_macos` on macOS, `bin/yt-dlp.exe` on Windows.
   (`ffmpeg` is bundled via the `ffmpeg-static` npm package — no separate install.)
 - A **Google Cloud** project with the **YouTube Data API v3** enabled and OAuth credentials.
+- Optional: a **SoundCloud app** (Client ID + secret) from
+  [developers.soundcloud.com](https://developers.soundcloud.com/docs/api/register-app);
+  registering one requires an Artist Pro account. Without it the app runs YouTube-only.
 
 ## Setup
 
@@ -55,7 +91,11 @@ Required environment variables (see `.env.example`):
 | `PORT` | API port (default 3000) |
 | `JWT_SECRET` | Secret for signing login tokens — use a long random string |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth credentials |
-| `REDIRECT_URI` | OAuth callback, e.g. `http://localhost:3000/auth/google/callback` |
+| `REDIRECT_URI` | Google OAuth callback, e.g. `http://localhost:3000/auth/google/callback` |
+| `SOUNDCLOUD_CLIENT_ID` / `SOUNDCLOUD_CLIENT_SECRET` | SoundCloud app credentials (optional; enables SoundCloud) |
+| `SOUNDCLOUD_REDIRECT_URI` | SoundCloud OAuth callback registered on the app, default `http://localhost:3000/auth/soundcloud/callback` |
+| `SOUNDCLOUD_PROVIDER` | `auto` (default), `api` or `ytdlp`; see "SoundCloud without API credentials" |
+| `YTDLP_AUTO_UPDATE` | Run `yt-dlp -U` at server start (default `true`) |
 | `CLIENT_ORIGIN` | Allowed browser origin(s), comma-separated (default `http://localhost:5173`) |
 
 The server refuses to start if `JWT_SECRET` is missing.

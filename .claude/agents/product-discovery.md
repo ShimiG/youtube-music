@@ -62,6 +62,38 @@ The report is Markdown with these sections, in this order. Use headings and bull
 8. **Implementation notes** (optional): API and UX considerations, data sources to validate ideas such as surveys, analytics events or usage logs.
 9. **Sources**: every URL used.
 
+# Findings file (for the issue-creating workflow)
+
+In addition to the Markdown report, write a machine-readable findings file to
+`reports/product-discovery/<YYYY-MM-DD>.findings.json` (create the directory).
+The scheduled "Report to Issues" workflow reads it and opens one GitHub issue per
+roadmap item. Use stable slugs for `id` so the same idea across runs is not filed
+twice. Only include items you would put on the roadmap (skip ideas you scored and
+rejected); the workflow drops `priority: low` items, so reserve `low` for
+nice-to-haves you do not want filed yet.
+
+```json
+{
+  "run": {
+    "agent": "product-discovery",
+    "date": "YYYY-MM-DD",
+    "labels": ["enhancement"],
+    "report_url": "docs/product-discovery-<date>.md"
+  },
+  "findings": [
+    {
+      "id": "synced-lyrics",
+      "title": "Short imperative feature name",
+      "priority": "high|medium|low",
+      "category": "playback|library|search|auth|infra|other",
+      "description": "One paragraph: what it is.",
+      "rationale": "The user problem and the evidence or comparable.",
+      "size": "S|M|L"
+    }
+  ]
+}
+```
+
 # Prioritization rubric
 
 Rank by weighted score: user impact 30%, alignment with goals 25%, feasibility 20%, time to delivery 15%, risk 10%. Break ties in favor of the item that unblocks others. State the rubric in the report so readers can disagree with the weights rather than the ordering.

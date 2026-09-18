@@ -49,11 +49,31 @@ const googleCallback = async (req, res, next) => {
         return res.status(400).send('Invalid or expired state. Start the connect flow again from the app.');
     }
 
+    // Two separate failure modes, logged distinctly: the exchange with Google,
+    // and storing the result. A single catch used to label both "Error
+    // retrieving access token", which hid database errors behind the wrong cause.
+    let tokens;
     try {
-        const { tokens } = await oauth2Client.getToken(code);
+        ({ tokens } = await oauth2Client.getToken(code));
+    } catch (error) {
+        console.error('Google token exchange failed:', error.message);
+        return res.redirect(`${CLIENT_ORIGIN}/#google=error&reason=token_exchange`);
+    }
 
-        if (!tokens || !tokens.access_token) {
-            return res.redirect(`${CLIENT_ORIGIN}/#google=error`);
+    if (!tokens || !tokens.access_token) {
+        return res.redirect(`${CLIENT_ORIGIN}/#google=error&reason=no_access_token`);
+    }
+
+    const db = req.app.locals.db;
+    try {
+        // The session JWT only proves a signature; the account it names may have
+        // been deleted since, or created against a different copy of the
+        // database. user_connections.user_id has a FOREIGN KEY to users(id), so
+        // check first and give a clear reason instead of a constraint error.
+        const user = await db.get(`SELECT id FROM users WHERE id = ?`, [userId]);
+        if (!user) {
+            console.error(`Google connect: user ${userId} from the state token no longer exists; the client is holding a stale session. Log out and in again.`);
+            return res.redirect(`${CLIENT_ORIGIN}/#google=error&reason=user_not_found`);
         }
 
         // Google access tokens live ~1 hour; expiry_date is a ms epoch.
@@ -62,7 +82,7 @@ const googleCallback = async (req, res, next) => {
         // Keep the previous refresh_token if Google omits one — it is only
         // guaranteed on the first consent (prompt:'consent' forces it, but
         // COALESCE keeps us safe if that ever changes).
-        await req.app.locals.db.run(
+        await db.run(
             `INSERT INTO user_connections (user_id, source_id, access_token, refresh_token, expires_at)
              VALUES (?, ?, ?, ?, ?)
              ON CONFLICT(user_id, source_id) DO UPDATE SET
@@ -76,8 +96,8 @@ const googleCallback = async (req, res, next) => {
         // the URL fragment, which never reaches a server or its logs).
         res.redirect(`${CLIENT_ORIGIN}/#google=connected&expires_at=${expiresAt}`);
     } catch (error) {
-        console.error('Error retrieving access token:', error.message);
-        res.redirect(`${CLIENT_ORIGIN}/#google=error`);
+        console.error('Failed to store Google tokens:', error.message);
+        res.redirect(`${CLIENT_ORIGIN}/#google=error&reason=store_failed`);
     }
 };
 

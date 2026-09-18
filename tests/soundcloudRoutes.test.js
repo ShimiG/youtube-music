@@ -54,12 +54,14 @@ describe('Auth is enforced', () => {
 describe('Connect flow', () => {
     it('returns 503 SOUNDCLOUD_NOT_CONFIGURED when credentials are missing', async () => {
         delete process.env.SOUNDCLOUD_CLIENT_ID;
+        app.locals.db.get.mockResolvedValue({ id: 1 }); // the session's user exists
         const res = await request(app).get('/auth/soundcloud/url').set(authHeader);
         expect(res.statusCode).toBe(503);
         expect(res.body.code).toBe('SOUNDCLOUD_NOT_CONFIGURED');
     });
 
     it('issues a PKCE authorize URL and keeps the verifier server-side', async () => {
+        app.locals.db.get.mockResolvedValue({ id: 1 }); // the session's user exists
         const res = await request(app).get('/auth/soundcloud/url').set(authHeader);
         expect(res.statusCode).toBe(200);
 
@@ -86,6 +88,7 @@ describe('Connect flow', () => {
     });
 
     it('exchanges the code with the stored verifier, saves tokens for the state owner, and consumes the state', async () => {
+        app.locals.db.get.mockResolvedValue({ id: 1 }); // the session's user exists
         const urlRes = await request(app).get('/auth/soundcloud/url').set(authHeader);
         const state = new URL(urlRes.body.url).searchParams.get('state');
         const verifier = soundcloudController._pendingFlows.get(state).verifier;
@@ -107,6 +110,30 @@ describe('Connect flow', () => {
         // Replaying the same state must fail.
         const replay = await request(app).get(`/auth/soundcloud/callback?code=the-code&state=${state}`);
         expect(replay.statusCode).toBe(400);
+    });
+
+    it('GET /auth/soundcloud/url returns 401 USER_NOT_FOUND when the session names a deleted account', async () => {
+        app.locals.db.get.mockResolvedValueOnce(undefined); // no users row for this id
+        const res = await request(app).get('/auth/soundcloud/url').set(authHeader);
+        expect(res.statusCode).toBe(401);
+        expect(res.body.code).toBe('USER_NOT_FOUND');
+        // Nothing was minted, so nothing can be replayed later.
+        expect(soundcloudController._pendingFlows.size).toBe(0);
+    });
+
+    it('callback redirects with reason=user_not_found instead of hitting the FOREIGN KEY when the user is gone', async () => {
+        app.locals.db.get.mockResolvedValueOnce({ id: 1 }); // url step: user exists
+        const urlRes = await request(app).get('/auth/soundcloud/url').set(authHeader);
+        const state = new URL(urlRes.body.url).searchParams.get('state');
+
+        fetchMock.mockResolvedValueOnce(jsonResponse(200, { access_token: 'sc-access', refresh_token: 'sc-refresh', expires_in: 3600 }));
+        app.locals.db.get.mockResolvedValueOnce(undefined); // callback step: user deleted meanwhile
+
+        const res = await request(app).get(`/auth/soundcloud/callback?code=the-code&state=${state}`);
+        expect(res.statusCode).toBe(302);
+        expect(res.headers.location).toContain('soundcloud=error&reason=user_not_found');
+        // The INSERT that used to throw SQLITE_CONSTRAINT: FOREIGN KEY is never reached.
+        expect(app.locals.db.run).not.toHaveBeenCalled();
     });
 });
 

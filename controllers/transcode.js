@@ -25,6 +25,19 @@ if (!fs.existsSync(cacheDir)) {
     fs.mkdirSync(cacheDir, { recursive: true });
 }
 
+// The player loads audio through an <audio> element whose origin (the Vite dev
+// server, or the Tauri webview at tauri://localhost) differs from this API's.
+// helmet() sets Cross-Origin-Resource-Policy: same-origin on every response,
+// which makes the browser fetch the audio and then discard it before playback.
+// Media responses must opt into cross-origin so the element can use them. This
+// is about the client-vs-API origins only; the upstream audio source is
+// irrelevant, since it is fetched and transcoded server-side and never reaches
+// the browser directly. Every response an <audio> element consumes (both the
+// cache hit and the live transcode) goes through the two functions below.
+function setMediaHeaders(res) {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+}
+
 // Only characters that are safe in a filename; bounded length.
 function isValidCacheKey(key) {
     return typeof key === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(key);
@@ -76,6 +89,7 @@ function serveFromCache(res, cacheKey) {
     if (!finalFilePath || !fs.existsSync(finalFilePath)) return false;
     const now = new Date();
     fs.utimes(finalFilePath, now, now, () => {});
+    setMediaHeaders(res);
     res.sendFile(finalFilePath);
     return true;
 }
@@ -114,6 +128,7 @@ function streamTranscoded(req, res, { sourceUrl, cacheKey, seekTime = 0, allowCa
         if (!res.headersSent) res.status(500).json({ error: 'Audio processor unavailable' });
     });
 
+    setMediaHeaders(res);
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Transfer-Encoding', 'chunked');
     ffmpegProcess.stdout.pipe(res);

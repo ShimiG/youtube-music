@@ -110,3 +110,27 @@ describe('Input validation', () => {
         expect(res.statusCode).toBe(400);
     });
 });
+
+describe('Connect flow guards against stale sessions', () => {
+    // A validly signed JWT whose user row was deleted (or that was issued against
+    // a different copy of the database) used to reach the provider callback and
+    // die on SQLITE_CONSTRAINT: FOREIGN KEY. It must now fail fast at the URL step.
+    beforeEach(() => {
+        app.locals.db = { get: jest.fn(), run: jest.fn(), all: jest.fn() };
+    });
+
+    it('GET /auth/google/url returns 401 USER_NOT_FOUND when the session names a deleted account', async () => {
+        app.locals.db.get.mockResolvedValueOnce(undefined);
+        const res = await request(app).get('/auth/google/url').set(authHeader);
+        expect(res.statusCode).toBe(401);
+        expect(res.body.code).toBe('USER_NOT_FOUND');
+    });
+
+    it('GET /auth/google/url issues a consent URL when the user exists', async () => {
+        app.locals.db.get.mockResolvedValueOnce({ id: 1 });
+        const res = await request(app).get('/auth/google/url').set(authHeader);
+        expect(res.statusCode).toBe(200);
+        expect(typeof res.body.url).toBe('string');
+        expect(res.body.url).toContain('accounts.google.com');
+    });
+});

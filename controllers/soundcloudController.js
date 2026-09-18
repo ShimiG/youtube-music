@@ -158,16 +158,34 @@ const callback = async (req, res) => {
         return res.status(400).send('Invalid or expired state. Start the connect flow again from the app.');
     }
 
+    // Exchange and storage are separate failure modes; log which one failed.
+    let result;
     try {
-        const result = await client.exchangeCode({ code, codeVerifier: flow.verifier });
-        await tokens.storeUserTokens(req.app.locals.db, flow.userId, result);
+        result = await client.exchangeCode({ code, codeVerifier: flow.verifier });
+    } catch (err) {
+        console.error('SoundCloud token exchange failed:', err.message);
+        return res.redirect(`${CLIENT_ORIGIN}/#soundcloud=error&reason=token_exchange`);
+    }
+
+    const db = req.app.locals.db;
+    try {
+        // The session JWT only proves a signature; its user may have been deleted
+        // since. user_connections.user_id has a FOREIGN KEY to users(id), so check
+        // first and give a clear reason instead of a constraint error.
+        const user = await db.get(`SELECT id FROM users WHERE id = ?`, [flow.userId]);
+        if (!user) {
+            console.error(`SoundCloud connect: user ${flow.userId} from the state no longer exists; the client is holding a stale session. Log out and in again.`);
+            return res.redirect(`${CLIENT_ORIGIN}/#soundcloud=error&reason=user_not_found`);
+        }
+
+        await tokens.storeUserTokens(db, flow.userId, result);
 
         // Tokens stay server-side; the client only learns the expiry (via the URL
         // fragment, which never reaches a server or its logs).
         res.redirect(`${CLIENT_ORIGIN}/#soundcloud=connected&expires_at=${result.expiresAt}`);
     } catch (err) {
-        console.error('SoundCloud token exchange failed:', err.message);
-        res.redirect(`${CLIENT_ORIGIN}/#soundcloud=error`);
+        console.error('Failed to store SoundCloud tokens:', err.message);
+        res.redirect(`${CLIENT_ORIGIN}/#soundcloud=error&reason=store_failed`);
     }
 };
 

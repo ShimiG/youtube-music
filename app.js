@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
 const requireAuth = require('./middleware/requireAuth');
+const requireExistingUser = require('./middleware/requireExistingUser');
 const googleToken = require('./middleware/googleToken');
 const soundcloudToken = require('./middleware/soundcloudToken');
 
@@ -58,7 +59,10 @@ app.post('/api/login', authLimiter, loginUser);
 // --- Google OAuth (connects a YouTube account to the logged-in user) ---
 // The URL endpoint requires our login so the callback can tie the tokens to a
 // user; the callback itself is public because Google redirects the bare browser.
-app.get('/auth/google/url', requireAuth, authController.getGoogleAuthUrl);
+// requireExistingUser fails fast if the session names a deleted account, so a
+// stale token gets a clear 401 here instead of a FOREIGN KEY error after the
+// full round-trip to the provider.
+app.get('/auth/google/url', requireAuth, requireExistingUser, authController.getGoogleAuthUrl);
 app.get('/auth/google/callback', authController.googleCallback);
 app.get('/api/user/connections', requireAuth, authController.getConnections);
 
@@ -69,7 +73,7 @@ app.get('/playlists/:id/tracks', requireAuth, googleToken, playlistController.ge
 
 // --- SoundCloud OAuth 2.1 (PKCE). Same shape as Google: the URL endpoint needs
 // our login; the callback is a bare browser redirect identified by `state`. ---
-app.get('/auth/soundcloud/url', requireAuth, soundcloudController.getAuthUrl);
+app.get('/auth/soundcloud/url', requireAuth, requireExistingUser, soundcloudController.getAuthUrl);
 app.get('/auth/soundcloud/callback', soundcloudController.callback);
 app.delete('/api/user/connections/soundcloud', requireAuth, soundcloudController.disconnect);
 

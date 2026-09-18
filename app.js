@@ -41,10 +41,21 @@ app.use(cors({
 app.use(express.json({ limit: '1mb' }));
 
 // --- Rate limiters ---
+// A general baseline cap on every request. Rate-limiting middleware bounds how
+// many requests one client (by IP) may make in a window, so a single caller
+// cannot exhaust the server with floods of DB queries, yt-dlp/ffmpeg work, or
+// brute-force guesses. This baseline also protects routes that do file-system
+// or database work; the auth and media limiters below stack a tighter cap on
+// their sensitive endpoints.
+const apiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 });
 // yt-dlp + ffmpeg are expensive, so the media endpoints get their own cap.
 const mediaLimiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
 // Login/register are brute-force targets, so they get a tighter cap.
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
+
+// Apply the baseline limiter to every route (defined before the routes so it
+// sits in front of them all).
+app.use(apiLimiter);
 
 // --- Health ---
 app.get('/', (req, res) => {

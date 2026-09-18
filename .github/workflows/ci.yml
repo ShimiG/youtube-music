@@ -30,7 +30,7 @@ jobs:
       run: npm install -g pkg
 
     - name: Verify Build (Dry Run)
-      run: npm run build
+      run: pkg server.js --targets node18-win-x64 --output MusicApp.exe --public
       
     - name: Check Build Output
       run: ls -lh MusicApp.exe

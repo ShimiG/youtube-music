@@ -19,8 +19,11 @@ export default function Sidebar({ view, setView, handleLogout }) {
             <button onClick={() => setView('history')} style={getBtnStyle('history')}>🕒 Recently Played</button>
 
             <div style={{ flex: 1 }}></div> 
-            <button onClick={handleLogout} style={{ background: 'transparent', border: 'none', color: '#ff4d4d', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', textAlign: 'left' }}>
-                Exit
+            {/* Shrink-wrap the button to its text so only the label is clickable,
+                not the full sidebar width (alignSelf covers a flex parent,
+                width:fit-content covers a block one). */}
+            <button onClick={handleLogout} style={{ background: 'transparent', border: 'none', color: '#ff4d4d', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold', textAlign: 'left', display: 'inline-block', width: 'fit-content', alignSelf: 'flex-start' }}>
+                Logout
             </button>
         </nav>
     );

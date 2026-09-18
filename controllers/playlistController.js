@@ -1,122 +1,76 @@
+const { getYouTubeClient } = require('./youtubeClient');
 
-const { google } = require('googleapis');
+// --- YouTube-backed endpoints (auth via googleToken middleware -> req.oauthToken) ---
 
-    const getYouTubeClient = (token) => {
-        if (!token) throw new Error("No token provided");
-        const oauth2Client = new google.auth.OAuth2();
-        oauth2Client.setCredentials({ access_token: token });
-        return google.youtube({ version: 'v3', auth: oauth2Client });
-    };
-
-    const getYouTubeLikes = async (req, res) => {
-       try {
-        const authHeader = req.header('Authorization');
-        if (!authHeader) return res.status(401).json({ error: "No token" });
-        
-        const token = authHeader.replace('Bearer ', '');
-            const youtube = getYouTubeClient(token);
-
-            const response = await youtube.videos.list({
-                part: 'snippet,contentDetails,statistics',
-                myRating: 'like',
-                maxResults: 50 
-            });
-
-            const musicVideos = response.data.items.filter(video => 
-                video.snippet.categoryId === '10'
-            );
-
-            const normalizedItems = musicVideos.map(video => ({
-                ...video,
-                snippet: {
-                    ...video.snippet,
-                    resourceId: { videoId: video.id } 
-                }
-            }));
-
-            res.json(normalizedItems);
-
-        } catch (error) {
-            console.error("Fetch Likes Error:", error.message);
-            res.status(500).json({ error: "Failed to fetch liked videos." });
-        }
-    };
-
-const likeVideo = async (req, res) => {
-    console.log("[Backend] Received like request...");
-
+const getYouTubeLikes = async (req, res, next) => {
     try {
-        const authHeader = req.header('Authorization');
-        if (!authHeader) {
-            console.error("[Backend] Error: No token provided");
-            return res.status(401).json({ error: "No token" });
-        }
-        
-        const token = authHeader.replace('Bearer ', '');
-        
-        const { videoId } = req.body; 
-        console.log(`[Backend] Liking video ID: ${videoId}`);
-
-        if (!videoId) {
-            return res.status(400).json({ error: "Missing videoId" });
-        }
-
-        const youtube = getYouTubeClient(token);
-        await youtube.videos.rate({
-            id: videoId,
-            rating: 'like'
+        const youtube = getYouTubeClient(req.oauthToken);
+        const response = await youtube.videos.list({
+            part: 'snippet,contentDetails,statistics',
+            myRating: 'like',
+            maxResults: 50
         });
 
-        console.log("[Backend] Success! Video liked.");
-        res.sendStatus(200);
+        const musicVideos = response.data.items.filter(video => video.snippet.categoryId === '10');
+        const normalizedItems = musicVideos.map(video => ({
+            ...video,
+            snippet: { ...video.snippet, resourceId: { videoId: video.id } }
+        }));
 
+        res.json(normalizedItems);
     } catch (error) {
-        console.error("[Backend] Google API Error:", error.message);
-        res.status(500).json({ error: "Could not like video" });
+        if (error.code === 401 || error.code === 403) {
+            return res.status(401).json({ error: 'Token expired or invalid' });
+        }
+        console.error('Fetch Likes Error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch liked videos.' });
     }
 };
-const getUserPlaylists = async (req, res) => {
+
+const likeVideo = async (req, res, next) => {
+    const { videoId } = req.body || {};
+    if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
+
     try {
-        const authHeader = req.header('Authorization');
-        if (!authHeader) return res.status(401).json({ error: "No token provided." });
+        const youtube = getYouTubeClient(req.oauthToken);
+        await youtube.videos.rate({ id: videoId, rating: 'like' });
+        res.sendStatus(200);
+    } catch (error) {
+        if (error.code === 401 || error.code === 403) {
+            return res.status(401).json({ error: 'Token expired or invalid' });
+        }
+        console.error('Like Video Error:', error.message);
+        res.status(500).json({ error: 'Could not like video' });
+    }
+};
 
-        const token = authHeader.replace('Bearer ', '');
-
-        const youtube = getYouTubeClient(token);
-
+const getUserPlaylists = async (req, res, next) => {
+    try {
+        const youtube = getYouTubeClient(req.oauthToken);
         const response = await youtube.playlists.list({
             part: 'snippet,contentDetails',
             mine: true,
             maxResults: 50
         });
-
         res.json(response.data.items);
     } catch (error) {
-        console.error("Fetch Playlists Error:", error.message);
-        
         if (error.code === 401 || error.code === 403) {
-            return res.status(401).json({ error: "Token expired or invalid" });
+            return res.status(401).json({ error: 'Token expired or invalid' });
         }
-        
-        res.status(500).json({ error: "Failed to fetch playlists." });
+        console.error('Fetch Playlists Error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch playlists.' });
     }
 };
 
+const getPlaylistTracks = async (req, res, next) => {
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ error: 'Missing Playlist ID' });
 
-const getPlaylistTracks = async (req, res) => {
     try {
-        const authHeader = req.header('Authorization');
-        if (!authHeader) return res.status(401).json({ error: "No token" });
-        const token = authHeader.replace('Bearer ', '');
-
-        const { id } = req.params;
-        if (!id) return res.status(400).json({ error: "Missing Playlist ID" });
-
-        const youtube = getYouTubeClient(token);
-
+        const youtube = getYouTubeClient(req.oauthToken);
         const response = await youtube.playlistItems.list({
             part: 'snippet,contentDetails',
-            playlistId: id, 
+            playlistId: id,
             maxResults: 50
         });
 
@@ -130,83 +84,106 @@ const getPlaylistTracks = async (req, res) => {
 
         res.json(tracks);
     } catch (error) {
-        console.error("Fetch Tracks Error:", error.message);
-        res.status(500).json({ error: "Failed to fetch tracks" });
+        if (error.code === 401 || error.code === 403) {
+            return res.status(401).json({ error: 'Token expired or invalid' });
+        }
+        console.error('Fetch Tracks Error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch tracks' });
     }
 };
 
-    const addTrackToPlaylist = async (req, res) => {
-        const db = req.app.locals.db;
-        const { playlistId } = req.params;
-        const { sourceName, externalId, title, artist, thumbnail } = req.body;
+// --- Local custom playlists (auth via requireAuth middleware -> req.userId) ---
 
-        try {
-            const source = await db.get(`SELECT id FROM sources WHERE name = ?`, [sourceName]);
-            if (!source) return res.status(400).json({ error: "Invalid source" });
-            await db.run(
-                `INSERT OR IGNORE INTO tracks (source_id, external_id, title, artist, thumbnail) VALUES (?, ?, ?, ?, ?)`,
-                [source.id, externalId, title, artist, thumbnail]
-            );
-            const track = await db.get(`SELECT id FROM tracks WHERE source_id = ? AND external_id = ?`, [source.id, externalId]);
-
-            await db.run(`INSERT INTO playlist_tracks (playlist_id, track_id) VALUES (?, ?)`, [playlistId, track.id]);
-            
-            res.status(201).json({ success: true, message: "Track added to playlist" });
-        } catch (error) {
-            res.status(500).json({ error: error.message });
-        }
-    };
-
-    const createCustomPlaylist = async (req, res) => {
+const createCustomPlaylist = async (req, res, next) => {
     const db = req.app.locals.db;
-    const userId = req.headers['x-user-id']; 
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
-    const { name, thumbnail } = req.body;
+    const { name, thumbnail } = req.body || {};
+
+    if (typeof name !== 'string' || name.trim().length === 0 || name.length > 120) {
+        return res.status(400).json({ error: 'Playlist name is required (max 120 chars)' });
+    }
 
     try {
-        const user = await db.get(`SELECT id FROM users WHERE id = ?`, [userId]);
-        if (!user) return res.status(404).json({ error: "User not found in DB" });
-
         const result = await db.run(
-            `INSERT INTO playlists (user_id, name, thumbnail) VALUES (?, ?, ?)`, 
-            [user.id, name, thumbnail || 'https://via.placeholder.com/150']
+            `INSERT INTO playlists (user_id, name, thumbnail) VALUES (?, ?, ?)`,
+            [req.userId, name.trim(), (typeof thumbnail === 'string' ? thumbnail : null)]
         );
-        res.status(201).json({ id: result.lastID, name, thumbnail });
+        res.status(201).json({ id: result.lastID, name: name.trim(), thumbnail });
     } catch (error) {
-        console.error("Create Playlist Error:", error.message);
-        res.status(500).json({ error: "Failed to create playlist" });
+        next(error);
     }
 };
 
-const getCustomPlaylists = async (req, res) => {
+const getCustomPlaylists = async (req, res, next) => {
     const db = req.app.locals.db;
-    const userId = req.headers['x-user-id']; 
-    if (!userId) return res.status(401).json({ error: "Unauthorized" });
-
     try {
         const playlists = await db.all(`
-            SELECT p.id, p.name, p.thumbnail, COUNT(pt.track_id) as itemCount 
+            SELECT p.id, p.name, p.thumbnail, COUNT(pt.track_id) as itemCount
             FROM playlists p
             LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id
             WHERE p.user_id = ?
             GROUP BY p.id
             ORDER BY p.created_at DESC
-        `, [userId]);
-        
+        `, [req.userId]);
         res.json(playlists);
     } catch (error) {
-        console.error("Fetch Custom Playlists Error:", error.message);
-        res.status(500).json({ error: "Failed to fetch custom playlists" });
+        next(error);
     }
 };
 
-const getCustomPlaylistTracks = async (req, res) => {
+// Confirms the playlist exists AND belongs to the logged-in user before any
+// read/write, so one user cannot touch another user's playlist by guessing its id.
+const assertPlaylistOwnership = async (db, playlistId, userId) => {
+    const playlist = await db.get(
+        `SELECT id FROM playlists WHERE id = ? AND user_id = ?`,
+        [playlistId, userId]
+    );
+    return Boolean(playlist);
+};
+
+const addTrackToPlaylist = async (req, res, next) => {
+    const db = req.app.locals.db;
+    const { playlistId } = req.params;
+    const { sourceName, externalId, title, artist, thumbnail } = req.body || {};
+
+    if (!externalId || typeof externalId !== 'string' || !title || typeof title !== 'string') {
+        return res.status(400).json({ error: 'externalId and title are required' });
+    }
+
+    try {
+        if (!(await assertPlaylistOwnership(db, playlistId, req.userId))) {
+            return res.status(404).json({ error: 'Playlist not found' });
+        }
+
+        const source = await db.get(`SELECT id FROM sources WHERE name = ?`, [sourceName]);
+        if (!source) return res.status(400).json({ error: 'Invalid source' });
+
+        await db.run(
+            `INSERT OR IGNORE INTO tracks (source_id, external_id, title, artist, thumbnail) VALUES (?, ?, ?, ?, ?)`,
+            [source.id, externalId, title, artist || null, thumbnail || null]
+        );
+        const track = await db.get(
+            `SELECT id FROM tracks WHERE source_id = ? AND external_id = ?`,
+            [source.id, externalId]
+        );
+
+        await db.run(`INSERT INTO playlist_tracks (playlist_id, track_id) VALUES (?, ?)`, [playlistId, track.id]);
+        res.status(201).json({ success: true, message: 'Track added to playlist' });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getCustomPlaylistTracks = async (req, res, next) => {
     const db = req.app.locals.db;
     const { playlistId } = req.params;
 
     try {
+        if (!(await assertPlaylistOwnership(db, playlistId, req.userId))) {
+            return res.status(404).json({ error: 'Playlist not found' });
+        }
+
         const tracks = await db.all(`
-            SELECT 
+            SELECT
                 t.external_id as id, t.title, t.artist as channelTitle, t.thumbnail as image, s.name as source
             FROM playlist_tracks pt
             JOIN tracks t ON pt.track_id = t.id
@@ -214,22 +191,19 @@ const getCustomPlaylistTracks = async (req, res) => {
             WHERE pt.playlist_id = ?
             ORDER BY pt.sort_order ASC
         `, [playlistId]);
-        
         res.json(tracks);
     } catch (error) {
-        console.error("Fetch Custom Tracks Error:", error.message);
-        res.status(500).json({ error: "Failed to fetch custom tracks" });
+        next(error);
     }
 };
 
-module.exports = { 
+module.exports = {
     getYouTubeLikes,
     likeVideo,
-    getUserPlaylists, 
+    getUserPlaylists,
     getPlaylistTracks,
     addTrackToPlaylist,
     createCustomPlaylist,
     getCustomPlaylists,
     getCustomPlaylistTracks
 };
-

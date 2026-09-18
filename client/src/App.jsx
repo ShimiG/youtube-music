@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import LibraryView from './components/LibraryView';
 import SearchView from './components/SearchView';
 import HistoryView from './components/HistoryView';
 import Sidebar from './components/Sidebar';
 import PlayerFooter from './components/PlayerFooter';
 import Queue from './components/Queue';
-import AuthScreen from './components/AuthScreen'; 
+import AuthScreen from './components/AuthScreen';
+import ConnectServices from './components/ConnectServices';
 import './App.css';
 
 function App() {
@@ -18,17 +19,58 @@ function App() {
         return storedId ? { id: storedId, username: storedName } : null;
     });
 
-    const handleLoginSuccess = (userId, username) => {
+    // After a connect flow, the backend redirects here with
+    // #<service>=connected&expires_at=... in the URL fragment. The service
+    // tokens themselves stay on the server (user_connections table). For Google
+    // the client records the expiry to schedule its auto-logout; SoundCloud
+    // tokens are refreshed server-side, so only the outcome matters. The
+    // fragment is scrubbed from the address bar either way.
+    useEffect(() => {
+        const hash = window.location.hash;
+        if (!hash.includes('google=') && !hash.includes('soundcloud=')) return;
+
+        const params = new URLSearchParams(hash.slice(1));
+        if (params.get('google') === 'connected' && params.get('expires_at')) {
+            localStorage.setItem('googleExpiresAt', params.get('expires_at'));
+        } else if (params.get('google') === 'error') {
+            console.error('Google account connection failed.');
+        }
+        if (params.get('soundcloud') === 'error') {
+            console.error('SoundCloud account connection failed.');
+        }
+        window.history.replaceState(null, '', window.location.pathname);
+    }, []);
+
+    const handleLoginSuccess = (token, userId, username) => {
+        localStorage.setItem('authToken', token);
         localStorage.setItem('localUserId', userId);
         localStorage.setItem('localUserName', username);
         setLocalUser({ id: userId, username });
     };
 
-    const handleLogout = () => { 
+    const handleLogout = () => {
+        localStorage.removeItem('authToken');
         localStorage.removeItem('localUserId');
         localStorage.removeItem('localUserName');
-        setLocalUser(null); 
+        localStorage.removeItem('googleExpiresAt');
+        localStorage.removeItem('userToken'); // legacy key from the old client-held-token flow
+        setLocalUser(null);
     };
+
+    // Auto-logout when the Google token expires, so the next login forces a
+    // fresh connect and fresh tokens. When more streaming services are added,
+    // this should use the EARLIEST expiry among all connected services.
+    useEffect(() => {
+        if (!localUser) return;
+        const expiresAt = Number(localStorage.getItem('googleExpiresAt'));
+        if (!expiresAt) return;
+
+        // Defer logout through a timer (0 ms when already expired) so no state
+        // update runs synchronously inside the effect body.
+        const msLeft = Math.max(0, expiresAt - Date.now());
+        const timer = setTimeout(handleLogout, msLeft);
+        return () => clearTimeout(timer);
+    }, [localUser]);
 
     return (
         <div className="app-container">
@@ -40,6 +82,7 @@ function App() {
                     <Sidebar view={view} setView={setView} handleLogout={handleLogout} />
 
                     <main className="content" style={{ padding: '20px' }}>
+                        <ConnectServices />
                         {(view === 'search' || view === 'history') && (
                             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', width: '100%', boxSizing: 'border-box' }}> 
                                 <div>

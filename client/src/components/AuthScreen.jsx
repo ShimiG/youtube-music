@@ -27,7 +27,7 @@ export default function AuthScreen({ onLoginSuccess }) {
                 throw new Error(data.error || "Authentication failed");
             }
 
-            onLoginSuccess(data.userId, data.username);
+            onLoginSuccess(data.token, data.userId, data.username);
 
         } catch (err) {
             setError(err.message);

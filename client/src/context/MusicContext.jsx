@@ -30,10 +30,12 @@ export const MusicProvider = ({ children }) => {
         hasPreloadedNext.current = false;
         setDuration(0);
         const safeId = track.id || track.videoId;
+        // Tracks carry their source; anything without one is a YouTube video.
+        const source = track.source || 'youtube';
         if (track.duration) {
             setDuration(track.duration);
         } else {
-            fetch(`http://localhost:3000/duration?videoId=${safeId}`)
+            fetch(`http://localhost:3000/duration?videoId=${safeId}&source=${source}`)
                 .then(res => res.json())
                 .then(data => {
                     if (data.duration) {
@@ -43,26 +45,25 @@ export const MusicProvider = ({ children }) => {
                 })
                 .catch(err => console.error("Failed to fetch true duration:", err));
         }
-        const userId = localStorage.getItem('localUserId');
-        if (userId) {
+        const authToken = localStorage.getItem('authToken');
+        if (authToken) {
             fetch('http://localhost:3000/history', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-user-id': userId 
+                    'Authorization': `Bearer ${authToken}`
                 },
                 body: JSON.stringify({
                     trackId: track.id,
                     title: track.title,
                     artist: track.channelTitle || track.artist || 'Unknown Artist',
                     thumbnail: track.thumbnail || track.image,
-                    email: localStorage.getItem('userEmail'),
-                    displayName: localStorage.getItem('userName')
+                    source
                 })
             }).catch(err => console.error("Failed to log history:", err));
         }
         
-        const streamUrl = `http://localhost:3000/stream?videoId=${safeId}`;
+        const streamUrl = `http://localhost:3000/stream?videoId=${safeId}&source=${source}`;
         audioRef.current.src = streamUrl;
 
         
@@ -75,7 +76,7 @@ export const MusicProvider = ({ children }) => {
     }, []);
 
     const playTrack = useCallback((track) => {
-        if (currentTrack?.id !== track.id) {
+        if (currentTrack?.id !== track.id || (currentTrack?.source || 'youtube') !== (track.source || 'youtube')) {
             setQueue([track]); 
             setDuration(0);
             setQueueIndex(0);
@@ -218,7 +219,8 @@ const seek = useCallback((time) => {
             setIsLoading(true);
 
             const safeId = currentTrack.id || currentTrack.videoId;
-            const streamUrl = `http://localhost:3000/stream?videoId=${safeId}&seek=${cleanTime}`;
+            const source = currentTrack.source || 'youtube';
+            const streamUrl = `http://localhost:3000/stream?videoId=${safeId}&source=${source}&seek=${cleanTime}`;
             
             audio.pause();
             audio.src = streamUrl;
@@ -276,7 +278,7 @@ const seek = useCallback((time) => {
             if (bufferedEnd >= audio.duration - 2) {
                 if (!hasPreloadedNext.current && queueIndex < queue.length - 1) {
                     const nextTrack = queue[queueIndex + 1];
-                    const preloadUrl = `http://localhost:3000/stream?videoId=${nextTrack.id}&seek=0`;
+                    const preloadUrl = `http://localhost:3000/stream?videoId=${nextTrack.id}&source=${nextTrack.source || 'youtube'}&seek=0`;
                     preloadAudioRef.current.src = preloadUrl;
                     preloadAudioRef.current.load(); 
                     

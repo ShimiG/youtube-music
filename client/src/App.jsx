@@ -65,11 +65,9 @@ function App() {
         const expiresAt = Number(localStorage.getItem('googleExpiresAt'));
         if (!expiresAt) return;
 
-        const msLeft = expiresAt - Date.now();
-        if (msLeft <= 0) {
-            handleLogout();
-            return;
-        }
+        // Defer logout through a timer (0 ms when already expired) so no state
+        // update runs synchronously inside the effect body.
+        const msLeft = Math.max(0, expiresAt - Date.now());
         const timer = setTimeout(handleLogout, msLeft);
         return () => clearTimeout(timer);
     }, [localUser]);

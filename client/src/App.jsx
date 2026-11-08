@@ -7,6 +7,8 @@ import PlayerFooter from './components/PlayerFooter';
 import Queue from './components/Queue';
 import AuthScreen from './components/AuthScreen';
 import ConnectServices from './components/ConnectServices';
+import Toaster from './components/Toaster';
+import { toast } from './utils/toast';
 import './App.css';
 
 function App() {
@@ -20,24 +22,18 @@ function App() {
     });
 
     // After a connect flow, the backend redirects here with
-    // #<service>=connected&expires_at=... in the URL fragment. The service
-    // tokens themselves stay on the server (user_connections table). For Google
-    // the client records the expiry to schedule its auto-logout; SoundCloud
-    // tokens are refreshed server-side, so only the outcome matters. The
-    // fragment is scrubbed from the address bar either way.
+    // #<service>=connected|error in the URL fragment. The service tokens stay
+    // on the server (user_connections, encrypted); the fragment only reports
+    // the outcome, and is scrubbed from the address bar either way.
     useEffect(() => {
         const hash = window.location.hash;
         if (!hash.includes('google=') && !hash.includes('soundcloud=')) return;
 
         const params = new URLSearchParams(hash.slice(1));
-        if (params.get('google') === 'connected' && params.get('expires_at')) {
-            localStorage.setItem('googleExpiresAt', params.get('expires_at'));
-        } else if (params.get('google') === 'error') {
-            console.error('Google account connection failed.');
-        }
-        if (params.get('soundcloud') === 'error') {
-            console.error('SoundCloud account connection failed.');
-        }
+        if (params.get('google') === 'connected') toast('YouTube connected.');
+        else if (params.get('google') === 'error') toast('Connecting YouTube failed. Try again.', { kind: 'error' });
+        if (params.get('soundcloud') === 'connected') toast('SoundCloud connected.');
+        else if (params.get('soundcloud') === 'error') toast('Connecting SoundCloud failed. Try again.', { kind: 'error' });
         window.history.replaceState(null, '', window.location.pathname);
     }, []);
 
@@ -52,28 +48,45 @@ function App() {
         localStorage.removeItem('authToken');
         localStorage.removeItem('localUserId');
         localStorage.removeItem('localUserName');
-        localStorage.removeItem('googleExpiresAt');
+        localStorage.removeItem('googleExpiresAt'); // legacy key from the pre-refresh auto-logout
         localStorage.removeItem('userToken'); // legacy key from the old client-held-token flow
         setLocalUser(null);
     };
 
-    // Auto-logout when the Google token expires, so the next login forces a
-    // fresh connect and fresh tokens. When more streaming services are added,
-    // this should use the EARLIEST expiry among all connected services.
+    // The server renews any connection it holds a refresh token for, so an
+    // expiry passing is normally invisible. Auto-logout only applies to a
+    // connection the server cannot renew (no refresh token): at the earliest
+    // such expiry the user is logged out so the next login reconnects it.
     useEffect(() => {
         if (!localUser) return;
-        const expiresAt = Number(localStorage.getItem('googleExpiresAt'));
-        if (!expiresAt) return;
+        const authToken = localStorage.getItem('authToken');
+        if (!authToken) return;
 
-        // Defer logout through a timer (0 ms when already expired) so no state
-        // update runs synchronously inside the effect body.
-        const msLeft = Math.max(0, expiresAt - Date.now());
-        const timer = setTimeout(handleLogout, msLeft);
-        return () => clearTimeout(timer);
+        let timer;
+        let cancelled = false;
+        fetch('http://localhost:3000/api/user/connections', { headers: { Authorization: `Bearer ${authToken}` } })
+            .then(res => (res.ok ? res.json() : []))
+            .then(rows => {
+                if (cancelled || !Array.isArray(rows)) return;
+                const expiries = rows
+                    .filter(conn => !conn.refreshable && conn.expires_at)
+                    .map(conn => Number(conn.expires_at));
+                if (!expiries.length) return;
+                const msLeft = Math.max(0, Math.min(...expiries) - Date.now());
+                // setTimeout caps at ~24.8 days; anything longer needs no timer this session.
+                if (msLeft > 2 ** 31 - 1) return;
+                timer = setTimeout(() => {
+                    toast('A connected service session ended. Log in again to reconnect.', { kind: 'warning' });
+                    handleLogout();
+                }, msLeft);
+            })
+            .catch(() => { /* offline: nothing to schedule */ });
+        return () => { cancelled = true; clearTimeout(timer); };
     }, [localUser]);
 
     return (
         <div className="app-container">
+            <Toaster />
             {/* Show AuthScreen if no local user exists */}
             {!localUser ? (
                 <AuthScreen onLoginSuccess={handleLoginSuccess} />

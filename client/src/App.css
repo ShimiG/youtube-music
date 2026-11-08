@@ -190,3 +190,27 @@
 .volume-slider:hover::-webkit-slider-thumb {
   background: #1db954; /* Turns green when grabbing */
 }
+/* Toasts (components/Toaster.jsx) */
+.toaster {
+    position: fixed;
+    right: 20px;
+    bottom: 110px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 1000;
+    max-width: min(360px, calc(100vw - 40px));
+}
+.toast {
+    text-align: left;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid #333;
+    background: #1e1e1e;
+    color: #eee;
+    font: inherit;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+.toast-error { border-color: #b33; }
+.toast-warning { border-color: #c80; }

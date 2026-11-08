@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PlaylistCard, TrackRow } from './SharedUI';
 import { useMusic } from '../context/hook';
 import { SERVICES, SERVICE_LIST } from '../utils/services';
+import { ERROR_CODES, describeSourceError } from '../utils/errors';
 
 // Sources that are always listed, connected or not, so their tab can show a
 // connect prompt instead of disappearing.
@@ -71,6 +72,7 @@ export default function LibraryView() {
                 if (!res.ok) {
                     const err = new Error(data.error || "Failed to fetch");
                     err.code = data.code;
+                    err.source = data.source;
                     err.status = res.status;
                     throw err;
                 }
@@ -89,10 +91,10 @@ export default function LibraryView() {
                     });
                 } else if (err.status === 429) {
                     setServiceError({ message: `${service.label} rate limit reached. Try again later.`, canConnect: false });
-                } else if (err.code === service.notConnectedCode) {
+                } else if (err.code === ERROR_CODES.SOURCE_NOT_CONNECTED) {
                     setServiceError({ message: `Link your ${service.label} account to view these playlists.`, canConnect: true });
                 } else {
-                    setServiceError({ message: `Your ${service.label} session has expired. Please reconnect your account.`, canConnect: true });
+                    setServiceError(describeSourceError({ code: err.code, error: err.message }, service.name));
                 }
             });
     }, [activeSource]);

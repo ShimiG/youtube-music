@@ -15,9 +15,7 @@ export const SERVICES = {
         searchRequiresConnection: true,
         searchEndpoint: (q) => `http://localhost:3000/search?q=${encodeURIComponent(q)}`,
         playlistsEndpoint: 'http://localhost:3000/playlists',
-        playlistTracksEndpoint: (id) => `http://localhost:3000/playlists/${encodeURIComponent(id)}/tracks`,
-        notConnectedCode: 'GOOGLE_NOT_CONNECTED',
-        expiredCode: 'GOOGLE_TOKEN_EXPIRED'
+        playlistTracksEndpoint: (id) => `http://localhost:3000/playlists/${encodeURIComponent(id)}/tracks`
     },
     soundcloud: {
         name: 'soundcloud',
@@ -30,9 +28,7 @@ export const SERVICES = {
         searchRequiresConnection: false,
         searchEndpoint: (q) => `http://localhost:3000/api/soundcloud/search?q=${encodeURIComponent(q)}`,
         playlistsEndpoint: 'http://localhost:3000/api/soundcloud/playlists',
-        playlistTracksEndpoint: (id) => `http://localhost:3000/api/soundcloud/playlists/${encodeURIComponent(id)}/tracks`,
-        notConnectedCode: 'SOUNDCLOUD_NOT_CONNECTED',
-        expiredCode: 'SOUNDCLOUD_TOKEN_EXPIRED'
+        playlistTracksEndpoint: (id) => `http://localhost:3000/api/soundcloud/playlists/${encodeURIComponent(id)}/tracks`
     }
 };
 

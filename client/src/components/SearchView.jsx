@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { TrackRow } from './SharedUI';
 import { useMusic } from '../context/hook';
 import { SERVICES, SERVICE_LIST } from '../utils/services';
+import { ERROR_CODES, describeSourceError } from '../utils/errors';
 
 export default function SearchView() {
     const [source, setSource] = useState('youtube');
@@ -25,12 +26,9 @@ export default function SearchView() {
             const data = await res.json().catch(() => ({}));
 
             if (res.status === 401) {
-                setServiceError({
-                    message: data.code === service.notConnectedCode
-                        ? `Connect your ${service.label} account to search for music.`
-                        : `Your ${service.label} session has expired. Reconnect to keep searching.`,
-                    canConnect: true
-                });
+                setServiceError(data.code === ERROR_CODES.SOURCE_NOT_CONNECTED
+                    ? { message: `Connect your ${service.label} account to search for music.`, canConnect: true }
+                    : describeSourceError({ ...data, code: data.code || ERROR_CODES.SOURCE_TOKEN_EXPIRED }, service.name));
                 setSearchResults([]);
                 setNextCursor(null);
                 return;

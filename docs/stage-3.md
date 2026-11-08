@@ -88,6 +88,26 @@ only if step 2 passes. Stages 4 and 5 already fall back to match.
 
 ## Security hardening
 
-See `reports/security/` for the Exploiter report, the Clogger remediation plan
-and the findings file. The fixes applied on this branch are listed in the
-commit history under "Stage 3 security".
+The Exploiter agent tested `main` (8bf79e4) on 2026-11-08, and the Clogger
+agent checked each finding against this branch and wrote the fix plan. Files:
+`reports/security/2026-11-08.md` (report), `.fixes.md` (remediation plan),
+`.findings.json` (findings with status and resolution).
+
+| Finding | Severity | Resolution on this branch |
+|---|---|---|
+| SoundCloud `cursor` SSRF leaking the OAuth token | high | Fixed: `buildUrl()` pins the API origin for every input form |
+| Production dependency advisories | high | Fixed: `npm audit fix`, CI gate |
+| Shared track metadata poisoning across users | medium | Fixed: validated input (https thumbnails only), per-user metadata columns |
+| yt-dlp processes orphaned, no timeout | medium | Fixed: 60 s timeout, killed on disconnect, no ffmpeg for a dead request |
+| Unauthenticated `/stream` transcode DoS | medium | **Partly mitigated**: at most 2 background transcodes, loopback bind. Open: signed short-lived media token |
+| Tauri CSP `null`, broad shell allowlist | medium | Fixed: strict CSP, no `execute`, `open` limited to https |
+| OAuth `error` parameter log injection | low | Fixed for SoundCloud; the Google part was a false positive |
+| JWT without algorithm pin / expiry | low | Fixed: HS256 pinned, `exp` and session purpose required |
+| Session accepted the OAuth `state` JWT | (found during Stage 3) | Fixed: `purpose` must be `session` |
+
+SQL injection, IDOR, path traversal, argument injection, CORS and rate
+limiting were attempted and held.
+
+Follow-ups: the signed media token for `/stream` and `/duration`; once
+pre-upgrade sessions (7-day TTL) have expired, require `purpose: 'session'` on
+every token.

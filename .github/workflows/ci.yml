@@ -33,8 +33,15 @@ jobs:
           node-version: 20
           cache: 'npm'
 
+      # --ignore-scripts skips ffmpeg-static's postinstall, which downloads an
+      # ffmpeg binary from GitHub releases. Nothing in CI transcodes audio (tests
+      # stub ffmpeg, the smoke test only boots the server), and that download
+      # failing with 504 used to fail the whole job. sqlite3 is the one native
+      # module the tests and the server need, so it is built explicitly.
       - name: Install Dependencies
-        run: npm ci
+        run: |
+          npm ci --ignore-scripts
+          npm rebuild sqlite3
 
       - name: Lint
         run: npm run lint

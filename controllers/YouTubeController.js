@@ -9,8 +9,7 @@ const durationCache = new Map();
 const DURATION_CACHE_MAX = 500;
 
 // YouTube video ids are always exactly 11 URL-safe characters. Being strict
-// here also keeps YouTube cache files (`<id>.mp3`) from ever colliding with
-// other sources' prefixed keys (`soundcloud_<id>.mp3`).
+// here also keeps cache keys (`youtube_<id>`) well-formed.
 function isValidVideoId(videoId) {
     return typeof videoId === 'string' && /^[A-Za-z0-9_-]{11}$/.test(videoId);
 }
@@ -28,7 +27,8 @@ const streamTrack = async (req, res) => {
     if (seekError) return res.status(400).json({ error: seekError });
 
     // Cache hit: sendFile supports HTTP Range natively, so the browser can seek.
-    if (serveFromCache(res, videoId)) return;
+    const cacheKey = `youtube_${videoId}`;
+    if (serveFromCache(res, cacheKey)) return;
 
     const args = ['-g', `https://www.youtube.com/watch?v=${videoId}`];
 
@@ -44,7 +44,7 @@ const streamTrack = async (req, res) => {
             return;
         }
 
-        streamTranscoded(req, res, { sourceUrl: audioUrl, cacheKey: videoId, seekTime });
+        streamTranscoded(req, res, { sourceUrl: audioUrl, cacheKey, seekTime });
     });
 };
 

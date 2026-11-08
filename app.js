@@ -13,6 +13,7 @@ const searchController = require('./controllers/searchController');
 const playlistController = require('./controllers/playlistController');
 const historyController = require('./controllers/historyController');
 const streamingController = require('./controllers/streamingController');
+const { getHealth } = require('./services/health');
 const soundcloudController = require('./controllers/soundcloudController');
 
 const app = express();
@@ -61,6 +62,15 @@ app.get('/', (req, res) => {
     res.json({ status: 'Running', message: 'Music Backend is active' });
 });
 app.get('/test', (req, res) => res.send('Server is working!'));
+// Detailed health (app + yt-dlp/ffmpeg versions + cache usage). Behind our
+// login because binary versions help an attacker pick a known exploit.
+app.get('/api/health', requireAuth, async (req, res, next) => {
+    try {
+        res.json(await getHealth());
+    } catch (err) {
+        next(err);
+    }
+});
 
 // --- Local account auth ---
 app.post('/api/register', authLimiter, registerUser);

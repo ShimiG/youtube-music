@@ -15,7 +15,13 @@ module.exports = (req, res, next) => {
     }
 
     try {
-        const payload = jwt.verify(token, process.env.JWT_SECRET);
+        // Pin the algorithm (never trust the token header's `alg`).
+        const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+        // Other tokens signed with the same secret (the OAuth `state`, which
+        // travels through the browser URL) carry a different `purpose` and
+        // must never work as a login session.
+        if (payload.purpose !== undefined && payload.purpose !== 'session') throw new Error('wrong token purpose');
+        if (!Number.isInteger(payload.userId) || payload.userId <= 0) throw new Error('bad subject');
         req.userId = payload.userId;
         next();
     } catch {

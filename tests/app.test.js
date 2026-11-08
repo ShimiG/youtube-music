@@ -136,3 +136,35 @@ describe('Connect flow guards against stale sessions', () => {
         expect(res.body.url).toContain('accounts.google.com');
     });
 });
+
+describe('Session token hardening', () => {
+    beforeEach(() => {
+        app.locals.db = { get: jest.fn(), run: jest.fn(), all: jest.fn().mockResolvedValue([]) };
+    });
+
+    it('rejects the Google OAuth state token as a session', async () => {
+        const state = jwt.sign({ userId: 1, purpose: 'google_oauth' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+        const res = await request(app).get('/api/user/connections').set('Authorization', `Bearer ${state}`);
+        expect(res.statusCode).toBe(401);
+    });
+
+    it('rejects an alg=none token', async () => {
+        const none = jwt.sign({ userId: 1 }, null, { algorithm: 'none' });
+        const res = await request(app).get('/api/user/connections').set('Authorization', `Bearer ${none}`);
+        expect(res.statusCode).toBe(401);
+    });
+
+    it('rejects a token without a valid numeric userId', async () => {
+        const bad = jwt.sign({ userId: '1 OR 1=1' }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        const res = await request(app).get('/api/user/connections').set('Authorization', `Bearer ${bad}`);
+        expect(res.statusCode).toBe(401);
+    });
+
+    it('accepts both new session tokens and legacy tokens without a purpose', async () => {
+        for (const payload of [{ userId: 1, purpose: 'session' }, { userId: 1 }]) {
+            const t = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
+            const res = await request(app).get('/api/user/connections').set('Authorization', `Bearer ${t}`);
+            expect(res.statusCode).toBe(200);
+        }
+    });
+});

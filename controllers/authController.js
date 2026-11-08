@@ -42,7 +42,7 @@ const googleCallback = async (req, res, next) => {
 
     let userId;
     try {
-        const payload = jwt.verify(state, process.env.JWT_SECRET);
+        const payload = jwt.verify(state, process.env.JWT_SECRET, { algorithms: ['HS256'] });
         if (payload.purpose !== 'google_oauth') throw new Error('wrong token purpose');
         userId = payload.userId;
     } catch {

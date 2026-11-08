@@ -1,6 +1,7 @@
 const sqlite3 = require('sqlite3').verbose();
 const { open } = require('sqlite');
 const path = require('path');
+const { migratePlaintextTokens } = require('../services/tokenCrypto');
 
 const dbPath = path.resolve(__dirname, '../database.sqlite');
 
@@ -97,6 +98,9 @@ async function initDB() {
         CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist ON playlist_tracks(playlist_id);
         CREATE INDEX IF NOT EXISTS idx_history_user ON history(user_id, played_at DESC);
     `);
+
+    // Tokens written before encryption at rest existed are rewritten encrypted.
+    await migratePlaintextTokens(db);
 
     console.log('Database schemas initialized.');
     return db;

@@ -1,6 +1,7 @@
 const { execFile } = require('child_process');
 const { parseSeek, serveFromCache, streamTranscoded } = require('./transcode');
 const { ytDlpPath } = require('../services/ytdlp');
+const { sendSourceError } = require('../services/errors');
 
 // Small in-memory cache for /duration so we do not spawn yt-dlp for a track we
 // already looked up. Bounded to avoid unbounded growth.
@@ -33,13 +34,13 @@ const streamTrack = async (req, res) => {
 
     execFile(ytDlpPath, args, (error, stdout) => {
         if (error) {
-            if (!res.headersSent) res.status(502).json({ error: 'Could not resolve audio source' });
+            if (!res.headersSent) sendSourceError(res, 'TRACK_UNAVAILABLE', 'youtube', { reason: 'resolve_failed' });
             return;
         }
 
         const audioUrl = stdout.trim();
         if (!audioUrl) {
-            if (!res.headersSent) res.status(502).json({ error: 'No audio URL found' });
+            if (!res.headersSent) sendSourceError(res, 'TRACK_UNAVAILABLE', 'youtube', { reason: 'no_audio_url' });
             return;
         }
 

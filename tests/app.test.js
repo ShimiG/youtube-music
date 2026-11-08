@@ -59,26 +59,28 @@ describe('Auth is enforced on protected routes', () => {
     });
 });
 
-describe('Stored Google connection (googleToken middleware)', () => {
+describe("Stored Google connection (sourceToken('youtube') middleware)", () => {
     beforeEach(() => {
         app.locals.db = { get: jest.fn(), run: jest.fn(), all: jest.fn() };
     });
 
-    it('returns 401 GOOGLE_NOT_CONNECTED when the user has no stored connection', async () => {
+    it('returns 401 SOURCE_NOT_CONNECTED (source youtube) when the user has no stored connection', async () => {
         app.locals.db.get.mockResolvedValueOnce(undefined);
         const res = await request(app).get('/search?q=test').set(authHeader);
         expect(res.statusCode).toBe(401);
-        expect(res.body.code).toBe('GOOGLE_NOT_CONNECTED');
+        expect(res.body.code).toBe('SOURCE_NOT_CONNECTED');
+        expect(res.body.source).toBe('youtube');
     });
 
-    it('returns 401 GOOGLE_TOKEN_EXPIRED when the stored token is past its expiry', async () => {
+    it('returns 401 SOURCE_TOKEN_EXPIRED when the stored token is expired and there is no refresh token', async () => {
         app.locals.db.get.mockResolvedValueOnce({
             access_token: 'stored-google-token',
             expires_at: Date.now() - 1000
         });
         const res = await request(app).get('/search?q=test').set(authHeader);
         expect(res.statusCode).toBe(401);
-        expect(res.body.code).toBe('GOOGLE_TOKEN_EXPIRED');
+        expect(res.body.code).toBe('SOURCE_TOKEN_EXPIRED');
+        expect(res.body.source).toBe('youtube');
     });
 
     it('looks up the connection for the token userId, never client input', async () => {

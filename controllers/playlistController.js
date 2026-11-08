@@ -1,10 +1,11 @@
 const { getYouTubeClient } = require('./youtubeClient');
+const { sendSourceError } = require('../services/errors');
 
-// --- YouTube-backed endpoints (auth via googleToken middleware -> req.oauthToken) ---
+// --- YouTube-backed endpoints (auth via sourceToken('youtube') -> req.sourceToken) ---
 
 const getYouTubeLikes = async (req, res, next) => {
     try {
-        const youtube = getYouTubeClient(req.oauthToken);
+        const youtube = getYouTubeClient(req.sourceToken);
         const response = await youtube.videos.list({
             part: 'snippet,contentDetails,statistics',
             myRating: 'like',
@@ -20,7 +21,7 @@ const getYouTubeLikes = async (req, res, next) => {
         res.json(normalizedItems);
     } catch (error) {
         if (error.code === 401 || error.code === 403) {
-            return res.status(401).json({ error: 'Token expired or invalid' });
+            return sendSourceError(res, 'SOURCE_TOKEN_EXPIRED', 'youtube');
         }
         console.error('Fetch Likes Error:', error.message);
         res.status(500).json({ error: 'Failed to fetch liked videos.' });
@@ -32,12 +33,12 @@ const likeVideo = async (req, res, next) => {
     if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
 
     try {
-        const youtube = getYouTubeClient(req.oauthToken);
+        const youtube = getYouTubeClient(req.sourceToken);
         await youtube.videos.rate({ id: videoId, rating: 'like' });
         res.sendStatus(200);
     } catch (error) {
         if (error.code === 401 || error.code === 403) {
-            return res.status(401).json({ error: 'Token expired or invalid' });
+            return sendSourceError(res, 'SOURCE_TOKEN_EXPIRED', 'youtube');
         }
         console.error('Like Video Error:', error.message);
         res.status(500).json({ error: 'Could not like video' });
@@ -46,7 +47,7 @@ const likeVideo = async (req, res, next) => {
 
 const getUserPlaylists = async (req, res, next) => {
     try {
-        const youtube = getYouTubeClient(req.oauthToken);
+        const youtube = getYouTubeClient(req.sourceToken);
         const response = await youtube.playlists.list({
             part: 'snippet,contentDetails',
             mine: true,
@@ -55,7 +56,7 @@ const getUserPlaylists = async (req, res, next) => {
         res.json(response.data.items);
     } catch (error) {
         if (error.code === 401 || error.code === 403) {
-            return res.status(401).json({ error: 'Token expired or invalid' });
+            return sendSourceError(res, 'SOURCE_TOKEN_EXPIRED', 'youtube');
         }
         console.error('Fetch Playlists Error:', error.message);
         res.status(500).json({ error: 'Failed to fetch playlists.' });
@@ -67,7 +68,7 @@ const getPlaylistTracks = async (req, res, next) => {
     if (!id) return res.status(400).json({ error: 'Missing Playlist ID' });
 
     try {
-        const youtube = getYouTubeClient(req.oauthToken);
+        const youtube = getYouTubeClient(req.sourceToken);
         const response = await youtube.playlistItems.list({
             part: 'snippet,contentDetails',
             playlistId: id,
@@ -85,7 +86,7 @@ const getPlaylistTracks = async (req, res, next) => {
         res.json(tracks);
     } catch (error) {
         if (error.code === 401 || error.code === 403) {
-            return res.status(401).json({ error: 'Token expired or invalid' });
+            return sendSourceError(res, 'SOURCE_TOKEN_EXPIRED', 'youtube');
         }
         console.error('Fetch Tracks Error:', error.message);
         res.status(500).json({ error: 'Failed to fetch tracks' });

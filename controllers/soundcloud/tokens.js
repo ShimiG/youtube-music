@@ -15,6 +15,7 @@
 // retried with the same refresh token.
 
 const client = require('./client');
+const { encrypt, decrypt } = require('../../services/tokenCrypto');
 
 const SOURCE_SOUNDCLOUD = 3; // sources.id, see config/db.js
 const PROVIDER_KEY = 'soundcloud';
@@ -36,16 +37,21 @@ async function persistAppToken(db, tokens) {
             access_token = excluded.access_token,
             refresh_token = excluded.refresh_token,
             expires_at = excluded.expires_at`,
-        [PROVIDER_KEY, tokens.accessToken, tokens.refreshToken, tokens.expiresAt]
+        [PROVIDER_KEY, encrypt(tokens.accessToken), encrypt(tokens.refreshToken), tokens.expiresAt]
     );
     appTokenMemo = tokens;
 }
 
 async function acquireAppToken(db) {
-    const row = await db.get(
+    const stored = await db.get(
         `SELECT access_token, refresh_token, expires_at FROM app_tokens WHERE provider = ?`,
         [PROVIDER_KEY]
     );
+    const row = stored && {
+        access_token: decrypt(stored.access_token),
+        refresh_token: decrypt(stored.refresh_token),
+        expires_at: stored.expires_at
+    };
 
     if (row && row.access_token && isFresh(row.expires_at)) {
         appTokenMemo = { accessToken: row.access_token, refreshToken: row.refresh_token, expiresAt: row.expires_at };
@@ -87,15 +93,22 @@ async function storeUserTokens(db, userId, tokens) {
             access_token = excluded.access_token,
             refresh_token = COALESCE(excluded.refresh_token, user_connections.refresh_token),
             expires_at = excluded.expires_at`,
-        [userId, SOURCE_SOUNDCLOUD, tokens.accessToken, tokens.refreshToken, tokens.expiresAt]
+        [userId, SOURCE_SOUNDCLOUD, encrypt(tokens.accessToken), encrypt(tokens.refreshToken), tokens.expiresAt]
     );
 }
 
+// Tokens are encrypted at rest (services/tokenCrypto.js); callers get plaintext.
 async function getUserConnection(db, userId) {
-    return db.get(
+    const row = await db.get(
         `SELECT access_token, refresh_token, expires_at FROM user_connections WHERE user_id = ? AND source_id = ?`,
         [userId, SOURCE_SOUNDCLOUD]
     );
+    if (!row) return row;
+    return {
+        access_token: decrypt(row.access_token),
+        refresh_token: decrypt(row.refresh_token),
+        expires_at: row.expires_at
+    };
 }
 
 async function refreshUserConnection(db, userId, refreshToken) {

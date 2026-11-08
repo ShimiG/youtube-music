@@ -4,3 +4,5 @@ process.env.JWT_SECRET = 'test-secret-test-secret-test-secret-1234';
 process.env.NODE_ENV = 'test';
 // Never let a test run try to download a new yt-dlp.
 process.env.YTDLP_AUTO_UPDATE = 'false';
+// Deterministic token-encryption key, so tests never create a .token-key file.
+process.env.TOKEN_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';

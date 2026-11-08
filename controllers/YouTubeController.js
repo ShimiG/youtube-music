@@ -6,6 +6,26 @@ const { sendSourceError } = require('../services/errors');
 // Small in-memory cache for /duration so we do not spawn yt-dlp for a track we
 // already looked up. Bounded to avoid unbounded growth.
 const durationCache = new Map();
+
+// yt-dlp must never outlive the request that asked for it: bounded by a
+// timeout, and killed as soon as the client disconnects. `runner.execFile` is
+// wrapped so tests can stub the process.
+const YTDLP_TIMEOUT_MS = 60 * 1000;
+const runner = { execFile };
+
+function runYtDlp(res, args, onDone) {
+    let clientGone = false;
+    const child = runner.execFile(ytDlpPath, args, { timeout: YTDLP_TIMEOUT_MS }, (error, stdout) => {
+        if (clientGone) return; // nobody to answer; never start ffmpeg for a dead request
+        onDone(error, stdout);
+    });
+    res.on('close', () => {
+        if (res.writableFinished) return; // normal completion
+        clientGone = true;
+        if (child && child.exitCode === null) child.kill('SIGKILL');
+    });
+    return child;
+}
 const DURATION_CACHE_MAX = 500;
 
 // YouTube video ids are always exactly 11 URL-safe characters. Being strict
@@ -32,7 +52,7 @@ const streamTrack = async (req, res) => {
 
     const args = ['-g', `https://www.youtube.com/watch?v=${videoId}`];
 
-    execFile(ytDlpPath, args, (error, stdout) => {
+    runYtDlp(res, args, (error, stdout) => {
         if (error) {
             if (!res.headersSent) sendSourceError(res, 'TRACK_UNAVAILABLE', 'youtube', { reason: 'resolve_failed' });
             return;
@@ -59,7 +79,7 @@ const getDuration = (req, res) => {
 
     const args = ['--print', 'duration', `https://www.youtube.com/watch?v=${videoId}`];
 
-    execFile(ytDlpPath, args, (error, stdout) => {
+    runYtDlp(res, args, (error, stdout) => {
         if (error) {
             return res.status(502).json({ duration: 0 });
         }
@@ -72,4 +92,4 @@ const getDuration = (req, res) => {
     });
 };
 
-module.exports = { streamTrack, getDuration, isValidVideoId };
+module.exports = { streamTrack, getDuration, isValidVideoId, runner, YTDLP_TIMEOUT_MS };

@@ -17,6 +17,8 @@ module.exports = (req, res, next) => {
     try {
         // Pin the algorithm (never trust the token header's `alg`).
         const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+        // jsonwebtoken only checks `exp` when present; a session must expire.
+        if (typeof payload.exp !== 'number') throw new Error('no expiry');
         // Other tokens signed with the same secret (the OAuth `state`, which
         // travels through the browser URL) carry a different `purpose` and
         // must never work as a login session.

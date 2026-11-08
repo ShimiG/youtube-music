@@ -91,6 +91,17 @@ async function initDB() {
         );
     `);
 
+    // Per-user display metadata. `tracks` is shared across users (UNIQUE per
+    // source + external id), so the first writer used to decide the title and
+    // thumbnail everyone saw. Each play / playlist entry now keeps its own
+    // copy; the shared row is only a fallback for rows written before this.
+    for (const table of ['history', 'playlist_tracks']) {
+        const cols = (await db.all(`PRAGMA table_info(${table})`)).map((c) => c.name);
+        for (const col of ['title', 'artist', 'thumbnail']) {
+            if (!cols.includes(col)) await db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} TEXT`);
+        }
+    }
+
     // Indexes on the columns we filter and join on. Without these, SQLite scans
     // the whole table for every playlist/history lookup.
     await db.exec(`

@@ -1,5 +1,6 @@
 const { getYouTubeClient } = require('./youtubeClient');
 const { sendSourceError } = require('../services/errors');
+const { cleanTrackMeta } = require('../services/trackMeta');
 
 // --- YouTube-backed endpoints (auth via sourceToken('youtube') -> req.sourceToken) ---
 
@@ -146,7 +147,8 @@ const addTrackToPlaylist = async (req, res, next) => {
     const { playlistId } = req.params;
     const { sourceName, externalId, title, artist, thumbnail } = req.body || {};
 
-    if (!externalId || typeof externalId !== 'string' || !title || typeof title !== 'string') {
+    const meta = cleanTrackMeta({ title, artist, thumbnail });
+    if (!externalId || typeof externalId !== 'string' || externalId.length > 200 || !meta) {
         return res.status(400).json({ error: 'externalId and title are required' });
     }
 
@@ -160,14 +162,17 @@ const addTrackToPlaylist = async (req, res, next) => {
 
         await db.run(
             `INSERT OR IGNORE INTO tracks (source_id, external_id, title, artist, thumbnail) VALUES (?, ?, ?, ?, ?)`,
-            [source.id, externalId, title, artist || null, thumbnail || null]
+            [source.id, externalId, meta.title, meta.artist, meta.thumbnail]
         );
         const track = await db.get(
             `SELECT id FROM tracks WHERE source_id = ? AND external_id = ?`,
             [source.id, externalId]
         );
 
-        await db.run(`INSERT INTO playlist_tracks (playlist_id, track_id) VALUES (?, ?)`, [playlistId, track.id]);
+        await db.run(
+            `INSERT INTO playlist_tracks (playlist_id, track_id, title, artist, thumbnail) VALUES (?, ?, ?, ?, ?)`,
+            [playlistId, track.id, meta.title, meta.artist, meta.thumbnail]
+        );
         res.status(201).json({ success: true, message: 'Track added to playlist' });
     } catch (error) {
         next(error);
@@ -185,7 +190,11 @@ const getCustomPlaylistTracks = async (req, res, next) => {
 
         const tracks = await db.all(`
             SELECT
-                t.external_id as id, t.title, t.artist as channelTitle, t.thumbnail as image, s.name as source
+                t.external_id as id,
+                COALESCE(pt.title, t.title) as title,
+                COALESCE(pt.artist, t.artist) as channelTitle,
+                CASE WHEN pt.title IS NOT NULL THEN pt.thumbnail ELSE t.thumbnail END as image,
+                s.name as source
             FROM playlist_tracks pt
             JOIN tracks t ON pt.track_id = t.id
             JOIN sources s ON t.source_id = s.id

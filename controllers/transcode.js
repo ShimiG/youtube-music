@@ -28,6 +28,13 @@ function cacheMaxBytes() {
 // track do not both try to produce the same cache file.
 const inFlightCaching = new Set();
 
+// A transcode that is writing the cache keeps running after its client leaves,
+// so the file is ready next time. That must be bounded, or anything that can
+// make the browser request /stream (any web page, via <audio>) can pile up
+// ffmpeg processes. Beyond this many, abandoned transcodes are killed.
+const MAX_BACKGROUND_TRANSCODES = 2;
+let backgroundTranscodes = 0;
+
 if (!fs.existsSync(cacheDir)) {
     fs.mkdirSync(cacheDir, { recursive: true });
 }
@@ -150,7 +157,7 @@ function serveFromCache(res, cacheKey) {
  * and `allowCache` is true, a copy is written to the disk cache under
  * `cacheKey` once the transcode completes successfully.
  */
-function streamTranscoded(req, res, { sourceUrl, cacheKey, seekTime = 0, allowCache = true }) {
+function streamTranscoded(_req, res, { sourceUrl, cacheKey, seekTime = 0, allowCache = true }) {
     const finalFilePath = cachePathFor(cacheKey);
 
     const ffmpegArgs = [
@@ -210,15 +217,24 @@ function streamTranscoded(req, res, { sourceUrl, cacheKey, seekTime = 0, allowCa
     // caching this stream, kill the transcode so it does not linger. If we ARE
     // caching, let it finish so the file lands in the cache for next time (the
     // safety timer still bounds it).
-    req.on('close', () => {
+    // res 'close' with writableFinished=false means the connection dropped
+    // before we finished (req 'close' is not a reliable disconnect signal).
+    let inBackground = false;
+    res.on('close', () => {
+        if (res.writableFinished || finished) return;
         ffmpegProcess.stdout.unpipe(res);
-        if (!fileStream) {
-            ffmpegProcess.kill('SIGKILL');
+        if (fileStream && backgroundTranscodes < MAX_BACKGROUND_TRANSCODES) {
+            inBackground = true;
+            backgroundTranscodes++;
+            return;
         }
+        // Killed runs exit non-zero, so the close handler drops the .part file.
+        ffmpegProcess.kill('SIGKILL');
     });
 
     ffmpegProcess.on('close', (code) => {
         finished = true;
+        if (inBackground) backgroundTranscodes--;
         clearTimeout(cleanupTimer);
         inFlightCaching.delete(cacheKey);
         if (!fileStream) return;
@@ -250,5 +266,7 @@ module.exports = {
     streamTranscoded,
     enforceCacheLimit,
     prepareCache,
-    cacheMaxBytes
+    cacheMaxBytes,
+    MAX_BACKGROUND_TRANSCODES,
+    _backgroundTranscodes: () => backgroundTranscodes
 };

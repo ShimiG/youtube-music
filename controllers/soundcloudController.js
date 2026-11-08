@@ -147,7 +147,9 @@ const callback = async (req, res) => {
     const { code, state, error } = req.query;
 
     if (error) {
-        console.error('SoundCloud authorization denied:', error);
+        // Attacker-controlled query value: strip everything but a short token
+        // so it cannot forge extra log lines.
+        console.error('SoundCloud authorization denied:', String(error).replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 64));
         return res.redirect(`${CLIENT_ORIGIN}/#soundcloud=error`);
     }
     if (!code) return res.status(400).send('No authorization code received');
@@ -325,6 +327,11 @@ const streamTrack = async (req, res) => {
     };
     const viaYtdlp = () => ytdlp.resolveStream(id);
 
+    // Resolving can take seconds (API round-trip or a yt-dlp spawn). If the
+    // client leaves meanwhile, do not start ffmpeg for a dead request.
+    let clientGone = false;
+    res.on('close', () => { if (!res.writableFinished) clientGone = true; });
+
     let usedYtdlp = false;
     let picked;
     try {
@@ -337,6 +344,8 @@ const streamTrack = async (req, res) => {
     if (!picked) {
         return sendSourceError(res, 'TRACK_UNAVAILABLE', 'soundcloud', { status: 404, reason: 'blocked' });
     }
+
+    if (clientGone) return;
 
     // Preview snippets are short and cheap; do not let them occupy the cache
     // under the full track's key.

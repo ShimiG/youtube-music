@@ -3,7 +3,8 @@
 //
 // Search and streaming use the app-level client_credentials token because
 // public content does not need a user session; /me/* endpoints go through
-// middleware/soundcloudToken.js and use the user's own token.
+// middleware/sourceToken.js and use the user's own token.
+const { sendSourceError } = require('../services/errors');
 const client = require('./soundcloud/client');
 const tokens = require('./soundcloud/tokens');
 const ytdlp = require('./soundcloud/ytdlp');
@@ -64,9 +65,9 @@ async function withFallback(label, viaApi, viaYtdlp) {
 function sendYtdlpError(res, err, fallbackMessage) {
     console.error(`SoundCloud (yt-dlp): ${fallbackMessage}:`, err.message);
     if (err.code === 'YTDLP_NO_URL') {
-        return res.status(404).json({ error: 'This track is not streamable.', code: 'SOUNDCLOUD_BLOCKED' });
+        return sendSourceError(res, 'TRACK_UNAVAILABLE', 'soundcloud', { status: 404, reason: 'blocked' });
     }
-    return res.status(502).json({ error: fallbackMessage, code: 'SOUNDCLOUD_YTDLP_FAILED' });
+    return sendSourceError(res, 'TRACK_UNAVAILABLE', 'soundcloud', { reason: 'resolve_failed' });
 }
 
 // Tells the client which SoundCloud features exist on this server.
@@ -111,7 +112,7 @@ function sendSoundCloudError(res, err, fallbackMessage) {
             });
         }
         if (err.status === 401) {
-            return res.status(401).json({ error: 'SoundCloud rejected the access token.', code: 'SOUNDCLOUD_TOKEN_INVALID' });
+            return sendSourceError(res, 'SOURCE_TOKEN_EXPIRED', 'soundcloud', { reason: 'token_rejected' });
         }
         if (err.status === 403 || err.status === 404) {
             return res.status(404).json({ error: 'Track or playlist not available on SoundCloud.', code: 'SOUNDCLOUD_NOT_FOUND' });
@@ -146,7 +147,9 @@ const callback = async (req, res) => {
     const { code, state, error } = req.query;
 
     if (error) {
-        console.error('SoundCloud authorization denied:', error);
+        // Attacker-controlled query value: strip everything but a short token
+        // so it cannot forge extra log lines.
+        console.error('SoundCloud authorization denied:', String(error).replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 64));
         return res.redirect(`${CLIENT_ORIGIN}/#soundcloud=error`);
     }
     if (!code) return res.status(400).send('No authorization code received');
@@ -252,12 +255,12 @@ const searchTracks = async (req, res) => {
     }
 };
 
-// --- Library (requires soundcloudToken middleware -> req.soundcloudToken) ------
+// --- Library (requires sourceToken('soundcloud') -> req.sourceToken) ------
 
 const getPlaylists = async (req, res) => {
     try {
         const { items } = await client.fetchCollection('/me/playlists', {
-            token: req.soundcloudToken,
+            token: req.sourceToken,
             query: { show_tracks: false, limit: LIBRARY_PAGE_LIMIT },
             maxPages: LIBRARY_MAX_PAGES
         });
@@ -291,7 +294,7 @@ const getPlaylistTracks = async (req, res) => {
 
     try {
         const { items } = await client.fetchCollection(path, {
-            token: req.soundcloudToken,
+            token: req.sourceToken,
             query: { access: 'playable,preview,blocked', limit: LIBRARY_PAGE_LIMIT },
             maxPages: LIBRARY_MAX_PAGES
         });
@@ -324,6 +327,11 @@ const streamTrack = async (req, res) => {
     };
     const viaYtdlp = () => ytdlp.resolveStream(id);
 
+    // Resolving can take seconds (API round-trip or a yt-dlp spawn). If the
+    // client leaves meanwhile, do not start ffmpeg for a dead request.
+    let clientGone = false;
+    res.on('close', () => { if (!res.writableFinished) clientGone = true; });
+
     let usedYtdlp = false;
     let picked;
     try {
@@ -334,8 +342,10 @@ const streamTrack = async (req, res) => {
     }
 
     if (!picked) {
-        return res.status(404).json({ error: 'This track is not streamable.', code: 'SOUNDCLOUD_BLOCKED' });
+        return sendSourceError(res, 'TRACK_UNAVAILABLE', 'soundcloud', { status: 404, reason: 'blocked' });
     }
+
+    if (clientGone) return;
 
     // Preview snippets are short and cheap; do not let them occupy the cache
     // under the full track's key.

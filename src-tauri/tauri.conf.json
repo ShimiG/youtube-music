@@ -10,7 +10,7 @@
     "productName": "Music Manager",
     "version": "0.1.0"
   },
-"tauri": {
+  "tauri": {
     "bundle": {
       "identifier": "com.musicmanager.app",
       "externalBin": [
@@ -24,12 +24,11 @@
     "allowlist": {
       "shell": {
         "sidecar": true,
-        "execute": true,
-        "open":true
+        "open": "^https://"
       }
     },
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' http://localhost:3000 http://127.0.0.1:3000; connect-src 'self' ipc: http://ipc.localhost http://localhost:3000 http://127.0.0.1:3000; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'"
     },
     "windows": [
       {

@@ -44,10 +44,12 @@ function parseArgs(argv) {
 const DRY_RUN = process.env.DRY_RUN === '1' || process.env.DRY_RUN === 'true';
 
 // Findings whose status/priority is below this are reported but not turned into
-// tasks. Exploiter statuses: confirmed | potential | attempted-failed | info.
+// tasks. Exploiter statuses: confirmed | potential | attempted-failed | info;
+// remediation can set `fixed` / `false-positive` when the fix ships together
+// with the report, so no issue is opened for work that is already done.
 // Discovery priorities: high | medium | low.
 const ISSUE_WORTHY_STATUS = new Set(['confirmed', 'potential', 'vulnerable', 'high', 'medium']);
-const NON_TASK_STATUS = new Set(['attempted-failed', 'not-vulnerable', 'info', 'low']);
+const NON_TASK_STATUS = new Set(['attempted-failed', 'not-vulnerable', 'info', 'low', 'fixed', 'false-positive']);
 
 // severity/priority -> label suffix, so issues sort and filter by importance.
 const LEVEL_LABELS = {

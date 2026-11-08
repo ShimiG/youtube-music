@@ -224,14 +224,19 @@ function backoffDelay(attempt, retryAfterMs) {
 // or a path; absolute URLs must stay on the API host so a client-supplied
 // cursor can never make us call an arbitrary server.
 function buildUrl(pathOrUrl, query) {
+    // Always resolve against the API base and then pin the origin. A prefix
+    // test such as /^https?:\/\// is not enough: WHATWG URL parsing accepts
+    // `http:host/x`, `http:/host/x`, `//host/x`, `\\host/x` and leading
+    // whitespace as absolute URLs, and the bearer token would follow them
+    // (SSRF + token exfiltration via the `cursor` parameter).
     let url;
-    if (/^https?:\/\//i.test(pathOrUrl)) {
-        url = new URL(pathOrUrl);
-        if (url.origin !== API_BASE) {
-            throw new SoundCloudError('Refusing to follow a URL outside the SoundCloud API', { status: 400, code: 'BAD_CURSOR' });
-        }
-    } else {
-        url = new URL(pathOrUrl, API_BASE);
+    try {
+        url = new URL(String(pathOrUrl), API_BASE);
+    } catch {
+        throw new SoundCloudError('Invalid SoundCloud API URL', { status: 400, code: 'BAD_CURSOR' });
+    }
+    if (url.origin !== API_BASE) {
+        throw new SoundCloudError('Refusing to follow a URL outside the SoundCloud API', { status: 400, code: 'BAD_CURSOR' });
     }
     if (query) {
         for (const [key, value] of Object.entries(query)) {

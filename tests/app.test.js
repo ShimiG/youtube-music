@@ -59,26 +59,28 @@ describe('Auth is enforced on protected routes', () => {
     });
 });
 
-describe('Stored Google connection (googleToken middleware)', () => {
+describe("Stored Google connection (sourceToken('youtube') middleware)", () => {
     beforeEach(() => {
         app.locals.db = { get: jest.fn(), run: jest.fn(), all: jest.fn() };
     });
 
-    it('returns 401 GOOGLE_NOT_CONNECTED when the user has no stored connection', async () => {
+    it('returns 401 SOURCE_NOT_CONNECTED (source youtube) when the user has no stored connection', async () => {
         app.locals.db.get.mockResolvedValueOnce(undefined);
         const res = await request(app).get('/search?q=test').set(authHeader);
         expect(res.statusCode).toBe(401);
-        expect(res.body.code).toBe('GOOGLE_NOT_CONNECTED');
+        expect(res.body.code).toBe('SOURCE_NOT_CONNECTED');
+        expect(res.body.source).toBe('youtube');
     });
 
-    it('returns 401 GOOGLE_TOKEN_EXPIRED when the stored token is past its expiry', async () => {
+    it('returns 401 SOURCE_TOKEN_EXPIRED when the stored token is expired and there is no refresh token', async () => {
         app.locals.db.get.mockResolvedValueOnce({
             access_token: 'stored-google-token',
             expires_at: Date.now() - 1000
         });
         const res = await request(app).get('/search?q=test').set(authHeader);
         expect(res.statusCode).toBe(401);
-        expect(res.body.code).toBe('GOOGLE_TOKEN_EXPIRED');
+        expect(res.body.code).toBe('SOURCE_TOKEN_EXPIRED');
+        expect(res.body.source).toBe('youtube');
     });
 
     it('looks up the connection for the token userId, never client input', async () => {
@@ -132,5 +134,37 @@ describe('Connect flow guards against stale sessions', () => {
         expect(res.statusCode).toBe(200);
         expect(typeof res.body.url).toBe('string');
         expect(res.body.url).toContain('accounts.google.com');
+    });
+});
+
+describe('Session token hardening', () => {
+    beforeEach(() => {
+        app.locals.db = { get: jest.fn(), run: jest.fn(), all: jest.fn().mockResolvedValue([]) };
+    });
+
+    it('rejects the Google OAuth state token as a session', async () => {
+        const state = jwt.sign({ userId: 1, purpose: 'google_oauth' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+        const res = await request(app).get('/api/user/connections').set('Authorization', `Bearer ${state}`);
+        expect(res.statusCode).toBe(401);
+    });
+
+    it('rejects an alg=none token', async () => {
+        const none = jwt.sign({ userId: 1 }, null, { algorithm: 'none' });
+        const res = await request(app).get('/api/user/connections').set('Authorization', `Bearer ${none}`);
+        expect(res.statusCode).toBe(401);
+    });
+
+    it('rejects a token without a valid numeric userId', async () => {
+        const bad = jwt.sign({ userId: '1 OR 1=1' }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        const res = await request(app).get('/api/user/connections').set('Authorization', `Bearer ${bad}`);
+        expect(res.statusCode).toBe(401);
+    });
+
+    it('accepts both new session tokens and legacy tokens without a purpose', async () => {
+        for (const payload of [{ userId: 1, purpose: 'session' }, { userId: 1 }]) {
+            const t = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
+            const res = await request(app).get('/api/user/connections').set('Authorization', `Bearer ${t}`);
+            expect(res.statusCode).toBe(200);
+        }
     });
 });

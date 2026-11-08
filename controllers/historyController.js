@@ -1,3 +1,5 @@
+const { cleanTrackMeta } = require('../services/trackMeta');
+
 // Identity comes from requireAuth (req.userId), not from a client-supplied
 // header. The user row already exists because they logged in, so we only need
 // to register the track and record the play.
@@ -8,7 +10,8 @@ const logHistory = async (req, res, next) => {
     // Tracks carry their source; older clients that omit it are YouTube.
     const sourceName = source === undefined ? 'youtube' : source;
 
-    if (!trackId || typeof trackId !== 'string' || !title) {
+    const meta = cleanTrackMeta({ title, artist, thumbnail });
+    if (!trackId || typeof trackId !== 'string' || trackId.length > 200 || !meta) {
         return res.status(400).json({ error: 'Missing track data' });
     }
     if (typeof sourceName !== 'string' || !/^[a-z]{1,32}$/.test(sourceName)) {
@@ -21,7 +24,7 @@ const logHistory = async (req, res, next) => {
 
         await db.run(
             `INSERT OR IGNORE INTO tracks (source_id, external_id, title, artist, thumbnail) VALUES (?, ?, ?, ?, ?)`,
-            [source.id, trackId, title, artist || null, thumbnail || null]
+            [source.id, trackId, meta.title, meta.artist, meta.thumbnail]
         );
         const track = await db.get(
             `SELECT id FROM tracks WHERE source_id = ? AND external_id = ?`,
@@ -30,7 +33,10 @@ const logHistory = async (req, res, next) => {
 
         // De-dupe: drop any previous play of this track, then record it as newest.
         await db.run(`DELETE FROM history WHERE user_id = ? AND track_id = ?`, [userId, track.id]);
-        await db.run(`INSERT INTO history (user_id, track_id) VALUES (?, ?)`, [userId, track.id]);
+        await db.run(
+            `INSERT INTO history (user_id, track_id, title, artist, thumbnail) VALUES (?, ?, ?, ?, ?)`,
+            [userId, track.id, meta.title, meta.artist, meta.thumbnail]
+        );
 
         // Keep only the 50 most recent plays per user.
         await db.run(`
@@ -54,9 +60,9 @@ const getHistory = async (req, res, next) => {
         const history = await db.all(`
             SELECT
                 t.external_id as id,
-                t.title,
-                t.artist as channelTitle,
-                t.thumbnail as image,
+                COALESCE(h.title, t.title) as title,
+                COALESCE(h.artist, t.artist) as channelTitle,
+                CASE WHEN h.title IS NOT NULL THEN h.thumbnail ELSE t.thumbnail END as image,
                 s.name as source
             FROM history h
             JOIN tracks t ON h.track_id = t.id

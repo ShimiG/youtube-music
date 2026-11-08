@@ -7,7 +7,7 @@ const TOKEN_TTL = '7d';
 const hashPassword = (password) => bcrypt.hash(password, SALT_ROUNDS);
 
 const issueToken = (userId) =>
-    jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: TOKEN_TTL });
+    jwt.sign({ userId, purpose: 'session' }, process.env.JWT_SECRET, { expiresIn: TOKEN_TTL, algorithm: 'HS256' });
 
 // Basic guard so junk/oversized input is rejected before it reaches the DB.
 const validateCredentials = (username, password) => {

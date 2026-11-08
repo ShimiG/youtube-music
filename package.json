@@ -66,6 +66,11 @@
     "testEnvironment": "node",
     "setupFiles": [
       "<rootDir>/tests/setup.js"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "<rootDir>/.claude/",
+      "<rootDir>/client/"
     ]
   }
 }

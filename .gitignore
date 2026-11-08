@@ -15,3 +15,11 @@ cache/database.sqlite*
 
 cache/
 .claude/settings.local.json
+
+# Token encryption key generated on first run (services/tokenCrypto.js)
+.token-key
+# SQLite side files and agent worktrees
+database.sqlite-shm
+database.sqlite-wal
+.claude/worktrees/
+reports/security/*.tmp

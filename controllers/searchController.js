@@ -1,4 +1,5 @@
 const { getYouTubeClient } = require('./youtubeClient');
+const { sendSourceError } = require('../services/errors');
 
 const parseDuration = (isoDuration) => {
     const regex = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/;
@@ -14,7 +15,7 @@ const parseDuration = (isoDuration) => {
 
 const searchTracks = async (req, res, next) => {
     const query = req.query.q;
-    const token = req.oauthToken;
+    const token = req.sourceToken;
 
     if (typeof query !== 'string' || query.trim().length === 0 || query.length > 200) {
         return res.status(400).json({ error: 'A search query (q) of 1-200 characters is required' });
@@ -52,7 +53,7 @@ const searchTracks = async (req, res, next) => {
     } catch (error) {
         console.error('Search API Error:', error.message);
         if (error.code === 401 || (error.message && error.message.includes('Invalid Credentials'))) {
-            return res.status(401).json({ error: 'Token expired or invalid' });
+            return sendSourceError(res, 'SOURCE_TOKEN_EXPIRED', 'youtube');
         }
         res.status(502).json({ error: 'Search provider request failed' });
     }

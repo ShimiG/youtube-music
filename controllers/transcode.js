@@ -1,9 +1,10 @@
 // Shared "resolve a remote audio URL, transcode it with ffmpeg, stream MP3 to
 // the client, and keep a disk-cache copy" pipeline. Used by every source that
 // plays through the server (YouTube via yt-dlp, SoundCloud via its streams
-// endpoint). Cache files are named `<cacheKey>.mp3`; callers pick a key that
-// cannot collide across sources (YouTube keeps its bare 11-char id, SoundCloud
-// uses `soundcloud_<id>`).
+// endpoint). Cache files are named `<cacheKey>.mp3` and every key carries its
+// source prefix (`youtube_<id>`, `soundcloud_<id>`), so ids can never collide
+// across sources. The cache is bounded by total size (CACHE_MAX_BYTES, default
+// 500 MB), evicting the least recently played files first.
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -15,11 +16,24 @@ const resolvedCacheDir = path.resolve(cacheDir);
 const MAX_SEEK_SECONDS = 24 * 60 * 60; // 24 hours
 const MAX_TRANSCODE_MS = 10 * 60 * 1000; // never let a transcode run longer than this
 const MIN_CACHE_BYTES = 100000; // smaller output means a broken/partial download
-const MAX_CACHE_FILES = 50;
+const DEFAULT_CACHE_MAX_BYTES = 500 * 1024 * 1024;
+const LEGACY_YOUTUBE_FILE = /^[A-Za-z0-9_-]{11}\.mp3$/;
+
+function cacheMaxBytes() {
+    const raw = Number(process.env.CACHE_MAX_BYTES);
+    return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_CACHE_MAX_BYTES;
+}
 
 // Cache keys currently being written, so two concurrent plays of the same
 // track do not both try to produce the same cache file.
 const inFlightCaching = new Set();
+
+// A transcode that is writing the cache keeps running after its client leaves,
+// so the file is ready next time. That must be bounded, or anything that can
+// make the browser request /stream (any web page, via <audio>) can pile up
+// ffmpeg processes. Beyond this many, abandoned transcodes are killed.
+const MAX_BACKGROUND_TRANSCODES = 2;
+let backgroundTranscodes = 0;
 
 if (!fs.existsSync(cacheDir)) {
     fs.mkdirSync(cacheDir, { recursive: true });
@@ -59,25 +73,69 @@ function cachePathFor(cacheKey) {
     return finalFilePath;
 }
 
-function manageAudioCache(maxFiles = MAX_CACHE_FILES) {
-    fs.readdir(cacheDir, (err, files) => {
-        if (err) return console.error('Error reading cache directory:', err);
+/**
+ * Evicts the least recently played cache files until the total size of the
+ * cache is at or below `maxBytes`. serveFromCache() touches a file's mtime on
+ * every hit, so mtime order is play-recency order. Resolves with what it did.
+ */
+async function enforceCacheLimit(maxBytes = cacheMaxBytes(), dir = cacheDir) {
+    let entries;
+    try {
+        entries = await fs.promises.readdir(dir);
+    } catch (err) {
+        console.error('Error reading cache directory:', err.message);
+        return { evicted: 0, totalBytes: 0 };
+    }
 
-        const audioFiles = files.filter(f => f.endsWith('.m4a') || f.endsWith('.mp3'));
-        if (audioFiles.length <= maxFiles) return;
+    const files = [];
+    for (const name of entries) {
+        if (!name.endsWith('.mp3') && !name.endsWith('.m4a')) continue;
+        const fullPath = path.join(dir, name);
+        try {
+            const st = await fs.promises.stat(fullPath);
+            if (st.isFile()) files.push({ path: fullPath, size: st.size, time: st.mtimeMs });
+        } catch { /* removed meanwhile */ }
+    }
 
-        const filesWithStats = audioFiles.map(file => {
-            const fullPath = path.join(cacheDir, file);
-            return { path: fullPath, time: fs.statSync(fullPath).mtime.getTime() };
-        });
-        filesWithStats.sort((a, b) => a.time - b.time);
+    let totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+    let evicted = 0;
+    files.sort((a, b) => a.time - b.time);
+    for (const file of files) {
+        if (totalBytes <= maxBytes) break;
+        try {
+            await fs.promises.unlink(file.path);
+            totalBytes -= file.size;
+            evicted++;
+        } catch (err) {
+            console.error(`Failed to delete old cache file: ${path.basename(file.path)}`, err.message);
+        }
+    }
+    return { evicted, totalBytes };
+}
 
-        filesWithStats.slice(0, filesWithStats.length - maxFiles).forEach(fileObj => {
-            fs.unlink(fileObj.path, err => {
-                if (err) console.error(`Failed to delete old cache file: ${fileObj.path}`, err);
-            });
-        });
-    });
+/**
+ * Startup housekeeping: removes `.part` files left by a crash or kill, and
+ * renames cache files from before source prefixes (`<11-char id>.mp3`, always
+ * YouTube) to `youtube_<id>.mp3`. Then applies the size limit.
+ */
+async function prepareCache(dir = cacheDir) {
+    let entries = [];
+    try { entries = await fs.promises.readdir(dir); } catch { return; }
+    for (const name of entries) {
+        const fullPath = path.join(dir, name);
+        try {
+            if (name.endsWith('.part')) {
+                await fs.promises.unlink(fullPath);
+            } else if (LEGACY_YOUTUBE_FILE.test(name)) {
+                const target = path.join(dir, `youtube_${name}`);
+                if (fs.existsSync(target)) await fs.promises.unlink(fullPath);
+                else await fs.promises.rename(fullPath, target);
+            }
+        } catch (err) {
+            console.warn(`Cache housekeeping skipped ${name}: ${err.message}`);
+        }
+    }
+    await enforceCacheLimit(cacheMaxBytes(), dir);
 }
 
 /**
@@ -99,7 +157,7 @@ function serveFromCache(res, cacheKey) {
  * and `allowCache` is true, a copy is written to the disk cache under
  * `cacheKey` once the transcode completes successfully.
  */
-function streamTranscoded(req, res, { sourceUrl, cacheKey, seekTime = 0, allowCache = true }) {
+function streamTranscoded(_req, res, { sourceUrl, cacheKey, seekTime = 0, allowCache = true }) {
     const finalFilePath = cachePathFor(cacheKey);
 
     const ffmpegArgs = [
@@ -159,15 +217,24 @@ function streamTranscoded(req, res, { sourceUrl, cacheKey, seekTime = 0, allowCa
     // caching this stream, kill the transcode so it does not linger. If we ARE
     // caching, let it finish so the file lands in the cache for next time (the
     // safety timer still bounds it).
-    req.on('close', () => {
+    // res 'close' with writableFinished=false means the connection dropped
+    // before we finished (req 'close' is not a reliable disconnect signal).
+    let inBackground = false;
+    res.on('close', () => {
+        if (res.writableFinished || finished) return;
         ffmpegProcess.stdout.unpipe(res);
-        if (!fileStream) {
-            ffmpegProcess.kill('SIGKILL');
+        if (fileStream && backgroundTranscodes < MAX_BACKGROUND_TRANSCODES) {
+            inBackground = true;
+            backgroundTranscodes++;
+            return;
         }
+        // Killed runs exit non-zero, so the close handler drops the .part file.
+        ffmpegProcess.kill('SIGKILL');
     });
 
     ffmpegProcess.on('close', (code) => {
         finished = true;
+        if (inBackground) backgroundTranscodes--;
         clearTimeout(cleanupTimer);
         inFlightCaching.delete(cacheKey);
         if (!fileStream) return;
@@ -179,7 +246,7 @@ function streamTranscoded(req, res, { sourceUrl, cacheKey, seekTime = 0, allowCa
             if (code === 0 && stats.size > MIN_CACHE_BYTES) {
                 if (!fs.existsSync(finalFilePath)) {
                     fs.renameSync(safePartFilePath, finalFilePath);
-                    manageAudioCache(MAX_CACHE_FILES);
+                    enforceCacheLimit().catch(() => {});
                 } else {
                     fs.unlinkSync(safePartFilePath);
                 }
@@ -197,5 +264,9 @@ module.exports = {
     parseSeek,
     serveFromCache,
     streamTranscoded,
-    manageAudioCache
+    enforceCacheLimit,
+    prepareCache,
+    cacheMaxBytes,
+    MAX_BACKGROUND_TRANSCODES,
+    _backgroundTranscodes: () => backgroundTranscodes
 };

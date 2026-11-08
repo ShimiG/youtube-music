@@ -12,7 +12,17 @@ permissions:
 
 jobs:
   backend:
-    runs-on: ubuntu-latest
+    # Stage 3: the desktop app ships for macOS and Windows, so the server
+    # (native sqlite3, ffmpeg-static, path handling) is tested on both, plus Linux.
+    name: backend (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout Code
         uses: actions/checkout@v5
@@ -23,8 +33,15 @@ jobs:
           node-version: 20
           cache: 'npm'
 
+      # --ignore-scripts skips ffmpeg-static's postinstall, which downloads an
+      # ffmpeg binary from GitHub releases. Nothing in CI transcodes audio (tests
+      # stub ffmpeg, the smoke test only boots the server), and that download
+      # failing with 504 used to fail the whole job. sqlite3 is the one native
+      # module the tests and the server need, so it is built explicitly.
       - name: Install Dependencies
-        run: npm ci
+        run: |
+          npm ci --ignore-scripts
+          npm rebuild sqlite3
 
       - name: Lint
         run: npm run lint
@@ -32,17 +49,23 @@ jobs:
       - name: Run Tests
         run: npm test
 
+      # Production dependencies only; dev tooling (pkg, tauri cli) is not shipped.
+      - name: Audit production dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: npm audit --omit=dev --audit-level=high
+
       # Prove the app that actually ships can boot (the test suite alone would not
       # catch a missing dependency or a broken require in server.js).
       - name: Smoke test server boot
         env:
           JWT_SECRET: ci-smoke-secret-ci-smoke-secret-1234
           PORT: 3987
+          YTDLP_AUTO_UPDATE: 'false'
         run: |
           node server.js &
           SRV=$!
-          for i in $(seq 1 20); do
-            if curl -sf http://localhost:3987/ > /dev/null; then
+          for i in $(seq 1 40); do
+            if curl -sf http://127.0.0.1:3987/ > /dev/null; then
               echo "Server booted."; kill $SRV; exit 0
             fi
             sleep 0.5
@@ -68,6 +91,10 @@ jobs:
 
       - name: Lint Client
         run: npx eslint src
+        working-directory: client
+
+      - name: Audit client production dependencies
+        run: npm audit --omit=dev --audit-level=high
         working-directory: client
 
       - name: Build Client

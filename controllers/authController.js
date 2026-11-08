@@ -6,7 +6,7 @@ const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:3000/auth/google/callback';
 const CLIENT_ORIGIN = (process.env.CLIENT_ORIGIN || 'http://localhost:5173').split(',')[0].trim();
 
-const SOURCE_YOUTUBE = 1;
+const { SOURCE_IDS, storeConnection } = require('../services/connections');
 
 const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
 
@@ -42,7 +42,7 @@ const googleCallback = async (req, res, next) => {
 
     let userId;
     try {
-        const payload = jwt.verify(state, process.env.JWT_SECRET);
+        const payload = jwt.verify(state, process.env.JWT_SECRET, { algorithms: ['HS256'] });
         if (payload.purpose !== 'google_oauth') throw new Error('wrong token purpose');
         userId = payload.userId;
     } catch {
@@ -79,22 +79,24 @@ const googleCallback = async (req, res, next) => {
         // Google access tokens live ~1 hour; expiry_date is a ms epoch.
         const expiresAt = tokens.expiry_date || Date.now() + 3500 * 1000;
 
-        // Keep the previous refresh_token if Google omits one — it is only
-        // guaranteed on the first consent (prompt:'consent' forces it, but
-        // COALESCE keeps us safe if that ever changes).
-        await db.run(
-            `INSERT INTO user_connections (user_id, source_id, access_token, refresh_token, expires_at)
-             VALUES (?, ?, ?, ?, ?)
-             ON CONFLICT(user_id, source_id) DO UPDATE SET
-                access_token = excluded.access_token,
-                refresh_token = COALESCE(excluded.refresh_token, user_connections.refresh_token),
-                expires_at = excluded.expires_at`,
-            [userId, SOURCE_YOUTUBE, tokens.access_token, tokens.refresh_token || null, expiresAt]
+        // Encrypted at rest. A missing refresh_token keeps the stored one (it
+        // is only guaranteed on the first consent; prompt:'consent' forces it).
+        await storeConnection(db, userId, 'youtube', {
+            accessToken: tokens.access_token,
+            refreshToken: tokens.refresh_token || null,
+            expiresAt
+        });
+        const stored = await db.get(
+            `SELECT refresh_token FROM user_connections WHERE user_id = ? AND source_id = ?`,
+            [userId, SOURCE_IDS.youtube]
         );
+        const refreshable = stored && stored.refresh_token ? 1 : 0;
 
-        // Tokens stay server-side; the client only learns the expiry time (via
-        // the URL fragment, which never reaches a server or its logs).
-        res.redirect(`${CLIENT_ORIGIN}/#google=connected&expires_at=${expiresAt}`);
+        // Tokens stay server-side; the client only learns the expiry and whether
+        // the server renews it on its own (via the URL fragment, which never
+        // reaches a server or its logs). A refreshable connection does not
+        // trigger the client's auto-logout.
+        res.redirect(`${CLIENT_ORIGIN}/#google=connected&expires_at=${expiresAt}&refreshable=${refreshable}`);
     } catch (error) {
         console.error('Failed to store Google tokens:', error.message);
         res.redirect(`${CLIENT_ORIGIN}/#google=error&reason=store_failed`);
@@ -103,13 +105,13 @@ const googleCallback = async (req, res, next) => {
 
 // Lists which streaming services the logged-in user has connected, with each
 // token's expiry so the client can schedule its auto-logout. `refreshable`
-// marks connections the server renews itself (SoundCloud): their expiry
-// passing does not mean the user has to reconnect.
+// marks connections the server renews itself (any source with a stored
+// refresh token): their expiry passing does not mean the user has to reconnect.
 const getConnections = async (req, res, next) => {
     try {
         const rows = await req.app.locals.db.all(
             `SELECT s.name AS source_name, uc.expires_at,
-                    CASE WHEN s.name = 'soundcloud' AND uc.refresh_token IS NOT NULL THEN 1 ELSE 0 END AS refreshable
+                    CASE WHEN s.name IN ('youtube', 'soundcloud') AND uc.refresh_token IS NOT NULL THEN 1 ELSE 0 END AS refreshable
              FROM user_connections uc
              JOIN sources s ON uc.source_id = s.id
              WHERE uc.user_id = ?`,

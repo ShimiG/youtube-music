@@ -1,5 +1,6 @@
 import {  useState, useRef, useEffect, useCallback } from 'react';
 import { MusicContext } from './hook';
+import { toast } from '../utils/toast';
 
 
 export const MusicProvider = ({ children }) => {
@@ -286,10 +287,21 @@ const seek = useCallback((time) => {
                 }
             }
         };
+        // The stream endpoint answers a failed resolve with TRACK_UNAVAILABLE;
+        // the <audio> element only sees an error. Tell the user and move on
+        // instead of silently stopping the queue.
         const handleError = (e) => {
+            if (!audio.src) return; // clearing src fires an error too
             console.error("Native Audio Element Error:", e);
             setIsLoading(false);
             setIsPlaying(false);
+            const title = currentTrack?.title ? `"${currentTrack.title}"` : 'This track';
+            if (queueIndex < queue.length - 1) {
+                toast(`${title} is unavailable. Skipping to the next track.`, { kind: 'warning' });
+                playNext();
+            } else {
+                toast(`${title} is unavailable right now.`, { kind: 'warning' });
+            }
         };
         audio.addEventListener('ended', handleEnded);
         audio.addEventListener('waiting', handleWaiting);

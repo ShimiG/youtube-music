@@ -3,6 +3,9 @@
 const crypto = require('crypto');
 const client = require('../controllers/soundcloud/client');
 const tokens = require('../controllers/soundcloud/tokens');
+const { decrypt } = require('../services/tokenCrypto');
+// Tokens are encrypted at rest; compare the plaintext they decrypt to.
+const plain = (params) => params.map((v) => decrypt(v));
 
 const jsonResponse = (status, body, headers = {}) => ({
     ok: status >= 200 && status < 300,
@@ -276,7 +279,8 @@ describe('App token cache (client_credentials)', () => {
         await tokens.getAppToken(db);
         expect(fetchMock).toHaveBeenCalledTimes(1);
         expect(db.run).toHaveBeenCalledTimes(1);
-        expect(db.run.mock.calls[0][1]).toEqual(['soundcloud', 'access-app', 'refresh-app', expect.any(Number)]);
+        expect(plain(db.run.mock.calls[0][1])).toEqual(['soundcloud', 'access-app', 'refresh-app', expect.any(Number)]);
+        expect(db.run.mock.calls[0][1][1]).toMatch(/^enc:v1:/); // never stored in plaintext
     });
 
     it('renews an expired app token with the refresh_token grant rather than a new client_credentials exchange', async () => {
@@ -290,7 +294,7 @@ describe('App token cache (client_credentials)', () => {
         expect(form.get('grant_type')).toBe('refresh_token');
         expect(form.get('refresh_token')).toBe('old-refresh');
         // The single-use refresh token was replaced in the database.
-        expect(db.run.mock.calls[0][1][2]).toBe('refresh-renewed');
+        expect(decrypt(db.run.mock.calls[0][1][2])).toBe('refresh-renewed');
     });
 
     it('falls back to one client_credentials exchange when the refresh token is rejected, without looping', async () => {
@@ -326,7 +330,8 @@ describe('User token refresh', () => {
         expect(b).toBe('access-u2');
         expect(fetchMock).toHaveBeenCalledTimes(1);
         expect(db.run).toHaveBeenCalledTimes(1);
-        expect(db.run.mock.calls[0][1]).toEqual([7, 3, 'access-u2', 'refresh-u2', expect.any(Number)]);
+        expect(plain(db.run.mock.calls[0][1])).toEqual([7, 3, 'access-u2', 'refresh-u2', expect.any(Number)]);
+        expect(db.run.mock.calls[0][1][2]).toMatch(/^enc:v1:/);
     });
 
     it('reports SOUNDCLOUD_TOKEN_EXPIRED and drops the dead refresh token when the refresh fails', async () => {

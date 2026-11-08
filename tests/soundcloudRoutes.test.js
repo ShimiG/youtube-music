@@ -6,6 +6,7 @@ const client = require('../controllers/soundcloud/client');
 const tokens = require('../controllers/soundcloud/tokens');
 const soundcloudController = require('../controllers/soundcloudController');
 const ytdlp = require('../controllers/soundcloud/ytdlp');
+const { decrypt } = require('../services/tokenCrypto');
 
 const validToken = jwt.sign({ userId: 1 }, process.env.JWT_SECRET, { expiresIn: '1h' });
 const authHeader = { Authorization: `Bearer ${validToken}` };
@@ -105,7 +106,8 @@ describe('Connect flow', () => {
 
         // Stored against userId 1 (from the state), source 3 (soundcloud).
         const [, params] = app.locals.db.run.mock.calls[0];
-        expect(params.slice(0, 4)).toEqual([1, 3, 'sc-access', 'sc-refresh']);
+        expect(params.slice(0, 4).map(decrypt)).toEqual([1, 3, 'sc-access', 'sc-refresh']);
+        expect(params[2]).toMatch(/^enc:v1:/);
 
         // Replaying the same state must fail.
         const replay = await request(app).get(`/auth/soundcloud/callback?code=the-code&state=${state}`);
@@ -191,19 +193,21 @@ describe('Search', () => {
     });
 });
 
-describe('Library (soundcloudToken middleware)', () => {
-    it('returns 401 SOUNDCLOUD_NOT_CONNECTED when the user has no stored connection', async () => {
+describe("Library (sourceToken('soundcloud') middleware)", () => {
+    it('returns 401 SOURCE_NOT_CONNECTED when the user has no stored connection', async () => {
         app.locals.db.get.mockResolvedValueOnce(undefined);
         const res = await request(app).get('/api/soundcloud/playlists').set(authHeader);
         expect(res.statusCode).toBe(401);
-        expect(res.body.code).toBe('SOUNDCLOUD_NOT_CONNECTED');
+        expect(res.body.code).toBe('SOURCE_NOT_CONNECTED');
+        expect(res.body.source).toBe('soundcloud');
     });
 
-    it('returns 401 SOUNDCLOUD_TOKEN_EXPIRED when expired and there is no refresh token', async () => {
+    it('returns 401 SOURCE_TOKEN_EXPIRED when expired and there is no refresh token', async () => {
         app.locals.db.get.mockResolvedValueOnce({ access_token: 'old', refresh_token: null, expires_at: Date.now() - 1000 });
         const res = await request(app).get('/api/soundcloud/playlists').set(authHeader);
         expect(res.statusCode).toBe(401);
-        expect(res.body.code).toBe('SOUNDCLOUD_TOKEN_EXPIRED');
+        expect(res.body.code).toBe('SOURCE_TOKEN_EXPIRED');
+        expect(res.body.source).toBe('soundcloud');
     });
 
     it('lists /me/playlists with the user token and pins the virtual Liked playlist first', async () => {
@@ -253,7 +257,8 @@ describe('Playback routing', () => {
 
         const res = await request(app).get('/stream?videoId=123456&source=soundcloud');
         expect(res.statusCode).toBe(404);
-        expect(res.body.code).toBe('SOUNDCLOUD_BLOCKED');
+        expect(res.body.code).toBe('TRACK_UNAVAILABLE');
+        expect(res.body.reason).toBe('blocked');
         expect(new URL(fetchMock.mock.calls[0][0]).pathname).toBe('/tracks/soundcloud:tracks:123456/streams');
     });
 
@@ -363,7 +368,8 @@ describe('yt-dlp fallback (no credentials or API trouble)', () => {
         const res = await request(app).get('/stream?videoId=123456&source=soundcloud');
 
         expect(res.statusCode).toBe(404);
-        expect(res.body.code).toBe('SOUNDCLOUD_BLOCKED');
+        expect(res.body.code).toBe('TRACK_UNAVAILABLE');
+        expect(res.body.reason).toBe('blocked');
         expect(ytdlpExec.mock.calls[0][0].pop()).toBe('https://api.soundcloud.com/tracks/123456');
         expect(fetchMock).not.toHaveBeenCalled();
     });
@@ -387,7 +393,8 @@ describe('yt-dlp fallback (no credentials or API trouble)', () => {
         const res = await request(app).get('/api/soundcloud/search?q=x').set(authHeader);
 
         expect(res.statusCode).toBe(502);
-        expect(res.body.code).toBe('SOUNDCLOUD_YTDLP_FAILED');
+        expect(res.body.code).toBe('TRACK_UNAVAILABLE');
+        expect(res.body.reason).toBe('resolve_failed');
     });
 
     it('library routes stay API-only: unconfigured server returns 401 not-connected, never spawns yt-dlp', async () => {

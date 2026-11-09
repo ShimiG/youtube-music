@@ -50,33 +50,21 @@ The desktop shell runs on Tauri 2.12. Details are in
   affects Linux builds only.
 - **CI:** a `desktop` job runs `cargo clippy -D warnings` on every PR.
 
-## Open: DRM decision gate (needs a spike on real machines)
+## Decided: DRM gate (option c, no in-app DRM players)
 
-This cannot be run from a Linux container. What is known in advance:
+The spike wasn't run. It needs a Spotify Premium account and an Apple Music
+subscription, and there are none. Without them the in-app DRM players
+(Spotify Web Playback SDK, Tidal Player, Apple MusicKit) can't be used
+anyway, so the decision is:
 
-- **Spotify Web Playback SDK** and **Tidal Player** need Widevine.
-- **WKWebView (macOS)** has no Widevine; it supports FairPlay only.
-- **WebView2 (Windows)** supports PlayReady, not Widevine.
-
-So the expected result is that client-sdk playback does not work in either
-Tauri webview. MusicKit JS (FairPlay) in WKWebView is the only candidate worth
-testing.
-
-Spike checklist (about half a day):
-
-1. In the Tauri dev build on Windows and macOS, load the Spotify Web Playback
-   SDK with a Premium test account and record whether `ready` fires and audio
-   plays.
-2. On macOS, run MusicKit JS `authorize()` and play one catalog track in
-   WKWebView.
-3. Record the outcome here and pick one option:
-   - (a) client-sdk on the platforms where the spike passed;
-   - (b) move the shell to a Widevine-enabled Electron build (for example
-     Castlabs ECS, which needs VMP signing);
-   - (c) skip client-sdk and rely on remote (Spotify Connect) plus match.
-
-Provisional recommendation: **(c)**, with MusicKit on macOS as an exception
-only if step 2 passes. Stages 4 and 5 already fall back to match.
+- **(c) Skip client-sdk.** Spotify plays through Spotify Connect (Premium) or
+  YouTube match (free). Apple Music and Tidal play through YouTube match.
+- Stages 2, 4 and 5 are on hold until there is a subscription; see
+  `ROADMAP.md`.
+- Revisit if a subscription is added. The first thing worth testing is
+  MusicKit JS (FairPlay) in WKWebView on macOS, because Tauri's webviews have
+  no Widevine (WKWebView: FairPlay only; WebView2: PlayReady only). In-app
+  Spotify/Tidal playback would need a Widevine-enabled Electron shell.
 
 ## Security hardening
 

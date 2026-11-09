@@ -30,7 +30,7 @@ own and leaves the app working.
    - `server-stream`: yt-dlp resolves a URL, ffmpeg transcodes, we stream it (YouTube, SoundCloud, Audius, self-hosted).
    - `match`: the track is looked up on YouTube by artist, title, duration and ISRC, then plays via `server-stream` (Spotify free, Apple Music without subscription, Tidal without subscription, Deezer).
    - `remote`: we control the service's own app (Spotify Connect, Premium).
-   - `client-sdk`: the service's DRM player runs inside the webview (Apple MusicKit, Tidal Player, Spotify Web Playback). Blocked on Widevine availability in Tauri; see Stage 3 decision gate.
+   - `client-sdk`: the service's DRM player runs inside the webview (Apple MusicKit, Tidal Player, Spotify Web Playback). **Not planned** (Stage 3 decision, Nov 2026): Tauri's webviews have no Widevine, and there is no Premium / Apple Music subscription to test or use it. Revisit if one is added.
 5. **"Wrong match?" is a feature of the match mode, not of Spotify.** Any track
    played through `match` shows the button. It applies to Spotify free, Apple
    Music and Tidal without subscription, and Deezer.
@@ -53,7 +53,42 @@ own and leaves the app working.
 | Amazon Music, Qobuz | partner-only APIs | | | | | parked |
 | YouTube Music | covered by YouTube | | | | | n/a |
 
-## Stage 0: Library foundation
+## Stage 0: Library foundation (shipped)
+
+Status: shipped after Stage 1 (branch `stage0-library-foundation`, merged
+into `main` with Stage 3 in Nov 2026). What
+landed, mapped to the plan below:
+
+- `providers/` registry (`index.js`) with `youtube.js`, `soundcloud.js` and
+  `custom.js` behind one interface, plus `errors.js` (one `SourceError` type)
+  and `normalize.js` (the `Playlist` / `Track` shapes and `{ items, nextCursor }`).
+- Library routes in `controllers/libraryController.js`: `GET /api/sources`,
+  `GET /api/library/:source/playlists`, `GET /api/library/:source/playlists/:id/tracks`
+  (id `liked` -> the provider's liked songs), `POST /api/library/:source/liked`,
+  `DELETE /api/library/:source/liked/:id`, and `GET /api/search/:source`.
+  Cursor paging everywhere: YouTube pageToken, SoundCloud next_href, SQLite row id.
+- `middleware/sourceToken.js` replaces the per-service token middleware and
+  returns `SOURCE_NOT_CONNECTED` / `SOURCE_TOKEN_EXPIRED` with the source name.
+  The per-service middleware is gone (Stage 3); the alias routes use
+  `sourceToken` too and answer with the same SOURCE_* codes.
+- YouTube liked songs: `videos.list myRating=like` (music category), paged, plus
+  like/unlike via `videos.rate`. The write scope is requested only when a like is
+  refused (`SOURCE_SCOPE_REQUIRED` -> `connectGoogle({ scope: 'write' })`), so
+  read-only users keep the smaller consent.
+- Client: `utils/services.js` is the only file that names a service;
+  `hooks/useSources.js` and `hooks/useLibrary.js` (`useLibrary`,
+  `usePlaylistTracks`, `useSearch` with `loadMore`); a shared
+  `components/SourcePicker.jsx`; `LibraryView` and `SearchView` rewritten on one
+  fetch path and one error panel; `PlaylistCard` renders the normalised shape
+  with the liked card pinned first; "Load more" driven by `nextCursor`.
+- Tests: `tests/library.test.js` (normalisation, registry, `/api/sources`,
+  per-source error codes, cursor round-trip, liked-only-when-capable, custom
+  ownership, like scope, generic search).
+
+Left for the next release: remove the legacy `/search`, `/playlists` and
+`/api/soundcloud/*` aliases (and the two shim middlewares); wire the custom
+"Create Playlist" card to a real modal; move history to the normalised shape.
+
 
 Goal: the Library tab, the liked-songs playlist and the connect flow all work
 the same way for every source, so adding a service means writing one provider
@@ -128,21 +163,80 @@ Still open for this stage
 
 Tests: PKCE challenge, token grants, single-use refresh handling, app-token caching and single-flight, 429 back-off and surfacing, pagination, normalisation, route auth, state replay protection, stream/duration routing per source. See `tests/soundcloud.test.js` and `tests/soundcloudRoutes.test.js`.
 
-## Stage 2: Spotify and the match engine
+## Status and order (updated Nov 2026)
+
+- Stage 0: shipped (provider layer, generic library and search API). Stage 1:
+  shipped. Stage 3: done (packaging, Tauri v2, security; see
+  `docs/stage-3.md`).
+- Stage 2: the **match engine is built** (`services/matcher/`, match routes,
+  `track_matches`); the Spotify provider itself is **on hold**.
+- **Stages 2 (Spotify), 4 (Apple Music) and 5 (Tidal) are on hold** until there
+  is a Spotify Premium or Apple Music subscription. Without one, they add only
+  YouTube-matched playback, and Apple Music needs a paid Apple Developer
+  Program membership even for catalog search.
+- Next: **Stage 6** (open and self-hosted sources), which needs no accounts or
+  subscriptions and plugs into the Stage 0 provider interface.
+
+## Stage 2: Spotify and the match engine (on hold)
 
 Goal: Spotify library for everyone, native playback for Premium, YouTube-backed
 playback with honest availability for free accounts.
+
+Status: the match engine shipped first (server side, on branch
+`stage0-library-foundation`). The Spotify provider, its OAuth, Premium remote
+playback and the client work below are still open. What landed:
+
+- `services/matcher/`: `normalize.js` (title parsing into core + variant
+  tokens, artist comparison), `score.js` (`evaluate` / `pickBest`),
+  `innertube.js` (YouTube Music song and video search, the primary candidate
+  source), `ytsearch.js` (yt-dlp `ytsearch` flat JSON, the fallback) and
+  `index.js` (the engine: `track_matches` cache with TTLs, ISRC reuse,
+  in-flight de-duplication, bounded queue, `resolve`, `resolveMany` with a
+  request budget, `filterPlayable`, overrides and reports).
+- `config/db.js`: `track_matches` and `match_reports` tables; `initDB(filename)`
+  takes a path so tests can open `:memory:`.
+- `controllers/matchController.js`: `GET /api/match/:source/:id`,
+  `POST /api/match/resolve`, `POST /api/match/override`, `POST /api/match/report`,
+  `DELETE /api/match/:source/:id`, all behind our login (`app.js`).
+- `controllers/matchedStream.js`: `/stream` and `/duration` for `source=spotify`
+  answer `MATCH_REQUIRED` / `TRACK_UNAVAILABLE` / `MATCH_PENDING` and delegate a
+  matched track to `YouTubeController.streamVideo` / `durationOf` (split out of
+  `streamTrack` / `getDuration`), so the cache key stays the YouTube id.
+  Registered in `controllers/streamingController.js`.
+- `controllers/libraryController.js`: every track list (playlist tracks, search,
+  custom playlists) runs through `filterPlayable` when it holds match-mode
+  tracks, hides the unmatched ones and gains `matching`.
+- Config: `MATCH_DURATION_TOLERANCE_SEC`, `MATCH_CONCURRENCY`,
+  `MATCH_REQUEST_BUDGET_MS`, `MATCH_NOT_FOUND_TTL_MS`, `MATCH_ERROR_TTL_MS`,
+  `MATCH_YTDLP_FALLBACK`, `MATCH_YTDLP_RECALL` (`.env.example`, README
+  "Matching engine").
+- Tests: `tests/matcher.normalize.test.js`, `tests/matcher.score.test.js`,
+  `tests/matcher.sources.test.js`, `tests/matcher.engine.test.js`,
+  `tests/matcher.e2e.test.js` (the real modules end-to-end on the fixtures),
+  `tests/matchRoutes.test.js`, with fixtures under `tests/fixtures/` captured
+  from real YouTube Music and yt-dlp output.
+
+Changes from the plan below, made after probing the real services: the
+primary candidate source is the YouTube Music search (about 0.5 s per query,
+and it carries YouTube's own ATV / OMV / UGC classification, which is the
+official-vs-private rule), with yt-dlp `ytsearch` only as a fallback when that
+search fails (about 10 s per query); "official" means ATV or OMV, never UGC,
+regardless of channel verification (the verified lyric channel 7clouds is
+not official); the title must match exactly after normalisation instead of
+scoring token overlap; concurrency is 4 (env). The YouTube Music search is
+an internal endpoint like the ones yt-dlp reads, so it may need maintenance;
+that is what the fallback is for.
 
 Server
 - Generic OAuth routes `GET /auth/:source/url` and `GET /auth/:source/callback`. The state JWT carries `userId` and `source`.
 - Spotify provider: scopes `user-read-private user-read-email playlist-read-private playlist-read-collaborative user-library-read user-read-playback-state user-modify-playback-state`. After callback, call `/me` and store `product` as `tier`. Implement token refresh here (tokens last 1 hour).
 - Search, playlists, playlist tracks, liked songs (`/me/tracks`) and like/unlike, all through the Stage 0 provider interface, so the Library tab and the liked playlist work with no client changes. Normalise every track with `isrc` and `duration_ms`.
-- Match engine `services/matcher.js` with table `track_matches(source_id, external_id, isrc, yt_video_id, status, score, candidates_json, checked_at, override_by)`.
-  - Resolve with yt-dlp `ytsearch5:"<artist> <title>"`. No Google quota, no YouTube connection required.
-  - Score: duration within 3 s, artist and title token overlap, prefer auto-generated "Topic" channels and "official audio", penalise live, cover, karaoke, remix and sped-up unless the Spotify title contains the same word.
-  - Below threshold: status `not_found`, cached for 30 days. Queue with concurrency 2 for background resolution.
-  - `GET /api/match?source=&id=` returns status and candidates; `POST /api/match/report` stores an override and a report.
-- Stream: `source=spotify` resolves through the matcher, then the YouTube path.
+- Match engine (shipped, see the status above): `services/matcher/` with tables `track_matches(source_id, external_id, isrc, status, video_id, score, method, candidates_json, checked_at, override_by)` and `match_reports`.
+  - Candidates from the YouTube Music search (songs filter, then videos), yt-dlp `ytsearch` as the fallback. No Google quota, no YouTube connection required.
+  - Accept only ATV / OMV items (UGC is a private upload), the same artist, the exact normalised title and a duration within 5 s. The score only orders the survivors (catalog audio over music video, full artist coverage, album match).
+  - No acceptable candidate: status `not_found`, cached for 30 days; a failed search: `error`, retried after 10 minutes. Queue with concurrency 4; concurrent requests for one track share one resolution.
+  - `GET /api/match/:source/:id` returns status and candidates; `POST /api/match/resolve`, `POST /api/match/override`, `POST /api/match/report`, `DELETE /api/match/:source/:id`.
+- Stream (shipped): `source=spotify` reads the match row, then the YouTube path.
 - Premium remote playback: `/api/player/spotify/devices|play|pause|seek|state` wrapping the Connect API. Honour 429 `Retry-After`.
 
 Client
@@ -169,11 +263,11 @@ make the DRM decision that shapes Stages 4 and 5.
 - Security: encrypt tokens at rest with a key from the OS keychain or env; set a real CSP in `tauri.conf.json`; tokens never leave the server except the Apple user token which must be minted client-side.
 - Unified error codes (`SOURCE_NOT_CONNECTED`, `SOURCE_TOKEN_EXPIRED`, `TRACK_UNAVAILABLE`, `SOURCE_TIER_REQUIRED`) and client toasts.
 - Tests and CI: provider fixtures, matcher golden set built from mismatch reports, lint the client, build matrix for macOS and Windows.
-- **DRM decision gate.** Spike the Spotify Web Playback SDK inside WebView2 (Windows) and WKWebView (macOS). Decide one of: client-sdk on Windows only; move the shell to a Widevine-enabled Electron build; or skip client-sdk entirely and rely on remote plus match. Stages 4 and 5 follow this decision.
+- **DRM decision gate: decided (c), skip client-sdk.** Rely on remote (Spotify Connect, Premium only) plus match. WKWebView has no Widevine, WebView2 has PlayReady but not Widevine, and there is no Premium or Apple Music subscription to test or use in-app players with. Revisit, starting with MusicKit on macOS, if a subscription is added.
 
 Effort: 4 to 6 days.
 
-## Stage 4: Apple Music
+## Stage 4: Apple Music (on hold)
 
 Prerequisites: Apple Developer Program membership, a MusicKit identifier and private key, Team ID, Key ID.
 
@@ -188,7 +282,7 @@ Client
 
 Effort: 4 to 5 days plus the Apple account lead time.
 
-## Stage 5: Tidal
+## Stage 5: Tidal (on hold)
 
 - OAuth PKCE via the Tidal developer portal. Catalog v2 API for search, playlists and favorites; ISRC is present.
 - Subscribers play through the Tidal Player SDK under the same DRM decision; everyone else through match.

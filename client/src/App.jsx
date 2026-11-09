@@ -10,19 +10,28 @@ import ConnectServices from './components/ConnectServices';
 import Toaster from './components/Toaster';
 import { toast } from './utils/toast';
 import { isDesktopApp, onOAuthResult, openExternal } from './utils/desktop';
+import { SERVICE_LIST } from './utils/services';
+import './App.css';
+
+// Services whose OAuth callback reports back as #<callbackParam>=connected|error.
+const CALLBACK_SERVICES = SERVICE_LIST.filter(s => s.callbackParam);
 
 // Reports the outcome of a connect flow (#google=connected, #soundcloud=error,
 // ...). The service tokens stay on the server, encrypted; this only tells the
-// user, and lets the connect banner reload.
+// user, and lets the connect banner and the Library reload.
 function reportConnectResult(fragment) {
     const params = new URLSearchParams(fragment);
-    if (params.get('google') === 'connected') toast('YouTube connected.');
-    else if (params.get('google') === 'error') toast('Connecting YouTube failed. Try again.', { kind: 'error' });
-    if (params.get('soundcloud') === 'connected') toast('SoundCloud connected.');
-    else if (params.get('soundcloud') === 'error') toast('Connecting SoundCloud failed. Try again.', { kind: 'error' });
+    for (const s of CALLBACK_SERVICES) {
+        const outcome = params.get(s.callbackParam);
+        if (outcome === 'connected') toast(`${s.label} connected.`);
+        else if (outcome === 'error') {
+            const reason = params.get('reason');
+            console.error(`${s.label} account connection failed.${reason ? ` (${reason})` : ''}`);
+            toast(`Connecting ${s.label} failed. Try again.`, { kind: 'error' });
+        }
+    }
     window.dispatchEvent(new Event('connections-changed'));
 }
-import './App.css';
 
 function App() {
     const [view, setView] = useState('search'); 
@@ -38,7 +47,8 @@ function App() {
     // #<service>=connected|error in the URL fragment, scrubbed once read.
     useEffect(() => {
         const hash = window.location.hash;
-        if (!hash.includes('google=') && !hash.includes('soundcloud=')) return;
+        const params = new URLSearchParams(hash.slice(1));
+        if (!CALLBACK_SERVICES.some(s => params.has(s.callbackParam))) return;
         reportConnectResult(hash.slice(1));
         window.history.replaceState(null, '', window.location.pathname);
     }, []);

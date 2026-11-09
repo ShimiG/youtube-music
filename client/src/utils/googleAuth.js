@@ -6,9 +6,13 @@ import { startOAuth } from './desktop';
 // Either way the API callback stores the tokens server-side and reports the
 // result as #google=connected&... (back to the web client, or into the app
 // through a musicmanager:// link).
-export async function connectGoogle() {
+//
+// connectGoogle({ scope: 'write' }) asks for the youtube write scope as well,
+// which liking/unliking needs. The default consent stays read-only.
+export async function connectGoogle({ scope } = {}) {
     try {
-        const result = await startOAuth('http://localhost:3000/auth/google/url');
+        const params = scope === 'write' ? { scope: 'write' } : {};
+        const result = await startOAuth('http://localhost:3000/auth/google/url', params);
         if (!result.ok && result.status !== undefined) throw new Error(result.error || 'Failed to get Google auth URL');
     } catch (err) {
         console.error('Could not start Google connect flow:', err);

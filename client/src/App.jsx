@@ -7,7 +7,14 @@ import PlayerFooter from './components/PlayerFooter';
 import Queue from './components/Queue';
 import AuthScreen from './components/AuthScreen';
 import ConnectServices from './components/ConnectServices';
+import { SERVICE_LIST } from './utils/services';
 import './App.css';
+
+// Services whose OAuth callback lands back on the app with a URL fragment, and
+// the ones whose token expiry should log the user out (those the server does
+// not refresh itself). Both facts live in the registry, not here.
+const CALLBACK_SERVICES = SERVICE_LIST.filter(s => s.callbackParam);
+const AUTO_LOGOUT_SERVICES = SERVICE_LIST.filter(s => s.autoLogoutOnExpiry && s.expiryStorageKey);
 
 function App() {
     const [view, setView] = useState('search'); 
@@ -20,23 +27,24 @@ function App() {
     });
 
     // After a connect flow, the backend redirects here with
-    // #<service>=connected&expires_at=... in the URL fragment. The service
-    // tokens themselves stay on the server (user_connections table). For Google
-    // the client records the expiry to schedule its auto-logout; SoundCloud
-    // tokens are refreshed server-side, so only the outcome matters. The
+    // #<callbackParam>=connected&expires_at=... in the URL fragment. The
+    // service tokens themselves stay on the server (user_connections table).
+    // For a service the server does not refresh, the client records the expiry
+    // (under the registry's expiryStorageKey) to schedule its auto-logout. The
     // fragment is scrubbed from the address bar either way.
     useEffect(() => {
         const hash = window.location.hash;
-        if (!hash.includes('google=') && !hash.includes('soundcloud=')) return;
-
         const params = new URLSearchParams(hash.slice(1));
-        if (params.get('google') === 'connected' && params.get('expires_at')) {
-            localStorage.setItem('googleExpiresAt', params.get('expires_at'));
-        } else if (params.get('google') === 'error') {
-            console.error('Google account connection failed.');
-        }
-        if (params.get('soundcloud') === 'error') {
-            console.error('SoundCloud account connection failed.');
+        const landed = CALLBACK_SERVICES.filter(s => params.has(s.callbackParam));
+        if (landed.length === 0) return;
+
+        for (const s of landed) {
+            const outcome = params.get(s.callbackParam);
+            if (outcome === 'connected' && s.expiryStorageKey && params.get('expires_at')) {
+                localStorage.setItem(s.expiryStorageKey, params.get('expires_at'));
+            } else if (outcome === 'error') {
+                console.error(`${s.label} account connection failed.${params.get('reason') ? ` (${params.get('reason')})` : ''}`);
+            }
         }
         window.history.replaceState(null, '', window.location.pathname);
     }, []);
@@ -52,22 +60,26 @@ function App() {
         localStorage.removeItem('authToken');
         localStorage.removeItem('localUserId');
         localStorage.removeItem('localUserName');
-        localStorage.removeItem('googleExpiresAt');
+        for (const s of SERVICE_LIST) {
+            if (s.expiryStorageKey) localStorage.removeItem(s.expiryStorageKey);
+        }
         localStorage.removeItem('userToken'); // legacy key from the old client-held-token flow
         setLocalUser(null);
     };
 
-    // Auto-logout when the Google token expires, so the next login forces a
-    // fresh connect and fresh tokens. When more streaming services are added,
-    // this should use the EARLIEST expiry among all connected services.
+    // Auto-logout at the EARLIEST expiry among the services whose tokens the
+    // server does not refresh, so the next login forces a fresh connect and
+    // fresh tokens. Server-refreshed services never trigger this.
     useEffect(() => {
         if (!localUser) return;
-        const expiresAt = Number(localStorage.getItem('googleExpiresAt'));
-        if (!expiresAt) return;
+        const expiries = AUTO_LOGOUT_SERVICES
+            .map(s => Number(localStorage.getItem(s.expiryStorageKey)))
+            .filter(n => Number.isFinite(n) && n > 0);
+        if (expiries.length === 0) return;
 
         // Defer logout through a timer (0 ms when already expired) so no state
         // update runs synchronously inside the effect body.
-        const msLeft = Math.max(0, expiresAt - Date.now());
+        const msLeft = Math.max(0, Math.min(...expiries) - Date.now());
         const timer = setTimeout(handleLogout, msLeft);
         return () => clearTimeout(timer);
     }, [localUser]);

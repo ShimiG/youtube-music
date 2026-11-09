@@ -21,14 +21,21 @@ const getGoogleAuthUrl = (req, res) => {
         { expiresIn: '10m' }
     );
 
+    // Read-only by default so most users keep the smaller consent. The `youtube`
+    // write scope (needed to like/unlike) is requested only when the client asks
+    // for it, which it does the first time the user taps like and the API
+    // answers SOURCE_SCOPE_REQUIRED.
+    const scope = [
+        'https://www.googleapis.com/auth/youtube.readonly',
+        'https://www.googleapis.com/auth/userinfo.profile',
+        'https://www.googleapis.com/auth/userinfo.email'
+    ];
+    if (req.query.scope === 'write') scope.push('https://www.googleapis.com/auth/youtube');
+
     const url = oauth2Client.generateAuthUrl({
         access_type: 'offline',
         prompt: 'consent',
-        scope: [
-            'https://www.googleapis.com/auth/youtube.readonly',
-            'https://www.googleapis.com/auth/userinfo.profile',
-            'https://www.googleapis.com/auth/userinfo.email'
-        ],
+        scope,
         state
     });
 

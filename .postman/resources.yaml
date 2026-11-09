@@ -1,0 +1,5 @@
+workspace:
+  id: d38b8dec-e412-4acf-8fcf-e5cfb7170e64
+cloudResources:
+  collections:
+    ../postman/collections/Lsport: 51792854-8cefcd7e-0523-414e-8f9c-9037e442bd70

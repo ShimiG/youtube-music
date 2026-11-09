@@ -7,6 +7,7 @@ const requireAuth = require('./middleware/requireAuth');
 const requireExistingUser = require('./middleware/requireExistingUser');
 const googleToken = require('./middleware/googleToken');
 const soundcloudToken = require('./middleware/soundcloudToken');
+const sourceToken = require('./middleware/sourceToken');
 
 const authController = require('./controllers/authController');
 const { registerUser, loginUser } = require('./controllers/UserController');
@@ -15,6 +16,8 @@ const playlistController = require('./controllers/playlistController');
 const historyController = require('./controllers/historyController');
 const streamingController = require('./controllers/streamingController');
 const soundcloudController = require('./controllers/soundcloudController');
+const libraryController = require('./controllers/libraryController');
+const matchController = require('./controllers/matchController');
 
 const app = express();
 
@@ -52,6 +55,10 @@ const apiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 });
 const mediaLimiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
 // Login/register are brute-force targets, so they get a tighter cap.
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
+// Each resolve may spend up to 100 YouTube Music searches (and yt-dlp time);
+// a page of a playlist needs one call, so this is generous for a person and
+// tight for a script.
+const matchResolveLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 120 });
 
 // Apply the baseline limiter to every route (defined before the routes so it
 // sits in front of them all).
@@ -77,7 +84,8 @@ app.get('/auth/google/url', requireAuth, requireExistingUser, authController.get
 app.get('/auth/google/callback', authController.googleCallback);
 app.get('/api/user/connections', requireAuth, authController.getConnections);
 
-// --- YouTube-backed endpoints (our login + the user's stored Google token) ---
+// --- Legacy YouTube-only routes. Kept as thin aliases for one release; the
+// generic /api/library and /api/search routes below replace them. ---
 app.get('/search', requireAuth, googleToken, searchController.searchTracks);
 app.get('/playlists', requireAuth, googleToken, playlistController.getUserPlaylists);
 app.get('/playlists/:id/tracks', requireAuth, googleToken, playlistController.getPlaylistTracks);
@@ -95,8 +103,35 @@ app.get('/api/soundcloud/search', requireAuth, soundcloudController.searchTracks
 app.get('/api/soundcloud/playlists', requireAuth, soundcloudToken, soundcloudController.getPlaylists);
 app.get('/api/soundcloud/playlists/:id/tracks', requireAuth, soundcloudToken, soundcloudController.getPlaylistTracks);
 
+// --- Generic library API: one shape for every source (see providers/). The
+// :source segment picks the provider; sourceToken attaches the user's stored
+// token (or fails with SOURCE_NOT_CONNECTED / SOURCE_TOKEN_EXPIRED). Every
+// list call returns { items, nextCursor }. ---
+app.get('/api/sources', requireAuth, libraryController.getSources);
+app.get('/api/library/:source/playlists', requireAuth, sourceToken(), libraryController.getPlaylists);
+app.get('/api/library/:source/playlists/:id/tracks', requireAuth, sourceToken(), libraryController.getPlaylistTracks);
+app.post('/api/library/:source/liked', requireAuth, sourceToken(), libraryController.likeTrack);
+app.delete('/api/library/:source/liked/:id', requireAuth, sourceToken(), libraryController.unlikeTrack);
+// Search runs the token lookup in optional mode: some sources (SoundCloud) can
+// search public content without the user's own token.
+app.get('/api/search/:source', requireAuth, sourceToken(null, { optional: true }), libraryController.search);
+
+// --- Match engine (Stage 2). Tracks of a match-mode source (Spotify) must be
+// matched to an official YouTube video before they can play; these routes read,
+// request, correct and forget those matches. Our login is required: resolving
+// spends YouTube Music / yt-dlp calls, and overrides and reports are
+// attributed to the user. The match table itself is global, not per user.
+// Override and report write rows that reference users(id), so a valid token
+// for a deleted account must fail with 401 here rather than a FK error. ---
+app.get('/api/match/:source/:id', requireAuth, matchController.getMatch);
+app.post('/api/match/resolve', requireAuth, matchResolveLimiter, matchController.resolveTracks);
+app.post('/api/match/override', requireAuth, requireExistingUser, matchController.override);
+app.post('/api/match/report', requireAuth, requireExistingUser, matchController.report);
+app.delete('/api/match/:source/:id', requireAuth, matchController.forget);
+
 // --- Media (rate-limited + input-validated; no Bearer header because the
-// browser <audio> element cannot send one). `source` selects the provider. ---
+// browser <audio> element cannot send one). `source` selects the provider;
+// `source=spotify` goes through the match table first (controllers/matchedStream.js). ---
 app.get('/stream', mediaLimiter, streamingController.handleStream);
 app.get('/duration', mediaLimiter, streamingController.handleDuration);
 

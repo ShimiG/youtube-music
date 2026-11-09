@@ -1,0 +1,15 @@
+$kind: http-request
+url: https://lsports-luka.app.n8n.cloud/webhook/lsports-demo-sports-coverage
+method: POST
+headers:
+  - key: X-API-Key
+    value: ""
+    disabled: true
+body:
+  type: json
+  content: |-
+    {
+        "sport": "Football"
+        }
+settings: {}
+order: 1000

@@ -1,5 +1,6 @@
 import {  useState, useRef, useEffect, useCallback } from 'react';
 import { MusicContext } from './hook';
+import { DEFAULT_SOURCE } from '../utils/services';
 
 
 export const MusicProvider = ({ children }) => {
@@ -30,10 +31,12 @@ export const MusicProvider = ({ children }) => {
         hasPreloadedNext.current = false;
         setDuration(0);
         const safeId = track.id || track.videoId;
-        // Tracks carry their source; anything without one is a YouTube video.
-        const source = track.source || 'youtube';
-        if (track.duration) {
-            setDuration(track.duration);
+        // Tracks carry their source; rows from before that default to DEFAULT_SOURCE.
+        const source = track.source || DEFAULT_SOURCE;
+        // Normalised tracks carry durationSec; older rows still carry duration.
+        const knownDuration = track.durationSec ?? track.duration;
+        if (knownDuration) {
+            setDuration(knownDuration);
         } else {
             fetch(`http://localhost:3000/duration?videoId=${safeId}&source=${source}`)
                 .then(res => res.json())
@@ -76,7 +79,7 @@ export const MusicProvider = ({ children }) => {
     }, []);
 
     const playTrack = useCallback((track) => {
-        if (currentTrack?.id !== track.id || (currentTrack?.source || 'youtube') !== (track.source || 'youtube')) {
+        if (currentTrack?.id !== track.id || (currentTrack?.source || DEFAULT_SOURCE) !== (track.source || DEFAULT_SOURCE)) {
             setQueue([track]); 
             setDuration(0);
             setQueueIndex(0);
@@ -219,7 +222,7 @@ const seek = useCallback((time) => {
             setIsLoading(true);
 
             const safeId = currentTrack.id || currentTrack.videoId;
-            const source = currentTrack.source || 'youtube';
+            const source = currentTrack.source || DEFAULT_SOURCE;
             const streamUrl = `http://localhost:3000/stream?videoId=${safeId}&source=${source}&seek=${cleanTime}`;
             
             audio.pause();
@@ -278,7 +281,7 @@ const seek = useCallback((time) => {
             if (bufferedEnd >= audio.duration - 2) {
                 if (!hasPreloadedNext.current && queueIndex < queue.length - 1) {
                     const nextTrack = queue[queueIndex + 1];
-                    const preloadUrl = `http://localhost:3000/stream?videoId=${nextTrack.id}&source=${nextTrack.source || 'youtube'}&seek=0`;
+                    const preloadUrl = `http://localhost:3000/stream?videoId=${nextTrack.id}&source=${nextTrack.source || DEFAULT_SOURCE}&seek=0`;
                     preloadAudioRef.current.src = preloadUrl;
                     preloadAudioRef.current.load(); 
                     

@@ -1,0 +1,10 @@
+$kind: collection
+variables:
+  api_key: ""
+auth:
+  - id: a54dae61-a4e9-4770-a82d-845e26a18e64
+    type: apikey
+    name: apikey auth
+    credentials:
+      value: "{{api_key}}"
+      key: X-API-Key

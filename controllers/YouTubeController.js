@@ -14,11 +14,13 @@ function isValidVideoId(videoId) {
     return typeof videoId === 'string' && /^[A-Za-z0-9_-]{11}$/.test(videoId);
 }
 
-const streamTrack = async (req, res) => {
-    const videoId = req.query.videoId;
-    if (!videoId || videoId === 'undefined') {
-        return res.status(400).json({ error: 'Missing videoId' });
-    }
+// Streams the YouTube video `videoId` into `res`. Shared by the YouTube source
+// (id straight from the query string) and by the match-mode sources, whose
+// handler looks the id up in track_matches first (controllers/matchedStream.js).
+// Taking the id as an argument instead of reading req.query keeps callers from
+// having to mutate the request, and the cache key stays the bare YouTube id,
+// so a Spotify play and a YouTube play of the same video share one cache file.
+function streamVideo(req, res, videoId) {
     if (!isValidVideoId(videoId)) {
         return res.status(400).json({ error: 'Invalid videoId' });
     }
@@ -45,30 +47,46 @@ const streamTrack = async (req, res) => {
 
         streamTranscoded(req, res, { sourceUrl: audioUrl, cacheKey: videoId, seekTime });
     });
+}
+
+const streamTrack = async (req, res) => {
+    const videoId = req.query.videoId;
+    if (!videoId || videoId === 'undefined') {
+        return res.status(400).json({ error: 'Missing videoId' });
+    }
+    return streamVideo(req, res, videoId);
 };
+
+// Resolves the duration of a YouTube video in whole seconds, through the
+// bounded in-memory cache above. Rejects when yt-dlp fails; the HTTP handlers
+// (ours below and the match-mode one) decide how to report that.
+function durationOf(videoId) {
+    if (!isValidVideoId(videoId)) return Promise.reject(new Error('Invalid videoId'));
+    if (durationCache.has(videoId)) return Promise.resolve(durationCache.get(videoId));
+
+    const args = ['--print', 'duration', `https://www.youtube.com/watch?v=${videoId}`];
+
+    return new Promise((resolve, reject) => {
+        execFile(ytDlpPath, args, (error, stdout) => {
+            if (error) return reject(error);
+            const durationInSeconds = parseInt(stdout.trim(), 10) || 0;
+            if (durationCache.size >= DURATION_CACHE_MAX) {
+                durationCache.delete(durationCache.keys().next().value);
+            }
+            durationCache.set(videoId, durationInSeconds);
+            resolve(durationInSeconds);
+        });
+    });
+}
 
 const getDuration = (req, res) => {
     const videoId = req.query.videoId;
     if (!videoId) return res.status(400).json({ error: 'Missing videoId' });
     if (!isValidVideoId(videoId)) return res.status(400).json({ error: 'Invalid videoId' });
 
-    if (durationCache.has(videoId)) {
-        return res.json({ duration: durationCache.get(videoId) });
-    }
-
-    const args = ['--print', 'duration', `https://www.youtube.com/watch?v=${videoId}`];
-
-    execFile(ytDlpPath, args, (error, stdout) => {
-        if (error) {
-            return res.status(502).json({ duration: 0 });
-        }
-        const durationInSeconds = parseInt(stdout.trim(), 10) || 0;
-        if (durationCache.size >= DURATION_CACHE_MAX) {
-            durationCache.delete(durationCache.keys().next().value);
-        }
-        durationCache.set(videoId, durationInSeconds);
-        res.json({ duration: durationInSeconds });
-    });
+    return durationOf(videoId)
+        .then((duration) => res.json({ duration }))
+        .catch(() => res.status(502).json({ duration: 0 }));
 };
 
-module.exports = { streamTrack, getDuration, isValidVideoId };
+module.exports = { streamTrack, getDuration, streamVideo, durationOf, isValidVideoId };

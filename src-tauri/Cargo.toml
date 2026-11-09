@@ -2,7 +2,7 @@
 name = "music-manager"
 version = "1.0.0"
 description = "A hybrid React/Node/Rust music player"
-authors = ["you"]
+authors = ["Shimi Goldshlak"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

@@ -1,4 +1,6 @@
-const { google } = require('googleapis');
+// Only the YouTube client and Google's auth library, not all of `googleapis`
+// (which is ~30 MB of every Google API and dominated the packaged executable).
+const { auth } = require('@googleapis/youtube');
 const jwt = require('jsonwebtoken');
 
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
@@ -8,7 +10,7 @@ const CLIENT_ORIGIN = (process.env.CLIENT_ORIGIN || 'http://localhost:5173').spl
 
 const { SOURCE_IDS, storeConnection } = require('../services/connections');
 
-const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
+const oauth2Client = new auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
 
 // Returns the Google consent URL for the logged-in user (requireAuth runs first).
 // The callback arrives as a bare browser redirect with no Authorization header,

@@ -1,4 +1,6 @@
-require('dotenv').config();
+// .env from the working directory; when packaged, also from the data folder,
+// plus a generated JWT_SECRET (services/runtimeConfig.js). Must run first.
+require('./services/runtimeConfig').loadRuntimeConfig();
 
 const app = require('./app');
 const initDB = require('./config/db');

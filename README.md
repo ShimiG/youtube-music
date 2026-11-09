@@ -68,10 +68,12 @@ turn it off (CI and tests do).
 
 ## Prerequisites
 
-- **Node.js 20+**
+- **Node.js 22.13+** (the database is Node's built-in `node:sqlite`)
 - **Rust + `rustup`** (for the Tauri build)
-- A **`yt-dlp` binary** in `bin/` — `bin/yt-dlp_macos` on macOS, `bin/yt-dlp.exe` on Windows.
-  (`ffmpeg` is bundled via the `ffmpeg-static` npm package — no separate install.)
+- A **`yt-dlp` binary** in `bin/` — `bin/yt-dlp_macos` on macOS, `bin/yt-dlp.exe` on Windows
+  (or `yt-dlp` on the PATH, e.g. `brew install yt-dlp`; `YTDLP_PATH` overrides).
+- **ffmpeg** comes from the `ffmpeg-static` npm package. If its download fails during
+  `npm install`, a system ffmpeg is used instead (`brew install ffmpeg`; `FFMPEG_PATH` overrides).
 - A **Google Cloud** project with the **YouTube Data API v3** enabled and OAuth credentials.
 - Optional: a **SoundCloud app** (Client ID + secret) from
   [developers.soundcloud.com](https://developers.soundcloud.com/docs/api/register-app);
@@ -113,8 +115,12 @@ Desktop dev/build (Tauri):
 
 ```bash
 npx tauri dev        # native window in development
-npm run tauri:build  # standalone desktop app (bundles the pkg-compiled server)
+npm run build:server  # the API server as a single executable: bin/music-server-<triple>
+npm run tauri:build   # standalone desktop app (bundles that executable, ffmpeg and yt-dlp)
 ```
+
+The packaged app keeps its data in the per-user app-data folder, not the project folder;
+see [docs/packaging.md](docs/packaging.md).
 
 ## API overview
 
@@ -133,12 +139,13 @@ npm run tauri:build  # standalone desktop app (bundles the pkg-compiled server)
 - **Single-instance by design.** In-memory rate limiting, a local file cache, and local
   SQLite mean this runs as one process (correct for a desktop app; would need Redis/object
   storage/Postgres to scale horizontally as a web service).
-- **`pkg` is legacy.** It bundles the server to a Node 18 target and is no longer maintained;
-  a future migration to Node's built-in SEA (single executable applications) is advisable.
+- **Packaging.** The server ships as a Node single executable (SEA), built per platform; see
+  [docs/packaging.md](docs/packaging.md). It replaced `pkg` (abandoned, Node 18 only).
 - **`/stream` is not per-user authenticated** because the browser `<audio>` element cannot
   send an `Authorization` header. It is protected by input validation + rate limiting instead.
 
 ## Tech stack
 
-React (Vite) · Tauri (Rust) · Node.js/Express 5 · SQLite (`sqlite`/`sqlite3`) ·
-`googleapis` · `yt-dlp` + `ffmpeg-static` · `jsonwebtoken` + `bcryptjs` · Jest/Supertest.
+React (Vite) · Tauri (Rust) · Node.js 22/Express 5 · SQLite (`node:sqlite`) ·
+`@googleapis/youtube` · `yt-dlp` + `ffmpeg-static` · `jsonwebtoken` + `bcryptjs` ·
+esbuild + Node SEA (packaging) · Jest/Supertest.

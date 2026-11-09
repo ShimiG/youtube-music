@@ -1,16 +1,34 @@
-name: Build Windows Exe
+name: Build server executables
+
+# On a published release, build the API server as a single executable for
+# macOS (Apple Silicon) and Windows, together with the ffmpeg and yt-dlp
+# binaries it uses, and attach them to the release. Names follow Tauri's
+# externalBin convention (<name>-<target-triple>), so the files can be dropped
+# into bin/ for `tauri build`. Replaces the old pkg/Node 18 Windows-only build.
 
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   build:
-    runs-on: windows-latest
-
+    name: server (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            ytdlp: yt-dlp_macos
+          - os: windows-latest
+            ytdlp: yt-dlp.exe
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout Code
         uses: actions/checkout@v5
@@ -18,25 +36,55 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
+          cache: 'npm'
 
       - name: Install Dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       # Do not publish a binary that fails its own tests.
       - name: Run Tests
         run: npm test
 
-      - name: Install Pkg
-        run: npm install -g pkg
+      # The static ffmpeg build ships with the app. Its download (GitHub
+      # releases) has been flaky, so retry instead of failing the release.
+      - name: Fetch ffmpeg (ffmpeg-static)
+        run: |
+          for i in 1 2 3 4 5; do
+            node node_modules/ffmpeg-static/install.js && exit 0
+            echo "ffmpeg download failed (attempt $i), retrying in $((i * 15))s"; sleep $((i * 15))
+          done
+          exit 1
 
-      - name: Build EXE
-        run: pkg . --targets node18-win-x64 --output MusicApp.exe --public
+      - name: Fetch yt-dlp
+        run: |
+          mkdir -p bin
+          curl -fL --retry 5 --retry-delay 10 -o "bin/${{ matrix.ytdlp }}" \
+            "https://github.com/yt-dlp/yt-dlp/releases/latest/download/${{ matrix.ytdlp }}"
+          chmod +x "bin/${{ matrix.ytdlp }}"
 
-      - name: Upload to Release
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Build single executable
+        run: npm run build:server
+
+      - name: List build output
+        run: ls -la bin/
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
         with:
-          files: MusicApp.exe
+          name: server-${{ matrix.os }}
+          path: |
+            bin/music-server-*
+            bin/ffmpeg-*
+            bin/yt-dlp-*
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            bin/music-server-*
+            bin/ffmpeg-*
+            bin/yt-dlp-*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

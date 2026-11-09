@@ -7,8 +7,10 @@
 // are never included in the response.
 const fs = require('fs');
 const { execFile } = require('child_process');
-const ffmpegPath = require('ffmpeg-static');
 const { ytDlpPath } = require('./ytdlp');
+const { resolveFfmpeg } = require('./paths');
+
+const ffmpegPath = resolveFfmpeg();
 const { cacheDir, cacheMaxBytes } = require('../controllers/transcode');
 const pkg = require('../package.json');
 
@@ -18,7 +20,9 @@ const PROBE_TIMEOUT_MS = 15 * 1000;
 // Wrapped so tests can stub the process calls.
 const runner = {
     version: (bin, args) => new Promise((resolve) => {
-        if (!bin || !fs.existsSync(bin)) return resolve(null);
+        // A bare name ("ffmpeg") is looked up on the PATH by execFile itself.
+        const isBareName = bin && !bin.includes('/') && !bin.includes('\\');
+        if (!bin || (!isBareName && !fs.existsSync(bin))) return resolve(null);
         execFile(bin, args, { timeout: PROBE_TIMEOUT_MS }, (err, stdout) => {
             if (err) return resolve(null);
             resolve(String(stdout).split('\n')[0].trim() || null);

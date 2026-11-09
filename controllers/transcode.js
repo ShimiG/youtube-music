@@ -8,9 +8,10 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const ffmpegPath = require('ffmpeg-static');
+const { dataDir, resolveFfmpeg } = require('../services/paths');
 
-const cacheDir = path.join(__dirname, '../cache');
+const ffmpegPath = resolveFfmpeg();
+const cacheDir = path.join(dataDir(), 'cache');
 const resolvedCacheDir = path.resolve(cacheDir);
 
 const MAX_SEEK_SECONDS = 24 * 60 * 60; // 24 hours

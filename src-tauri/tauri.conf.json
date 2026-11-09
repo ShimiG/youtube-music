@@ -1,43 +1,48 @@
 {
-  "$schema": "../node_modules/@tauri-apps/cli/schema.json",
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Music Manager",
+  "version": "0.1.0",
+  "identifier": "com.musicmanager.app",
   "build": {
-    "beforeBuildCommand": "",
     "beforeDevCommand": "npm run dev",
-    "devPath": "http://localhost:5173",
-    "distDir": "../client/dist"
+    "beforeBuildCommand": "",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../client/dist"
   },
-  "package": {
-    "productName": "Music Manager",
-    "version": "0.1.0"
-  },
-  "tauri": {
-    "bundle": {
-      "identifier": "com.musicmanager.app",
-      "externalBin": [
-        "../bin/music-server",
-        "../bin/ffmpeg",
-        "../bin/yt-dlp"
-      ]
-    },
-    "systemTray": {
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": true
-    },
-    "allowlist": {
-      "shell": {
-        "sidecar": true,
-        "open": "^https://"
-      }
-    },
-    "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' http://localhost:3000 http://127.0.0.1:3000; connect-src 'self' ipc: http://ipc.localhost http://localhost:3000 http://127.0.0.1:3000; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'"
-    },
+  "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Music Manager",
         "width": 1200,
         "height": 800
       }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' http://localhost:3000 http://127.0.0.1:3000; connect-src 'self' ipc: http://ipc.localhost http://localhost:3000 http://127.0.0.1:3000; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "../bin/music-server",
+      "../bin/ffmpeg",
+      "../bin/yt-dlp"
     ]
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["musicmanager"]
+      }
+    }
   }
 }

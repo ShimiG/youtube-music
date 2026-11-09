@@ -5,23 +5,24 @@ description = "A hybrid React/Node/Rust music player"
 authors = ["you"]
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
+# Tauri crates are pinned exactly (=) so builds never pick up a release
+# younger than the one reviewed; bump them deliberately.
 [build-dependencies]
-tauri-build = { version = "1.5", features = [] }
+tauri-build = { version = "=2.7.4", features = [] }
 
 [dependencies]
-tauri = { version = "1.5", features = [ "shell-open", "system-tray", "shell-sidecar"] }
+# tray-icon: the system tray menu; image-png: load the tray icon from icons/icon.png.
+tauri = { version = "=2.12.5", features = ["tray-icon", "image-png"] }
+# Starts the Node server sidecar (from Rust only; the web content has no shell access).
+tauri-plugin-shell = "=2.5.0"
+# Opens https links and the OAuth consent page in the system browser.
+tauri-plugin-opener = "=2.7.2"
+# musicmanager:// links bring OAuth results back into the app.
+tauri-plugin-deep-link = "=2.6.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-[features]
-# this feature is used for production builds or when `devPath` points to the filesystem and the built-in dev server is disabled.
-# If you use cargo directly instead of tauri's cli you can use this feature flag to switch between tauri's `dev` and `build` modes.
-# DO NOT REMOVE!!
-custom-protocol = [ "tauri/custom-protocol" ]
-
-
-
-
-
+# On Windows and Linux a deep link starts a second process; single-instance
+# forwards it to the running app instead.
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = { version = "=2.5.4", features = ["deep-link"] }

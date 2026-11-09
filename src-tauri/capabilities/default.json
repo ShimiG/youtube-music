@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the main window's web content may ask the native side to do. Kept minimal: open https links in the system browser and receive musicmanager:// deep links. The server sidecar is started from Rust, so the web content gets no shell or process permissions at all.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://*" }]
+    },
+    "deep-link:default"
+  ]
+}

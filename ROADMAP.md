@@ -30,7 +30,7 @@ own and leaves the app working.
    - `server-stream`: yt-dlp resolves a URL, ffmpeg transcodes, we stream it (YouTube, SoundCloud, Audius, self-hosted).
    - `match`: the track is looked up on YouTube by artist, title, duration and ISRC, then plays via `server-stream` (Spotify free, Apple Music without subscription, Tidal without subscription, Deezer).
    - `remote`: we control the service's own app (Spotify Connect, Premium).
-   - `client-sdk`: the service's DRM player runs inside the webview (Apple MusicKit, Tidal Player, Spotify Web Playback). Blocked on Widevine availability in Tauri; see Stage 3 decision gate.
+   - `client-sdk`: the service's DRM player runs inside the webview (Apple MusicKit, Tidal Player, Spotify Web Playback). **Not planned** (Stage 3 decision, Nov 2026): Tauri's webviews have no Widevine, and there is no Premium / Apple Music subscription to test or use it. Revisit if one is added.
 5. **"Wrong match?" is a feature of the match mode, not of Spotify.** Any track
    played through `match` shows the button. It applies to Spotify free, Apple
    Music and Tidal without subscription, and Deezer.
@@ -128,7 +128,18 @@ Still open for this stage
 
 Tests: PKCE challenge, token grants, single-use refresh handling, app-token caching and single-flight, 429 back-off and surfacing, pagination, normalisation, route auth, state replay protection, stream/duration routing per source. See `tests/soundcloud.test.js` and `tests/soundcloudRoutes.test.js`.
 
-## Stage 2: Spotify and the match engine
+## Status and order (updated Nov 2026)
+
+- Stage 0: built locally, not yet on GitHub. Stage 1: shipped. Stage 3: done
+  (packaging, Tauri v2, security; see `docs/stage-3.md`).
+- **Stages 2 (Spotify), 4 (Apple Music) and 5 (Tidal) are on hold** until there
+  is a Spotify Premium or Apple Music subscription. Without one, they add only
+  YouTube-matched playback, and Apple Music needs a paid Apple Developer
+  Program membership even for catalog search.
+- Next: merge Stage 0, then **Stage 6** (open and self-hosted sources), which
+  needs no accounts or subscriptions.
+
+## Stage 2: Spotify and the match engine (on hold)
 
 Goal: Spotify library for everyone, native playback for Premium, YouTube-backed
 playback with honest availability for free accounts.
@@ -169,11 +180,11 @@ make the DRM decision that shapes Stages 4 and 5.
 - Security: encrypt tokens at rest with a key from the OS keychain or env; set a real CSP in `tauri.conf.json`; tokens never leave the server except the Apple user token which must be minted client-side.
 - Unified error codes (`SOURCE_NOT_CONNECTED`, `SOURCE_TOKEN_EXPIRED`, `TRACK_UNAVAILABLE`, `SOURCE_TIER_REQUIRED`) and client toasts.
 - Tests and CI: provider fixtures, matcher golden set built from mismatch reports, lint the client, build matrix for macOS and Windows.
-- **DRM decision gate.** Spike the Spotify Web Playback SDK inside WebView2 (Windows) and WKWebView (macOS). Decide one of: client-sdk on Windows only; move the shell to a Widevine-enabled Electron build; or skip client-sdk entirely and rely on remote plus match. Stages 4 and 5 follow this decision.
+- **DRM decision gate: decided (c), skip client-sdk.** Rely on remote (Spotify Connect, Premium only) plus match. WKWebView has no Widevine, WebView2 has PlayReady but not Widevine, and there is no Premium or Apple Music subscription to test or use in-app players with. Revisit, starting with MusicKit on macOS, if a subscription is added.
 
 Effort: 4 to 6 days.
 
-## Stage 4: Apple Music
+## Stage 4: Apple Music (on hold)
 
 Prerequisites: Apple Developer Program membership, a MusicKit identifier and private key, Team ID, Key ID.
 
@@ -188,7 +199,7 @@ Client
 
 Effort: 4 to 5 days plus the Apple account lead time.
 
-## Stage 5: Tidal
+## Stage 5: Tidal (on hold)
 
 - OAuth PKCE via the Tidal developer portal. Catalog v2 API for search, playlists and favorites; ISRC is present.
 - Subscribers play through the Tidal Player SDK under the same DRM decision; everyone else through match.

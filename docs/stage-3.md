@@ -20,27 +20,13 @@ machine.
 
 Matcher golden-set tests wait for Stage 2.
 
-## Open: replace `pkg`
+## Done: replace `pkg`
 
-`pkg` is archived and its newest target is Node 18 (end of life). The server
-bundles two things that make a single-file build hard: the native `sqlite3`
-addon and the `ffmpeg-static` binary.
-
-Options:
-
-1. **Node single executable application (SEA).** Needs the app bundled into one
-   script (esbuild) and cannot embed native addons, so `sqlite3` would have to
-   ship next to the binary and be loaded with `process.dlopen`.
-2. **Tauri-managed Node sidecar.** Ship the official Node binary per target as
-   the sidecar and the server folder as a bundle resource; run `node server.js`.
-   No bundling, about 40 MB per architecture.
-3. **Drop the native addon first.** Node 22.13+ ships `node:sqlite` without a
-   flag. Moving `config/db.js` and the query helpers to it removes the only
-   native addon, after which option 1 is a clean esbuild + SEA build.
-
-Recommendation: do 3, then 1, in a follow-up branch. Each step can be checked
-by the CI matrix that now runs on macOS and Windows. Keep `pkg` until the SEA
-build has been run on both platforms.
+`pkg` is gone. The server now ships as a Node single executable application,
+built by `scripts/build-sea.mjs` (`npm run build:server`). It followed the
+recommendation here: first drop the native `sqlite3` addon for Node's built-in
+`node:sqlite`, then bundle with esbuild and build a SEA. Details, data
+locations and signing are in [packaging.md](packaging.md).
 
 ## Open: Tauri v2 and deep links
 

@@ -47,7 +47,7 @@ jobs:
       - name: Run Tests
         run: npm test
 
-      # Production dependencies only; dev tooling (pkg, tauri cli) is not shipped.
+      # Production dependencies only; dev tooling (esbuild, jest, tauri cli) is not shipped.
       - name: Audit production dependencies
         if: matrix.os == 'ubuntu-latest'
         run: npm audit --omit=dev --audit-level=high
@@ -69,6 +69,38 @@ jobs:
             sleep 0.5
           done
           echo "Server failed to boot in time"; kill $SRV 2>/dev/null; exit 1
+
+      # Build the single executable the desktop app ships (scripts/build-sea.mjs)
+      # and boot it from an empty folder with no configuration at all, the way a
+      # fresh install starts: it must create its data folder and secrets itself.
+      - name: Build single executable
+        run: npm run build:server
+
+      - name: Smoke test single executable
+        env:
+          PORT: 3988
+          YTDLP_AUTO_UPDATE: 'false'
+        run: |
+          RUNDIR="$RUNNER_TEMP/sea-run"; DATADIR="$RUNNER_TEMP/sea-data"
+          mkdir -p "$RUNDIR"
+          cp bin/music-server-* "$RUNDIR/"
+          cd "$RUNDIR"
+          EXE=$(ls music-server-* | head -1)
+          MUSIC_DATA_DIR="$DATADIR" "./$EXE" > sea.log 2>&1 &
+          SRV=$!
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:3988/ > /dev/null; then
+              CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+                -d '{"username":"ci-user","password":"ci-password-1234"}' http://127.0.0.1:3988/api/register)
+              kill $SRV; cat sea.log
+              ls -a "$DATADIR"
+              [ "$CODE" = "201" ] && test -f "$DATADIR/database.sqlite" && test -f "$DATADIR/.jwt-secret" \
+                && echo "Single executable booted and registered a user." && exit 0
+              echo "Unexpected register status $CODE or missing data files"; exit 1
+            fi
+            sleep 0.5
+          done
+          echo "Single executable failed to boot"; cat sea.log; kill $SRV 2>/dev/null; exit 1
 
   client:
     runs-on: ubuntu-latest

@@ -9,7 +9,8 @@
 //   1. TOKEN_ENCRYPTION_KEY: 32 bytes as 64 hex chars or base64. This is the
 //      hook for the desktop shell: Tauri can read the key from the OS keychain
 //      and pass it to the server sidecar in its environment.
-//   2. A key file (TOKEN_KEY_FILE, default `.token-key` next to the database),
+//   2. A key file (TOKEN_KEY_FILE, default `.token-key` in the data folder,
+//      next to the database; see services/paths.js),
 //      generated on first run with owner-only permissions. This protects the
 //      database file on its own; it does not protect against someone who can
 //      read the whole app directory.
@@ -22,7 +23,6 @@ const path = require('path');
 
 const PREFIX = 'enc:v1:';
 const ALGO = 'aes-256-gcm';
-const DEFAULT_KEY_FILE = path.resolve(__dirname, '../.token-key');
 
 let cachedKey = null;
 
@@ -52,7 +52,7 @@ function getKey() {
     if (cachedKey) return cachedKey;
     cachedKey = process.env.TOKEN_ENCRYPTION_KEY
         ? parseKey(process.env.TOKEN_ENCRYPTION_KEY)
-        : loadOrCreateKeyFile(process.env.TOKEN_KEY_FILE || DEFAULT_KEY_FILE);
+        : loadOrCreateKeyFile(process.env.TOKEN_KEY_FILE || path.join(require('./paths').dataDir(), '.token-key'));
     return cachedKey;
 }
 

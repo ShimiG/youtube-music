@@ -1,15 +1,13 @@
-const sqlite3 = require('sqlite3').verbose();
-const { open } = require('sqlite');
 const path = require('path');
+const { open } = require('./sqlite');
+const { dataDir } = require('../services/paths');
 const { migratePlaintextTokens } = require('../services/tokenCrypto');
 
-const dbPath = path.resolve(__dirname, '../database.sqlite');
 
 async function initDB() {
-    const db = await open({
-        filename: dbPath,
-        driver: sqlite3.Database
-    });
+    // Project folder in development, the per-user app-data folder when packaged.
+    const dbPath = path.join(dataDir(), 'database.sqlite');
+    const db = await open(dbPath);
 
     // WAL lets reads happen concurrently with a write, and busy_timeout makes
     // callers wait for a locked DB instead of instantly failing with SQLITE_BUSY.

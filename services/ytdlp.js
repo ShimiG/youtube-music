@@ -5,12 +5,14 @@
 // binary in the background every time it starts. Startup never waits on it:
 // the update runs after listen() and only logs its outcome. Disable with
 // YTDLP_AUTO_UPDATE=false (tests and CI, or offline machines).
-const path = require('path');
 const fs = require('fs');
 const { execFile } = require('child_process');
 
-const isWindows = process.platform === 'win32';
-const ytDlpPath = path.join(__dirname, '../bin', isWindows ? 'yt-dlp.exe' : 'yt-dlp_macos');
+const { resolveYtDlp } = require('./paths');
+
+// See services/paths.js: bin/ in the project during development; the data
+// folder when packaged (so `-U` can rewrite it); else a system install.
+const ytDlpPath = resolveYtDlp();
 
 const UPDATE_TIMEOUT_MS = 2 * 60 * 1000;
 

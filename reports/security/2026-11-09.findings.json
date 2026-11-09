@@ -1,0 +1,145 @@
+{
+  "run": {
+    "agent": "exploiter",
+    "date": "2026-11-09",
+    "target": "http://localhost:3999",
+    "labels": [
+      "security"
+    ],
+    "report_url": "reports/security/2026-11-09.md"
+  },
+  "findings": [
+    {
+      "id": "soundcloud-cursor-ssrf-token-exfil",
+      "title": "SSRF and OAuth token exfiltration via SoundCloud search cursor (buildUrl host-pin bypass) -- re-verified fixed",
+      "severity": "high",
+      "status": "attempted-failed",
+      "category": "ssrf",
+      "location": "controllers/soundcloud/client.js:226-248 (buildUrl)",
+      "description": "Re-test of the 2026-11-08 finding. buildUrl() now always resolves pathOrUrl against API_BASE first and then rejects any result whose origin is not exactly https://api.soundcloud.com, instead of using a regex prefix test. This closes every previously-working bypass form (bare-authority 'http:host/x', single-slash 'http:/host/x', leading whitespace, '//host/x', backslash-authority, file: and data: URIs).",
+      "evidence": "In-process probe against the live buildUrl() (controllers/soundcloud/client.js), same payload set as last week: 'http:127.0.0.1:4999/x', 'http:/127.0.0.1/x', ' http://evil/x', '//evil/x', '\\\\\\\\evil/x', 'file:///etc/passwd', 'data:text/plain,hi' and 'https://evil.example/x' all now throw SoundCloudError('Refusing to follow a URL outside the SoundCloud API', status 400, code BAD_CURSOR). Legitimate forms still work: '/tracks/123' -> 'https://api.soundcloud.com/tracks/123', and an already-correct 'https://api.soundcloud.com/tracks/123' is returned unchanged. Dynamically, GET /api/soundcloud/search?q=test&cursor=<each bypass payload, URL-encoded> on the local instance (no SoundCloud credentials, so the request runs through the yt-dlp fallback provider, which ignores cursor) returned 200 with an empty ytdlp result for all three payload forms tried live, consistent with the cursor being rejected/unused rather than dereferenced; the authoritative proof is the in-process buildUrl() probe above, since API mode itself needs real SoundCloud credentials (out of scope to obtain). jest tests/soundcloud.test.js and tests/soundcloudRoutes.test.js (12 suites / 160 tests) pass, including the BAD_CURSOR regression cases added for this fix.",
+      "suggested_fix": ""
+    },
+    {
+      "id": "shared-track-metadata-poisoning",
+      "title": "Cross-user poisoning of the shared tracks table (first writer controls title/artist/thumbnail globally) -- re-verified fixed",
+      "severity": "medium",
+      "status": "attempted-failed",
+      "category": "authorization",
+      "location": "services/trackMeta.js (cleanTrackMeta); controllers/historyController.js:1,13,25-39; controllers/playlistController.js:150,163-175",
+      "description": "Re-test of the 2026-11-08 finding. history and playlist_tracks rows now carry their own title/artist/thumbnail columns, populated per write via cleanTrackMeta() (300/200 char caps, control-character stripping, thumbnail kept only if it parses as an https: URL <=2048 chars). Reads use COALESCE(per-row value, shared tracks fallback), so the shared tracks row set by the first writer no longer overrides what other users see.",
+      "evidence": "bob: POST /history {trackId:'dQw4w9WgXcQ', title:'POISONED TITLE set by bob', artist:'bob-controlled artist', thumbnail:'https://attacker.invalid/track.gif?victim=pixel'} -> 200 (stored as bob's own history row). alice: POST /api/custom-playlists/1/tracks with sourceName 'youtube', externalId 'dQw4w9WgXcQ', correct title/artist -> 201. alice's GET /api/custom-playlists/1/tracks returned alice's own title/artist, not bob's values, confirming per-row metadata isolation. A 900000-char title to POST /history returned 400 'Missing track data' (cleanTrackMeta rejects it outright now, tighter than last week's accept-then-truncate). A javascript: thumbnail and an http: (non-https) thumbnail were both silently dropped (stored as null) rather than rejected, matching cleanThumbnail's documented behaviour.",
+      "suggested_fix": ""
+    },
+    {
+      "id": "ytdlp-stream-orphan-no-timeout",
+      "title": "yt-dlp resolver spawned by /stream and /duration has no timeout and is not killed on client disconnect -- re-verified fixed",
+      "severity": "medium",
+      "status": "attempted-failed",
+      "category": "dos",
+      "location": "controllers/YouTubeController.js:13-28 (runYtDlp)",
+      "description": "Re-test of the 2026-11-08 finding. runYtDlp() now passes { timeout: YTDLP_TIMEOUT_MS } (60s) to execFile and keeps the child handle; a res 'close' before writableFinished sets clientGone and kills the child with SIGKILL, and the completion callback checks clientGone before ever starting ffmpeg. The same guard now exists for both streamTrack and getDuration.",
+      "evidence": "Code review confirms the exact fix described in last week's suggested_fix was applied (controllers/YouTubeController.js runner.execFile call now includes a timeout option and res.on('close') kills the child). Dynamic reproduction of the original timed scenario needs a working yt-dlp binary; this sandbox only ships bin/yt-dlp_macos (no Linux binary), so /stream and /duration return a resolve_failed TRACK_UNAVAILABLE immediately (spawn ENOENT) rather than hanging, which is consistent with, but does not independently re-prove, the timeout/kill behaviour. The existing unit test suite (12 suites, 160 tests, including the YouTubeController-specific coverage) passes, which does exercise the mocked execFile/kill path.",
+      "suggested_fix": ""
+    },
+    {
+      "id": "media-endpoints-unauthenticated-transcode-dos",
+      "title": "Unauthenticated /stream and /duration still have no auth or per-track concurrency cap, only a bounded background-transcode counter",
+      "severity": "medium",
+      "status": "confirmed",
+      "category": "dos",
+      "location": "app.js:109-110 (routes, no requireAuth); controllers/transcode.js:35-36,160-259 (streamTranscoded, MAX_BACKGROUND_TRANSCODES)",
+      "description": "Re-test of the 2026-11-08 finding, which was marked 'partially mitigated'. /stream and /duration remain intentionally unauthenticated (the <audio> element cannot send a Bearer header) and are reachable by any page the user's browser loads, since cross-origin GETs with no Origin header pass the CORS allowlist and an <audio>/<img src> tag sends no Origin. The fix applied since last week caps only the number of abandoned cache-writing transcodes that are allowed to keep running after their client disconnects (MAX_BACKGROUND_TRANSCODES = 2, enforced in controllers/transcode.js and covered by tests/transcodeLimit.test.js), which closes the unbounded-orphan-process growth. It does not add any authentication or a signed media token, and does not cap the number of transcodes running concurrently while their clients are still attached (only the generic 60 req/min per-IP mediaLimiter bounds that). A malicious page can still force a visiting user's browser to spend up to 60 full-length yt-dlp+ffmpeg transcodes per minute against the user's own local server, and for SoundCloud each counts against the 15,000 plays/24h API quota.",
+      "evidence": "GET /stream?videoId=zzzzzzzzz01 (no Authorization header) reached input validation and the provider path (not an 401), confirming the route still requires no auth: the response was a normal 'Invalid seek'/'Unsupported source' 400 or a TRACK_UNAVAILABLE 502 for well-formed-but-unresolvable ids, never a 401. tests/transcodeLimit.test.js (run as part of the full jest suite, 160/160 passing) shows exactly MAX_BACKGROUND_TRANSCODES(=2) survive past client disconnect and the rest are SIGKILL'd -- i.e. the orphan-growth half of the original finding is fixed, but the underlying lack of auth/signed-media-token on these routes, called out as 'still open' in last week's resolution note, is unchanged in app.js and controllers/transcode.js.",
+      "suggested_fix": "Mint a short-lived, single-purpose JWT (new 'media' purpose, ~60-120s TTL, bound to userId + source + track id, following the existing purpose-pinning convention in middleware/requireAuth.js and controllers/authController.js) from a new requireAuth-protected endpoint (e.g. GET /api/media-token?source=...&id=...), and require that token as a query parameter on /stream and /duration via a new requireMediaToken middleware registered in app.js before mediaLimiter. The client (client/src/context/MusicContext.jsx, which already holds the user's authToken in localStorage) fetches the token with its existing Authorization header immediately before setting audioRef.current.src or calling /duration, so the <audio> element itself still never needs to send a Bearer header, but a third-party page with no access to the victim's session token can no longer trigger a transcode or spend SoundCloud quota. Verify with a new supertest case (alongside tests/securityFixes.test.js) asserting /stream and /duration return 401 with no token or an expired/wrong-purpose/wrong-track token, and succeed with one minted via a logged-in session; tests/transcodeLimit.test.js should keep passing unmodified. Follow-up: query-string tokens can leak via browser history/Referer/proxy logs, so keep the TTL short and avoid logging full request query strings for these two routes."
+    },
+    {
+      "id": "tauri-csp-null-and-shell-allowlist",
+      "title": "Tauri webview CSP and shell allowlist hardening -- re-verified fixed",
+      "severity": "medium",
+      "status": "info",
+      "category": "other",
+      "location": "src-tauri/tauri.conf.json:24-33",
+      "description": "Re-test of the 2026-11-08 finding (build-time hardening, not dynamically exercised against the local HTTP instance). security.csp is now a strict policy and shell.allowlist no longer includes execute; open is restricted to ^https://.",
+      "evidence": "src-tauri/tauri.conf.json: security.csp is set to \"default-src 'self'; script-src 'self'; object-src 'none'; frame-src 'none'; connect-src 'self' ipc: http://ipc.localhost http://localhost:3000; media-src 'self' http://localhost:3000\" (not null), and allowlist.shell is { \"sidecar\": true, \"open\": \"^https://\" } with no execute key. Static review only; the desktop build is out of scope for the local HTTP instance.",
+      "suggested_fix": ""
+    },
+    {
+      "id": "prod-dependency-vulns",
+      "title": "Production dependency audit -- clean, re-verified",
+      "severity": "info",
+      "status": "info",
+      "category": "dependency",
+      "location": "package.json / package-lock.json; client/package.json / client/package-lock.json",
+      "description": "Weekly re-run of the 2026-11-08 finding. Root production dependency tree and client production dependency tree both report 0 vulnerabilities. Dev-only tooling has findings that do not ship in the built app.",
+      "evidence": "`npm audit --omit=dev --json` at the repo root: {info:0, low:0, moderate:0, high:0, critical:0, total:0}. `npm audit --json` (incl. dev) at the root: {info:0, low:3, moderate:16, high:0, critical:0, total:19} (dev tooling only, e.g. pkg/jest transitive deps). `client && npm audit --omit=dev --json`: {total:0}. `client && npm audit --json` (incl. dev): {low:0, moderate:1, high:3, total:4} -- minimatch (moderate, DoS), source-map-js/vite/zod (high) are all under client/devDependencies (vite toolchain), confirmed not present in client/package.json dependencies (only @tauri-apps/api, react, react-dom ship).",
+      "suggested_fix": ""
+    },
+    {
+      "id": "oauth-error-log-injection",
+      "title": "Unvalidated OAuth callback error parameter log forging -- re-verified fixed for SoundCloud",
+      "severity": "low",
+      "status": "attempted-failed",
+      "category": "info-disclosure",
+      "location": "controllers/soundcloudController.js:146-154 (callback)",
+      "description": "Re-test of the 2026-11-08 finding. The SoundCloud callback now strips everything except [A-Za-z0-9_.-] from the `error` query parameter and caps it at 64 chars before logging, so newline/control-character log injection is no longer possible. The Google callback (controllers/authController.js googleCallback) still never logs the raw `error`/query values at all (same false-positive status as last week).",
+      "evidence": "GET /auth/soundcloud/callback?error=access_denied%0A%5BFORGED%5D%20fake%20log%20line%0AJWT_SECRET=leaked on the live local instance produced a 302 redirect and the server log contained a single sanitized line: 'SoundCloud authorization denied: access_deniedFORGEDfakeloglineJWT_SECRETleaked' -- no newlines, no forged separate log lines, and the literal 'JWT_SECRET=' string was broken up by the character filter (stored as 'JWT_SECRETleaked', not a colon/equals-bearing forgeable line).",
+      "suggested_fix": ""
+    },
+    {
+      "id": "jwt-verify-no-algorithm-pin",
+      "title": "JWT verification algorithm/expiry/purpose pinning -- re-verified fixed",
+      "severity": "low",
+      "status": "attempted-failed",
+      "category": "authentication",
+      "location": "middleware/requireAuth.js:17-31",
+      "description": "Re-test of the 2026-11-08 finding, which was 'partially fixed' last week (HS256 pinned and non-session purpose rejected, but a no-exp token signed with the real secret still worked). requireAuth now also requires payload.exp to be a number and throws otherwise, closing that last gap.",
+      "evidence": "Against the live local instance (JWT_SECRET known to the tester only because this is our own disposable test instance): HS256 token with userId=1, purpose='session', no exp claim, signed with the real secret -> 401 (previously 200). HS512 token with the real secret -> 401. Token with purpose='oauth_state' (foreign purpose) and the real secret -> 401. Expired (real secret) token -> 401. alg=none forged token -> 401. Tokens forged with 5 guessed weak secrets ('secret','changeme','password','','123456') -> 401 each. x-user-id header with no Authorization, and x-user-id alongside a valid but different user's token, had no effect on identity (req.userId always came from the verified JWT).",
+      "suggested_fix": ""
+    },
+    {
+      "id": "sql-injection-attempted",
+      "title": "SQL injection attempts on all database-backed endpoints",
+      "severity": "info",
+      "status": "attempted-failed",
+      "category": "injection",
+      "location": "controllers/UserController.js, historyController.js, playlistController.js",
+      "description": "Re-run of the 2026-11-08 coverage. All database access uses parameterized queries (db.get/db.run/db.all with ? placeholders); source/sourceName are validated against /^[a-z]{1,32}$/ or a lookup. The app continues to defend correctly; no regression found.",
+      "evidence": "Login username \"sec_alice_tmp' --\" -> 401 invalid; playlistId values '1 OR 1=1' and \"1' OR '1'='1\" on GET/POST /api/custom-playlists/:id/tracks -> 404 Playlist not found (owner-scoped query never matched); a malicious playlist name containing a DROP TABLE payload would be stored as a literal string by the parameterized INSERT (not re-tested this week to avoid redundant writes, same code path as last week's confirmed-safe test).",
+      "suggested_fix": ""
+    },
+    {
+      "id": "idor-playlists-history-attempted",
+      "title": "IDOR / cross-user access attempts on playlists and history",
+      "severity": "info",
+      "status": "attempted-failed",
+      "category": "authorization",
+      "location": "controllers/playlistController.js:137-143 (assertPlaylistOwnership); middleware/requireAuth.js",
+      "description": "Re-run of the 2026-11-08 coverage with two fresh throwaway accounts (sec_alice_tmp, sec_bob_tmp). Identity is always taken from the verified JWT (req.userId); playlist reads/writes go through assertPlaylistOwnership (WHERE id=? AND user_id=?); history is filtered by req.userId. All cross-user attempts were blocked, no regression.",
+      "evidence": "alice created custom playlist id=1 ('Alice Secret Mix'). bob (valid session, different user) GET /api/custom-playlists/1/tracks -> 404 Playlist not found. bob POST /api/custom-playlists/1/tracks (attempting to add a track to alice's playlist) -> 404 Playlist not found, and the playlist was not modified. x-user-id: 1 header with no bearer token -> 401 (identity cannot be set via header at all). x-user-id: 1 header alongside bob's own valid Bearer token -> still bob's own (empty) history, not alice's.",
+      "suggested_fix": ""
+    },
+    {
+      "id": "stream-path-traversal-attempted",
+      "title": "Path traversal and argument injection attempts against /stream and /duration",
+      "severity": "info",
+      "status": "attempted-failed",
+      "category": "path-traversal",
+      "location": "controllers/YouTubeController.js:33-35 (isValidVideoId); controllers/transcode.js:56-74 (isValidCacheKey, cachePathFor); controllers/soundcloud/client.js:333-335 (isValidId)",
+      "description": "Re-run of the 2026-11-08 coverage. YouTube ids are constrained to /^[A-Za-z0-9_-]{11}$/, SoundCloud ids to /^\\d{1,20}$/, cache keys to /^[A-Za-z0-9_-]{1,80}$/, cachePathFor resolves and re-checks the path stays under cache/, seek is parsed as a bounded finite integer, and source must be a known key (SOURCES lookup, never echoed back). All payloads were rejected before any process could spawn; no regression.",
+      "evidence": "videoId '../../../../etc/passwd', URL-encoded traversal '..%2f..%2fetc%2fpasswd', '%00.mp3', '-o/tmp/pwn', ';id' -> all 400 'Invalid videoId' (no yt-dlp spawn attempted). seek '-1' and '1 -i /etc/passwd' -> 400 'Invalid seek parameter'. source=__proto__ -> 400 'Unsupported streaming source'.",
+      "suggested_fix": ""
+    },
+    {
+      "id": "cors-origin-restriction-info",
+      "title": "CORS, security headers, rate limiting and error handling behave correctly",
+      "severity": "info",
+      "status": "info",
+      "category": "other",
+      "location": "app.js:22-58 (helmet, cors, rate limiters), app.js:130-137 (error handler)",
+      "description": "Re-run of the 2026-11-08 hardening checks. helmet sets CSP/HSTS/X-Content-Type-Options/X-Frame-Options/COOP/CORP and no X-Powered-By; CORS rejects unknown and 'null' origins with 403 and reflects only the allowlisted origin; the auth limiter (20/15min) and media limiter (60/min) both fire; the central error handler returns a generic JSON message to the client for both malformed JSON and an oversized (2MB > 1MB limit) body without leaking a stack trace, though it returns a flat 500 rather than preserving the originating error's own status code (e.g. a payload-too-large or CORS-origin condition) in the general case -- a minor response-accuracy note, not an information leak, since no stack trace or internal detail reaches the client either way.",
+      "evidence": "Origin https://evil.example -> 403 Origin not allowed; Origin null -> 403; Origin http://localhost:5173 -> 200 with matching Access-Control-Allow-Origin. 21x POST /api/login (wrong password) -> 15x 401 then 6x 429. 65x GET /duration -> 13x 429 within the 60/min window. Malformed JSON body to POST /history -> {\"error\":\"Internal server error\"} 500; a 2MB JSON body -> the same generic 500 (body-parser's 1mb limit error is not specially mapped to 413, but no stack trace or secret reached the client in server.log cross-checked against the HTTP response).",
+      "suggested_fix": "Minor hardening, not a vulnerability: in app.js's central error handler, check `err.type === 'entity.too.large'` and return 413 (not 500), and `err instanceof SyntaxError && 'body' in err` (malformed JSON from express.json()) and return 400, before the generic 500 fallback -- matching the same `if (err.message === 'Not allowed by CORS')` pattern already used for the CORS case. No information is exposed either way, so this is about response accuracy for client/monitoring code, not a security fix. Verify by re-running the existing oversized-body and malformed-JSON manual checks (or a new supertest case) and asserting 413/400 instead of 500."
+    }
+  ]
+}

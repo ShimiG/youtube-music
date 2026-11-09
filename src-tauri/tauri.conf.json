@@ -14,7 +14,9 @@
     "bundle": {
       "identifier": "com.musicmanager.app",
       "externalBin": [
-        "../bin/music-server"
+        "../bin/music-server",
+        "../bin/ffmpeg",
+        "../bin/yt-dlp"
       ]
     },
     "systemTray": {

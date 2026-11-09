@@ -81,3 +81,19 @@ describe('packaged mode (single executable)', () => {
         expect(paths.resolveFfmpeg()).toBe('/x/ffmpeg');
     });
 });
+
+describe('runtime config for the packaged app', () => {
+    it('generates one owner-only JWT secret per installation and reuses it', () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-jwt-'));
+        const { loadOrCreateJwtSecret } = require('../services/runtimeConfig');
+        jest.spyOn(console, 'log').mockImplementation(() => {});
+        const first = loadOrCreateJwtSecret(dir);
+        console.log.mockRestore();
+        expect(first).toMatch(/^[0-9a-f]{96}$/);
+        expect(loadOrCreateJwtSecret(dir)).toBe(first);
+        if (process.platform !== 'win32') {
+            expect(fs.statSync(path.join(dir, '.jwt-secret')).mode & 0o777).toBe(0o600);
+        }
+        fs.rmSync(dir, { recursive: true, force: true });
+    });
+});

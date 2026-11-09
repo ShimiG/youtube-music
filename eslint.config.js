@@ -4,7 +4,7 @@ const js = require('@eslint/js');
 
 module.exports = [
     {
-        ignores: ['.claude/**', 'reports/**', 'client/**', 'node_modules/**', 'dist/**', 'bin/**', 'cache/**', 'coverage/**', 'src-tauri/**']
+        ignores: ['.claude/**', 'build/**', 'reports/**', 'client/**', 'node_modules/**', 'dist/**', 'bin/**', 'cache/**', 'coverage/**', 'src-tauri/**']
     },
     js.configs.recommended,
     {

@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "Hybrid React, Node, and Tauri Music Player",
   "main": "server.js",
-  "bin": "server.js",
   "author": "Shimi G",
   "license": "MIT",
   "scripts": {
@@ -12,22 +11,21 @@
     "client": "npm run dev --prefix client",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "lint": "eslint .",
-    "build:server:win": "pkg ./server.js --target node18-win-x64 --output ./bin/music-server-x86_64-pc-windows-msvc.exe",
-    "build:server:mac": "pkg ./server.js --target node18-macos-arm64 --output ./bin/music-server-aarch64-apple-darwin",
-    "build:all": "npm run build:server:win && npm run build:server:mac && cd client && npm run build",
+    "build:server": "node scripts/build-sea.mjs",
+    "build:all": "npm run build:server && npm run build --prefix client",
     "tauri:build": "npm run build:all && tauri build",
     "test": "jest",
     "test:watch": "jest --watchAll",
     "prepare": "husky"
   },
   "dependencies": {
+    "@googleapis/youtube": "^40.0.2",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "express-rate-limit": "^8.2.1",
     "ffmpeg-static": "^5.3.0",
-    "googleapis": "^170.1.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3"
   },
@@ -36,10 +34,11 @@
     "@tauri-apps/cli": "^1.6.3",
     "auto-changelog": "^2.5.0",
     "concurrently": "^9.2.1",
+    "esbuild": "^0.28.2",
     "eslint": "^9.15.0",
     "husky": "^9.1.7",
     "jest": "^30.2.0",
-    "pkg": "^5.8.1",
+    "postject": "^1.0.0-alpha.6",
     "supertest": "^7.2.2"
   },
   "overrides": {
@@ -53,12 +52,6 @@
     "flatted": ">=3.4.2",
     "browserslist": ">=4.28.7",
     "baseline-browser-mapping": ">=2.11.0"
-  },
-  "pkg": {
-    "assets": [
-      "public/**/*",
-      "bin/**/*"
-    ]
   },
   "jest": {
     "testEnvironment": "node",

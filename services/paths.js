@@ -65,8 +65,13 @@ function resolveYtDlp() {
     const name = ytDlpFileName();
     const writable = path.join(dataDir(), 'bin', name);
     if (isPackaged() && !fs.existsSync(writable)) {
-        const bundled = path.join(appRoot(), name);
-        if (fs.existsSync(bundled)) {
+        // Tauri ships externalBin files without their target-triple suffix,
+        // so the bundled copy is plain `yt-dlp` / `yt-dlp.exe`.
+        const bundled = firstExisting([
+            path.join(appRoot(), isWindows ? 'yt-dlp.exe' : 'yt-dlp'),
+            path.join(appRoot(), name)
+        ]);
+        if (bundled) {
             try {
                 fs.mkdirSync(path.dirname(writable), { recursive: true });
                 fs.copyFileSync(bundled, writable);

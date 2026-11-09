@@ -6,9 +6,9 @@ const jwt = require('jsonwebtoken');
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:3000/auth/google/callback';
-const CLIENT_ORIGIN = (process.env.CLIENT_ORIGIN || 'http://localhost:5173').split(',')[0].trim();
 
 const { SOURCE_IDS, storeConnection } = require('../services/connections');
+const { parseReturnTarget, finishOAuth } = require('../services/oauthReturn');
 
 const oauth2Client = new auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
 
@@ -18,7 +18,9 @@ const oauth2Client = new auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
 // echoes back to us untouched.
 const getGoogleAuthUrl = (req, res) => {
     const state = jwt.sign(
-        { userId: req.userId, purpose: 'google_oauth' },
+        // ret: where the flow ends (web client or the desktop app's deep link);
+        // signed, so the callback cannot be pointed anywhere else.
+        { userId: req.userId, purpose: 'google_oauth', ret: parseReturnTarget(req.query.return) },
         process.env.JWT_SECRET,
         { expiresIn: '10m' }
     );
@@ -43,10 +45,12 @@ const googleCallback = async (req, res, next) => {
     if (!state) return res.status(400).send('Missing state. Start the connect flow from the app.');
 
     let userId;
+    let ret = 'web';
     try {
         const payload = jwt.verify(state, process.env.JWT_SECRET, { algorithms: ['HS256'] });
         if (payload.purpose !== 'google_oauth') throw new Error('wrong token purpose');
         userId = payload.userId;
+        ret = parseReturnTarget(payload.ret);
     } catch {
         return res.status(400).send('Invalid or expired state. Start the connect flow again from the app.');
     }
@@ -59,11 +63,11 @@ const googleCallback = async (req, res, next) => {
         ({ tokens } = await oauth2Client.getToken(code));
     } catch (error) {
         console.error('Google token exchange failed:', error.message);
-        return res.redirect(`${CLIENT_ORIGIN}/#google=error&reason=token_exchange`);
+        return finishOAuth(res, ret, `google=error&reason=token_exchange`);
     }
 
     if (!tokens || !tokens.access_token) {
-        return res.redirect(`${CLIENT_ORIGIN}/#google=error&reason=no_access_token`);
+        return finishOAuth(res, ret, `google=error&reason=no_access_token`);
     }
 
     const db = req.app.locals.db;
@@ -75,7 +79,7 @@ const googleCallback = async (req, res, next) => {
         const user = await db.get(`SELECT id FROM users WHERE id = ?`, [userId]);
         if (!user) {
             console.error(`Google connect: user ${userId} from the state token no longer exists; the client is holding a stale session. Log out and in again.`);
-            return res.redirect(`${CLIENT_ORIGIN}/#google=error&reason=user_not_found`);
+            return finishOAuth(res, ret, `google=error&reason=user_not_found`);
         }
 
         // Google access tokens live ~1 hour; expiry_date is a ms epoch.
@@ -98,10 +102,10 @@ const googleCallback = async (req, res, next) => {
         // the server renews it on its own (via the URL fragment, which never
         // reaches a server or its logs). A refreshable connection does not
         // trigger the client's auto-logout.
-        res.redirect(`${CLIENT_ORIGIN}/#google=connected&expires_at=${expiresAt}&refreshable=${refreshable}`);
+        finishOAuth(res, ret, `google=connected&expires_at=${expiresAt}&refreshable=${refreshable}`);
     } catch (error) {
         console.error('Failed to store Google tokens:', error.message);
-        res.redirect(`${CLIENT_ORIGIN}/#google=error&reason=store_failed`);
+        finishOAuth(res, ret, `google=error&reason=store_failed`);
     }
 };
 

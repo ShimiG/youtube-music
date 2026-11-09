@@ -7,6 +7,15 @@ import { SERVICE_LIST, isConnectionActive } from '../utils/services';
 export default function ConnectServices() {
     const [connectedNames, setConnectedNames] = useState(null); // null = still loading
     const [unavailable, setUnavailable] = useState(new Set()); // services this server cannot connect
+    // Bumped when a connect flow finishes while the app stays open (desktop
+    // deep link), so the banner reloads instead of offering a done connection.
+    const [refreshKey, setRefreshKey] = useState(0);
+
+    useEffect(() => {
+        const bump = () => setRefreshKey(k => k + 1);
+        window.addEventListener('connections-changed', bump);
+        return () => window.removeEventListener('connections-changed', bump);
+    }, []);
 
     useEffect(() => {
         const authToken = localStorage.getItem('authToken');
@@ -33,7 +42,7 @@ export default function ConnectServices() {
                 if (status && status.connectAvailable === false) setUnavailable(new Set(['soundcloud']));
             })
             .catch(() => {});
-    }, []);
+    }, [refreshKey]);
 
     // While loading, render nothing rather than flashing buttons that may hide.
     if (!connectedNames) return null;

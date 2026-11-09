@@ -5,12 +5,12 @@
 // public content does not need a user session; /me/* endpoints go through
 // middleware/sourceToken.js and use the user's own token.
 const { sendSourceError } = require('../services/errors');
+const { parseReturnTarget, finishOAuth } = require('../services/oauthReturn');
 const client = require('./soundcloud/client');
 const tokens = require('./soundcloud/tokens');
 const ytdlp = require('./soundcloud/ytdlp');
 const { parseSeek, serveFromCache, streamTranscoded } = require('./transcode');
 
-const CLIENT_ORIGIN = (process.env.CLIENT_ORIGIN || 'http://localhost:5173').split(',')[0].trim();
 
 const SEARCH_LIMIT = 30;
 const LIBRARY_PAGE_LIMIT = 50;
@@ -136,7 +136,12 @@ const getAuthUrl = (req, res) => {
 
     const { verifier, challenge } = client.generatePkce();
     const state = client.generateState();
-    pendingFlows.set(state, { userId: req.userId, verifier, expiresAt: Date.now() + PENDING_TTL_MS });
+    pendingFlows.set(state, {
+        userId: req.userId,
+        verifier,
+        ret: parseReturnTarget(req.query.return), // web client or the desktop app's deep link
+        expiresAt: Date.now() + PENDING_TTL_MS
+    });
 
     res.json({ url: client.buildAuthorizeUrl({ state, codeChallenge: challenge }) });
 };
@@ -145,12 +150,15 @@ const getAuthUrl = (req, res) => {
 // user is identified through the `state` we issued in getAuthUrl.
 const callback = async (req, res) => {
     const { code, state, error } = req.query;
+    // The return target was fixed when the flow started; read it before the
+    // state is consumed below. Unknown state: back to the web client.
+    const ret = (typeof state === 'string' && pendingFlows.get(state)?.ret) || 'web';
 
     if (error) {
         // Attacker-controlled query value: strip everything but a short token
         // so it cannot forge extra log lines.
         console.error('SoundCloud authorization denied:', String(error).replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 64));
-        return res.redirect(`${CLIENT_ORIGIN}/#soundcloud=error`);
+        return finishOAuth(res, ret, `soundcloud=error`);
     }
     if (!code) return res.status(400).send('No authorization code received');
     if (!state) return res.status(400).send('Missing state. Start the connect flow from the app.');
@@ -167,7 +175,7 @@ const callback = async (req, res) => {
         result = await client.exchangeCode({ code, codeVerifier: flow.verifier });
     } catch (err) {
         console.error('SoundCloud token exchange failed:', err.message);
-        return res.redirect(`${CLIENT_ORIGIN}/#soundcloud=error&reason=token_exchange`);
+        return finishOAuth(res, ret, `soundcloud=error&reason=token_exchange`);
     }
 
     const db = req.app.locals.db;
@@ -178,17 +186,17 @@ const callback = async (req, res) => {
         const user = await db.get(`SELECT id FROM users WHERE id = ?`, [flow.userId]);
         if (!user) {
             console.error(`SoundCloud connect: user ${flow.userId} from the state no longer exists; the client is holding a stale session. Log out and in again.`);
-            return res.redirect(`${CLIENT_ORIGIN}/#soundcloud=error&reason=user_not_found`);
+            return finishOAuth(res, ret, `soundcloud=error&reason=user_not_found`);
         }
 
         await tokens.storeUserTokens(db, flow.userId, result);
 
         // Tokens stay server-side; the client only learns the expiry (via the URL
         // fragment, which never reaches a server or its logs).
-        res.redirect(`${CLIENT_ORIGIN}/#soundcloud=connected&expires_at=${result.expiresAt}`);
+        finishOAuth(res, ret, `soundcloud=connected&expires_at=${result.expiresAt}`);
     } catch (err) {
         console.error('Failed to store SoundCloud tokens:', err.message);
-        res.redirect(`${CLIENT_ORIGIN}/#soundcloud=error&reason=store_failed`);
+        finishOAuth(res, ret, `soundcloud=error&reason=store_failed`);
     }
 };
 

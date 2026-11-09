@@ -9,6 +9,19 @@ import AuthScreen from './components/AuthScreen';
 import ConnectServices from './components/ConnectServices';
 import Toaster from './components/Toaster';
 import { toast } from './utils/toast';
+import { isDesktopApp, onOAuthResult, openExternal } from './utils/desktop';
+
+// Reports the outcome of a connect flow (#google=connected, #soundcloud=error,
+// ...). The service tokens stay on the server, encrypted; this only tells the
+// user, and lets the connect banner reload.
+function reportConnectResult(fragment) {
+    const params = new URLSearchParams(fragment);
+    if (params.get('google') === 'connected') toast('YouTube connected.');
+    else if (params.get('google') === 'error') toast('Connecting YouTube failed. Try again.', { kind: 'error' });
+    if (params.get('soundcloud') === 'connected') toast('SoundCloud connected.');
+    else if (params.get('soundcloud') === 'error') toast('Connecting SoundCloud failed. Try again.', { kind: 'error' });
+    window.dispatchEvent(new Event('connections-changed'));
+}
 import './App.css';
 
 function App() {
@@ -21,20 +34,38 @@ function App() {
         return storedId ? { id: storedId, username: storedName } : null;
     });
 
-    // After a connect flow, the backend redirects here with
-    // #<service>=connected|error in the URL fragment. The service tokens stay
-    // on the server (user_connections, encrypted); the fragment only reports
-    // the outcome, and is scrubbed from the address bar either way.
+    // Web: after a connect flow the backend redirects here with
+    // #<service>=connected|error in the URL fragment, scrubbed once read.
     useEffect(() => {
         const hash = window.location.hash;
         if (!hash.includes('google=') && !hash.includes('soundcloud=')) return;
-
-        const params = new URLSearchParams(hash.slice(1));
-        if (params.get('google') === 'connected') toast('YouTube connected.');
-        else if (params.get('google') === 'error') toast('Connecting YouTube failed. Try again.', { kind: 'error' });
-        if (params.get('soundcloud') === 'connected') toast('SoundCloud connected.');
-        else if (params.get('soundcloud') === 'error') toast('Connecting SoundCloud failed. Try again.', { kind: 'error' });
+        reportConnectResult(hash.slice(1));
         window.history.replaceState(null, '', window.location.pathname);
+    }, []);
+
+    // Desktop: the consent page ran in the system browser; the result comes
+    // back as a musicmanager://oauth#<service>=... deep link.
+    useEffect(() => {
+        let unsubscribe = () => {};
+        let cancelled = false;
+        onOAuthResult(reportConnectResult)
+            .then(stop => { if (cancelled) stop(); else unsubscribe = stop; })
+            .catch(err => console.error('Deep link listener failed:', err));
+        return () => { cancelled = true; unsubscribe(); };
+    }, []);
+
+    // Desktop: links that would open a new browser tab (SoundCloud pages,
+    // attribution links) go to the system browser instead of a dead webview tab.
+    useEffect(() => {
+        if (!isDesktopApp()) return;
+        const onClick = (event) => {
+            const link = event.target.closest && event.target.closest('a[target="_blank"]');
+            if (!link || !link.href.startsWith('https://')) return;
+            event.preventDefault();
+            openExternal(link.href).catch(err => console.error('Could not open link:', err));
+        };
+        document.addEventListener('click', onClick);
+        return () => document.removeEventListener('click', onClick);
     }, []);
 
     const handleLoginSuccess = (token, userId, username) => {

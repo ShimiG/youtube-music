@@ -1,19 +1,15 @@
-// Starts the Google connect flow for the logged-in user: asks the API for a
-// consent URL (tied to our session via the state param), then sends the whole
-// window to Google. Google redirects back to the API callback, which stores
-// the tokens server-side and bounces the browser back to the app with
-// #google=connected&expires_at=... in the URL fragment.
-export async function connectGoogle() {
-    const authToken = localStorage.getItem('authToken');
-    if (!authToken) return;
+import { startOAuth } from './desktop';
 
+// Starts the Google connect flow for the logged-in user. The API returns a
+// consent URL tied to our session through the signed `state`. In the browser
+// the window goes there; in the desktop app it opens in the system browser.
+// Either way the API callback stores the tokens server-side and reports the
+// result as #google=connected&... (back to the web client, or into the app
+// through a musicmanager:// link).
+export async function connectGoogle() {
     try {
-        const res = await fetch('http://localhost:3000/auth/google/url', {
-            headers: { 'Authorization': `Bearer ${authToken}` }
-        });
-        if (!res.ok) throw new Error('Failed to get Google auth URL');
-        const { url } = await res.json();
-        window.location.href = url;
+        const result = await startOAuth('http://localhost:3000/auth/google/url');
+        if (!result.ok && result.status !== undefined) throw new Error(result.error || 'Failed to get Google auth URL');
     } catch (err) {
         console.error('Could not start Google connect flow:', err);
     }

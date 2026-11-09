@@ -130,3 +130,31 @@ jobs:
       - name: Build Client
         run: npm run build
         working-directory: client
+
+  desktop:
+    # The Tauri v2 shell (src-tauri/) must keep compiling. A full app build
+    # needs the server executable and a signing setup; `cargo clippy` checks
+    # the Rust code, the config, capabilities and plugin wiring in ~3 minutes.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Install Tauri system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      # tauri-build checks that the bundled binaries and the frontend exist;
+      # placeholders are enough for a compile check.
+      - name: Placeholder sidecars and frontend
+        run: |
+          mkdir -p bin client/dist
+          for b in music-server ffmpeg yt-dlp; do
+            printf '#!/bin/sh\n' > "bin/$b-x86_64-unknown-linux-gnu"; chmod +x "bin/$b-x86_64-unknown-linux-gnu"
+          done
+          echo '<!doctype html><title>placeholder</title>' > client/dist/index.html
+
+      - name: Clippy (warnings are errors)
+        working-directory: src-tauri
+        run: cargo clippy --locked -- -D warnings

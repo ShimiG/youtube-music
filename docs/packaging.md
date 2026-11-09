@@ -112,3 +112,44 @@ reports `degraded` when one is missing.
 - **Windows:** the executable is unsigned. Postject invalidates `node.exe`'s
   original signature, so SmartScreen will warn until it's signed with a code
   signing certificate (`signtool sign`).
+
+## Desktop app (Tauri v2)
+
+`src-tauri/` is a Tauri 2 app:
+
+- `src/main.rs`: system tray, hide-on-close, and the server sidecar, started
+  with `tauri-plugin-shell` and killed on exit.
+- `capabilities/default.json`: what the web content may call. That is
+  `core:default`, opening `https://` URLs (`tauri-plugin-opener`), and
+  receiving deep links. There is no shell access.
+
+```bash
+npx tauri dev                      # dev window; starts `npm run dev` (server + Vite)
+npm run tauri:build                # build the server SEA and client, then the app
+```
+
+### Connecting services from the app
+
+In the desktop app, "Connect YouTube" / "Connect SoundCloud":
+
+1. The client requests `/auth/<service>/url?return=app` and opens the consent
+   page in the system browser.
+2. After consent, the server's callback page hands the result to the app
+   through a `musicmanager://oauth#<service>=connected|error` link. The
+   browser asks before opening the app.
+3. The app receives the link (`tauri-plugin-deep-link`; on Windows/Linux
+   `tauri-plugin-single-instance` passes it to the running app) and shows the
+   result.
+
+The OAuth redirect URIs registered with Google and SoundCloud don't change:
+they still point at `http://localhost:3000/auth/<service>/callback`. The
+scheme is registered from the app bundle on macOS and at startup on
+Windows/Linux. **macOS deep links only work from the built `.app`, not
+`tauri dev`.**
+
+### Dependencies
+
+The Tauri crates are pinned exactly (`=`) in `Cargo.toml`, so a build never
+picks up an unreviewed release. `Cargo.lock` also pins `rust-ini` 0.21.1,
+because `tauri-plugin-deep-link` 2.6.2 doesn't compile against 0.21.3. Remove
+that pin when you bump deep-link.

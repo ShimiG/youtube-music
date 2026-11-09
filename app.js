@@ -28,6 +28,7 @@ const allowedOrigins = new Set([
     'http://localhost:1420',
     'tauri://localhost',
     'https://tauri.localhost',
+    'http://tauri.localhost', // Tauri v2 on Windows
     ...(process.env.CLIENT_ORIGIN ? process.env.CLIENT_ORIGIN.split(',').map(o => o.trim()) : [])
 ]);
 app.use(cors({

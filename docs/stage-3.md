@@ -28,21 +28,27 @@ recommendation here: first drop the native `sqlite3` addon for Node's built-in
 `node:sqlite`, then bundle with esbuild and build a SEA. Details, data
 locations and signing are in [packaging.md](packaging.md).
 
-## Open: Tauri v2 and deep links
+## Done: Tauri v2 and deep links
 
-Tauri v1 is in maintenance. v2 brings `tauri-plugin-deep-link`, so OAuth
-callbacks can land in the app (`musicmanager://callback`) instead of a
-localhost redirect.
+The desktop shell runs on Tauri 2.12. Details are in
+[packaging.md](packaging.md#desktop-app-tauri-v2).
 
-- Google's desktop OAuth flow uses loopback redirects, which already work.
-  Deep links matter for SoundCloud and Spotify, whose app settings can register
-  a custom scheme.
-- The migration touches the config schema (allowlist becomes capabilities),
-  the system tray API and the shell plugin. The CSP and the narrowed shell
-  permissions from this stage carry over directly as v2 capabilities.
-
-Recommendation: migrate in its own branch before Stage 4. Apple's MusicKit
-flow is the first that benefits.
+- **Same behaviour as before:** tray menu, closing the window hides it,
+  and the server sidecar is started and stopped with the app.
+- **Fewer permissions for the web content:** no shell or process access. It
+  can only open https links in the system browser and receive deep links.
+- **Connecting a service in the desktop app:** the consent page opens in the
+  system browser. The result comes back through a `musicmanager://oauth` deep
+  link (`tauri-plugin-deep-link`; `single-instance` forwards the link on
+  Windows/Linux).
+  - The return target (web or app) is fixed and signed when the flow starts,
+    so it can't be used as an open redirect.
+  - The web flow is unchanged.
+- **Rust dependency alerts:** `tar` (#34, #35, #79) and the old `rand` (#63)
+  are gone, and `serde_with` is updated (#135). `glib` #33 remains: it needs
+  glib 0.20, which Tauri's Linux webview stack doesn't support yet, and it
+  affects Linux builds only.
+- **CI:** a `desktop` job runs `cargo clippy -D warnings` on every PR.
 
 ## Open: DRM decision gate (needs a spike on real machines)
 

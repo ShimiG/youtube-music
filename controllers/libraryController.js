@@ -52,10 +52,10 @@ function readCursor(req, res) {
 function sendSourceError(res, err, source, fallbackMessage) {
     if (err instanceof SourceError) {
         const body = { error: err.message, code: `SOURCE_${err.code}`, source: err.source || source, ...err.extra };
-        if (err.code === 'UPSTREAM') console.error('%s: %s: %s', source, fallbackMessage, err.cause ? err.cause.message : err.message);
+        if (err.code === 'UPSTREAM') console.error(`${source}: ${fallbackMessage}: ${err.cause ? err.cause.message : err.message}`);
         return res.status(err.status).json(body);
     }
-    console.error('%s: %s: %s', source, fallbackMessage, err && err.message);
+    console.error(`${source}: ${fallbackMessage}: ${err && err.message}`);
     return res.status(502).json({ error: fallbackMessage, code: 'SOURCE_UPSTREAM', source });
 }
 

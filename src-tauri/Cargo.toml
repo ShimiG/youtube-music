@@ -2,7 +2,7 @@
 name = "music-manager"
 version = "1.0.0"
 description = "A hybrid React/Node/Rust music player"
-authors = ["you"]
+authors = ["Shimi Goldshlak"]
 edition = "2021"
 
 # Tauri crates are pinned exactly (=) so builds never pick up a release

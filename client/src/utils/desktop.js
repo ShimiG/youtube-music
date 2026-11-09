@@ -20,10 +20,12 @@ export async function openExternal(url) {
  * in to Google / SoundCloud, and the server hands the result back through a
  * musicmanager://oauth deep link (see onOAuthResult).
  */
-export async function startOAuth(urlEndpoint) {
+export async function startOAuth(urlEndpoint, params = {}) {
     const authToken = localStorage.getItem('authToken');
     if (!authToken) return { ok: false };
-    const endpoint = isDesktopApp() ? `${urlEndpoint}?return=app` : urlEndpoint;
+    const query = new URLSearchParams(params);
+    if (isDesktopApp()) query.set('return', 'app');
+    const endpoint = query.toString() ? `${urlEndpoint}?${query}` : urlEndpoint;
     const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${authToken}` } });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.url) return { ok: false, status: res.status, error: data.error };

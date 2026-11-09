@@ -1,26 +1,35 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { serviceOf } from '../utils/services';
 
-const SOURCE_LABELS = { youtube: 'YouTube', soundcloud: 'SoundCloud' };
+// Rows and cards render the normalised Track / Playlist shapes from the
+// library API. Where older rows (history, custom playlists written before
+// Stage 0) still carry legacy field names, the small helpers below accept both.
+const artistOf = (t) => t.artist || t.channelTitle || 'Unknown Artist';
+const artOf = (t) => t.thumbnail || t.image || null;
 
-// Small inline marker for tracks that come from a service other than YouTube,
-// plus the "preview only" / "not streamable" states SoundCloud reports. The
-// SoundCloud link satisfies the API attribution requirement (credit the
-// source and link to the track's SoundCloud page).
+const PLACEHOLDER_50 = 'https://via.placeholder.com/50?text=🎵';
+const PLACEHOLDER_150 = 'https://via.placeholder.com/150?text=🎵';
+
+// Inline markers a row can carry: an attribution link for sources whose terms
+// require crediting them (declared in the registry), plus the preview /
+// not-streamable states some sources report.
 const TrackBadges = ({ track }) => {
     if (!track) return null;
+    const service = serviceOf(track.source);
     const badges = [];
-    if (track.source === 'soundcloud') {
+    // Sources whose terms require crediting them get a link back.
+    if (service.attribution) {
         badges.push(
             <a
-                key="sc"
-                href={track.permalinkUrl || 'https://soundcloud.com'}
+                key="attr"
+                href={track.permalinkUrl || service.attribution.url}
                 target="_blank"
                 rel="noreferrer"
                 onClick={(e) => e.stopPropagation()}
-                title="Open on SoundCloud"
-                style={{ color: '#ff5500', fontSize: '11px', fontWeight: 'bold', textDecoration: 'none', border: '1px solid #ff5500', borderRadius: '4px', padding: '1px 6px' }}
+                title={`Open on ${service.attribution.text}`}
+                style={{ color: service.color, fontSize: '11px', fontWeight: 'bold', textDecoration: 'none', border: `1px solid ${service.color}`, borderRadius: '4px', padding: '1px 6px' }}
             >
-                SoundCloud ↗
+                {service.attribution.text} ↗
             </a>
         );
     }
@@ -34,18 +43,55 @@ const TrackBadges = ({ track }) => {
     return <span style={{ display: 'inline-flex', gap: '6px', marginLeft: '8px', verticalAlign: 'middle' }}>{badges}</span>;
 };
 
-//  LIST ROW 
-export const TrackRow = ({ track, onPlay, onQueue, imageSize = 50 }) => {
+// Heart button: `onLike` likes, `onUnlike` unlikes (used inside the liked
+// playlist). Shows a brief confirmation instead of tracking liked state, which
+// the API does not return per track.
+const LikeButton = ({ track, onLike, onUnlike }) => {
+    const [state, setState] = useState('idle'); // idle | busy | done | error
+    const action = onUnlike || onLike;
+    if (!action) return null;
+    const isUnlike = Boolean(onUnlike);
+
+    const handle = async (e) => {
+        e.stopPropagation();
+        if (state === 'busy') return;
+        setState('busy');
+        try {
+            await action(track);
+            setState('done');
+            setTimeout(() => setState('idle'), 1500);
+        } catch {
+            setState('error');
+            setTimeout(() => setState('idle'), 2000);
+        }
+    };
+
+    const label = isUnlike ? 'Remove from liked' : 'Like';
+    return (
+        <button
+            onClick={handle}
+            title={label}
+            aria-label={label}
+            disabled={state === 'busy'}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', color: state === 'error' ? '#ff4d4d' : (isUnlike || state === 'done' ? '#1db954' : '#b3b3b3') }}
+        >
+            {state === 'done' ? '✓' : (isUnlike ? '♥' : '♡')}
+        </button>
+    );
+};
+
+//  LIST ROW
+export const TrackRow = ({ track, onPlay, onQueue, onLike, onUnlike, imageSize = 50 }) => {
     const blocked = track.playable === false;
     const play = () => { if (!blocked) onPlay(track); };
     return (
         <div style={{ display: 'flex', gap: '15px', padding: '10px', borderBottom: '1px solid #333', alignItems: 'center', opacity: blocked ? 0.5 : 1 }}>
-            <img 
-                src={track.thumbnail || track.image || 'https://via.placeholder.com/50?text=🎵'} 
-                style={{ width: imageSize, height: imageSize, objectFit: 'cover', borderRadius: '4px', cursor: blocked ? 'not-allowed' : 'pointer' }} 
-                onClick={play} 
-                alt="thumbnail" 
-                onError={(e) => { e.target.src = 'https://via.placeholder.com/50?text=🎵'; }}
+            <img
+                src={artOf(track) || PLACEHOLDER_50}
+                style={{ width: imageSize, height: imageSize, objectFit: 'cover', borderRadius: '4px', cursor: blocked ? 'not-allowed' : 'pointer' }}
+                onClick={play}
+                alt="thumbnail"
+                onError={(e) => { e.target.src = PLACEHOLDER_50; }}
             />
             <div style={{ flex: 1, cursor: blocked ? 'not-allowed' : 'pointer', overflow: 'hidden' }} onClick={play}>
                 <div style={{ fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -53,11 +99,12 @@ export const TrackRow = ({ track, onPlay, onQueue, imageSize = 50 }) => {
                     <TrackBadges track={track} />
                 </div>
                 <div style={{ fontSize: '12px', color: '#aaa', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {track.channelTitle || track.artist}
+                    {artistOf(track)}
                 </div>
             </div>
+            {(onLike || onUnlike) && !blocked && <LikeButton track={track} onLike={onLike} onUnlike={onUnlike} />}
             {onQueue && !blocked && (
-                <button 
+                <button
                     onClick={() => onQueue(track)}
                     style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #1db954', background: 'transparent', color: '#1db954', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
                 >
@@ -68,53 +115,64 @@ export const TrackRow = ({ track, onPlay, onQueue, imageSize = 50 }) => {
     );
 };
 
-// GRID CARD 
-export const TrackCard = ({ track, onClick }) => (
-    <div 
-        onClick={() => onClick(track)}
-        style={{ background: '#181818', padding: '15px', borderRadius: '8px', cursor: 'pointer', transition: 'background 0.3s' }}
-        onMouseEnter={(e) => e.currentTarget.style.background = '#282828'}
-        onMouseLeave={(e) => e.currentTarget.style.background = '#181818'}
-    >
-        <img 
-            src={track.thumbnail || track.image || 'https://via.placeholder.com/150?text=🎵'} 
-            alt={track.title} 
-            style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '4px', marginBottom: '10px' }} 
-            onError={(e) => { e.target.src = 'https://via.placeholder.com/150?text=🎵'; }}
-        />
-        <div style={{ fontWeight: 'bold', fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {track.title}
+// GRID CARD
+export const TrackCard = ({ track, onClick }) => {
+    const service = serviceOf(track.source);
+    return (
+        <div
+            onClick={() => onClick(track)}
+            style={{ background: '#181818', padding: '15px', borderRadius: '8px', cursor: 'pointer', transition: 'background 0.3s' }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#282828'}
+            onMouseLeave={(e) => e.currentTarget.style.background = '#181818'}
+        >
+            <img
+                src={artOf(track) || PLACEHOLDER_150}
+                alt={track.title}
+                style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '4px', marginBottom: '10px' }}
+                onError={(e) => { e.target.src = PLACEHOLDER_150; }}
+            />
+            <div style={{ fontWeight: 'bold', fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {track.title}
+            </div>
+            <div style={{ color: '#b3b3b3', fontSize: '12px', marginTop: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {artistOf(track)}
+                {service.attribution && (
+                    <span style={{ color: '#666' }}> · {service.label}</span>
+                )}
+            </div>
         </div>
-        <div style={{ color: '#b3b3b3', fontSize: '12px', marginTop: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {track.channelTitle || track.artist}
-            {track.source && track.source !== 'youtube' && (
-                <span style={{ color: '#666' }}> · {SOURCE_LABELS[track.source] || track.source}</span>
-            )}
-        </div>
-    </div>
-);
+    );
+};
 
-//  PLAYLIST CARD 
-export const PlaylistCard = ({ playlist, type, onClick }) => {
+//  PLAYLIST CARD — renders the normalised Playlist shape only.
+//  { source, id, kind: 'liked' | 'playlist' | 'custom', name, thumbnail, itemCount, readOnly }
+export const PlaylistCard = ({ playlist, onClick }) => {
+    const service = serviceOf(playlist.source);
     const isLiked = playlist.kind === 'liked';
-    const imageUrl = playlist.thumbnail || playlist.snippet?.thumbnails?.high?.url || (isLiked ? 'https://via.placeholder.com/150/ff5500/ffffff?text=%E2%99%A5' : 'https://via.placeholder.com/150?text=📁');
-    const title = playlist.title || playlist.name || playlist.snippet?.title;
+    const count = playlist.itemCount != null ? `${playlist.itemCount} ${playlist.itemCount === 1 ? 'song' : 'songs'}` : null;
 
     let subtitle;
-    if (type === 'custom') subtitle = `${playlist.itemCount || 0} songs`;
-    else if (isLiked) subtitle = `${SOURCE_LABELS[type] || type} · Liked`;
-    else if (playlist.itemCount != null && type !== 'youtube') subtitle = `${SOURCE_LABELS[type] || type} · ${playlist.itemCount} tracks`;
-    else subtitle = type === 'youtube' ? 'YouTube Music' : (SOURCE_LABELS[type] || type);
+    if (isLiked) subtitle = count ? `${service.label} · ${count}` : service.label;
+    else if (playlist.kind === 'custom') subtitle = count || '0 songs';
+    else subtitle = count ? `${service.label} · ${count}` : service.label;
 
     return (
-        <div 
-            onClick={() => onClick(playlist, type)} 
-            style={{ background: '#282828', padding: '15px', borderRadius: '8px', cursor: 'pointer', transition: 'background 0.3s' }}
-            onMouseEnter={(e) => e.currentTarget.style.background = '#3e3e3e'}
-            onMouseLeave={(e) => e.currentTarget.style.background = '#282828'}
+        <div
+            onClick={() => onClick(playlist)}
+            style={{ background: isLiked ? '#2a1f2f' : '#282828', padding: '15px', borderRadius: '8px', cursor: 'pointer', transition: 'background 0.3s', border: isLiked ? `1px solid ${service.color}55` : '1px solid transparent' }}
+            onMouseEnter={(e) => e.currentTarget.style.background = isLiked ? '#3a2a40' : '#3e3e3e'}
+            onMouseLeave={(e) => e.currentTarget.style.background = isLiked ? '#2a1f2f' : '#282828'}
         >
-            <img src={imageUrl} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '4px', marginBottom: '10px' }} alt="playlist cover" />
-            <div style={{ fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{isLiked ? '♥ ' : ''}{title}</div>
+            {playlist.thumbnail ? (
+                <img src={playlist.thumbnail} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '4px', marginBottom: '10px' }} alt="playlist cover" />
+            ) : (
+                <div aria-hidden="true" style={{ width: '100%', aspectRatio: '1', borderRadius: '4px', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '56px', background: isLiked ? `linear-gradient(135deg, ${service.color}66, #111)` : '#1a1a1a', color: isLiked ? 'white' : '#555' }}>
+                    {isLiked ? '♥' : service.icon}
+                </div>
+            )}
+            <div style={{ fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {isLiked && <span style={{ color: service.color, marginRight: '6px' }}>♥</span>}{playlist.name}
+            </div>
             <div style={{ fontSize: '12px', color: '#aaa' }}>{subtitle}</div>
         </div>
     );

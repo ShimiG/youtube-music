@@ -96,6 +96,8 @@ const getPlaylistTracks = async (req, res, next) => {
 
 // --- Local custom playlists (auth via requireAuth middleware -> req.userId) ---
 
+const MAX_TRACK_TEXT = 300;
+
 const createCustomPlaylist = async (req, res, next) => {
     const db = req.app.locals.db;
     const { name, thumbnail } = req.body || {};
@@ -150,6 +152,11 @@ const addTrackToPlaylist = async (req, res, next) => {
     const meta = cleanTrackMeta({ title, artist, thumbnail });
     if (!externalId || typeof externalId !== 'string' || externalId.length > 200 || !meta) {
         return res.status(400).json({ error: 'externalId and title are required' });
+    }
+    // These strings are parsed by the match engine later; keep them within
+    // the same bound the match API enforces.
+    if (title.length > MAX_TRACK_TEXT || (artist !== undefined && artist !== null && (typeof artist !== 'string' || artist.length > MAX_TRACK_TEXT))) {
+        return res.status(400).json({ error: `title and artist must be at most ${MAX_TRACK_TEXT} characters` });
     }
 
     try {

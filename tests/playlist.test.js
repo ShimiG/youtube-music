@@ -85,6 +85,23 @@ describe('Custom Playlist API (authenticated)', () => {
             expect(res.statusCode).toBe(404);
         });
 
+        it('rejects a title or artist over 300 characters with 400 before any DB work', async () => {
+            const long = await request(app)
+                .post('/api/custom-playlists/10/tracks')
+                .set(auth)
+                .send({ sourceName: 'spotify', externalId: '123', title: 'x'.repeat(301) });
+            expect(long.statusCode).toBe(400);
+            expect(long.body.error).toMatch(/300/);
+
+            const artist = await request(app)
+                .post('/api/custom-playlists/10/tracks')
+                .set(auth)
+                .send({ sourceName: 'spotify', externalId: '123', title: 'Song', artist: 'y'.repeat(301) });
+            expect(artist.statusCode).toBe(400);
+            expect(mockDb.get).not.toHaveBeenCalled();
+            expect(mockDb.run).not.toHaveBeenCalled();
+        });
+
         it('rejects an unknown source with 400', async () => {
             mockDb.get
                 .mockResolvedValueOnce({ id: 10 })   // ownership passes

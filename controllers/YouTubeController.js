@@ -14,11 +14,26 @@ const DURATION_CACHE_MAX = 500;
 const YTDLP_TIMEOUT_MS = 60 * 1000;
 const runner = { execFile };
 
+// Turns a failed yt-dlp run into one log line that says what to do. Its own
+// last error line is the useful part ("Sign in to confirm you're not a bot",
+// "Video unavailable", "Requested format is not available", ...). Control
+// characters are stripped so the text can't forge extra log lines.
+function describeYtDlpFailure(error, stderr) {
+    if (error && error.code === 'ENOENT') {
+        return `yt-dlp not found at "${ytDlpPath}". Install it (brew install yt-dlp) or set YTDLP_PATH.`;
+    }
+    if (error && error.killed) return `yt-dlp timed out after ${YTDLP_TIMEOUT_MS / 1000}s.`;
+    const lines = String(stderr || '').split('\n').map((l) => l.trim()).filter(Boolean);
+    const last = lines.filter((l) => /^ERROR:/.test(l)).pop() || lines.pop() || (error && error.message) || 'unknown error';
+    // eslint-disable-next-line no-control-regex
+    return last.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 300);
+}
+
 function runYtDlp(res, args, onDone) {
     let clientGone = false;
-    const child = runner.execFile(ytDlpPath, args, { timeout: YTDLP_TIMEOUT_MS }, (error, stdout) => {
+    const child = runner.execFile(ytDlpPath, args, { timeout: YTDLP_TIMEOUT_MS }, (error, stdout, stderr) => {
         if (clientGone) return; // nobody to answer; never start ffmpeg for a dead request
-        onDone(error, stdout);
+        onDone(error, stdout, stderr);
     });
     res.on('close', () => {
         if (res.writableFinished) return; // normal completion
@@ -52,16 +67,23 @@ function streamVideo(req, res, videoId) {
     const cacheKey = `youtube_${videoId}`;
     if (serveFromCache(res, cacheKey)) return;
 
-    const args = ['-g', `https://www.youtube.com/watch?v=${videoId}`];
+    // Ask for the audio stream explicitly. A bare `-g` lets yt-dlp choose its
+    // default "best video + best audio", which prints TWO URLs (one per line);
+    // both used to reach ffmpeg as one invalid address. bestaudio/best always
+    // yields a single URL; `best` covers videos with only combined formats.
+    const args = ['-f', 'bestaudio/best', '--no-playlist', '-g', `https://www.youtube.com/watch?v=${videoId}`];
 
-    runYtDlp(res, args, (error, stdout) => {
+    runYtDlp(res, args, (error, stdout, stderr) => {
         if (error) {
+            console.error(`YouTube ${videoId}: could not resolve audio: ${describeYtDlpFailure(error, stderr)}`);
             if (!res.headersSent) sendSourceError(res, 'TRACK_UNAVAILABLE', 'youtube', { reason: 'resolve_failed' });
             return;
         }
 
-        const audioUrl = stdout.trim();
+        // First URL only, defensively: never pass a multi-line string to ffmpeg.
+        const audioUrl = String(stdout).split('\n').map((l) => l.trim()).find((l) => /^https?:\/\//.test(l));
         if (!audioUrl) {
+            console.error(`YouTube ${videoId}: yt-dlp returned no audio URL.`);
             if (!res.headersSent) sendSourceError(res, 'TRACK_UNAVAILABLE', 'youtube', { reason: 'no_audio_url' });
             return;
         }
@@ -90,8 +112,11 @@ function durationOf(videoId, { res } = {}) {
     const args = ['--print', 'duration', `https://www.youtube.com/watch?v=${videoId}`];
 
     return new Promise((resolve, reject) => {
-        const child = runner.execFile(ytDlpPath, args, { timeout: YTDLP_TIMEOUT_MS }, (error, stdout) => {
-            if (error) return reject(error);
+        const child = runner.execFile(ytDlpPath, args, { timeout: YTDLP_TIMEOUT_MS }, (error, stdout, stderr) => {
+            if (error) {
+                console.error(`YouTube ${videoId}: could not read duration: ${describeYtDlpFailure(error, stderr)}`);
+                return reject(error);
+            }
             const durationInSeconds = parseInt(stdout.trim(), 10) || 0;
             if (durationCache.size >= DURATION_CACHE_MAX) {
                 durationCache.delete(durationCache.keys().next().value);
@@ -118,4 +143,4 @@ const getDuration = (req, res) => {
         .catch(() => { if (!res.headersSent) res.status(502).json({ duration: 0 }); });
 };
 
-module.exports = { streamTrack, getDuration, streamVideo, durationOf, isValidVideoId, runner, YTDLP_TIMEOUT_MS };
+module.exports = { streamTrack, getDuration, streamVideo, durationOf, isValidVideoId, describeYtDlpFailure, runner, YTDLP_TIMEOUT_MS };

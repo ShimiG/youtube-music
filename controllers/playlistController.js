@@ -176,6 +176,15 @@ const addTrackToPlaylist = async (req, res, next) => {
             [source.id, externalId]
         );
 
+        // Adding the same track twice is a no-op, not a duplicate row.
+        const existing = await db.get(
+            `SELECT id FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?`,
+            [playlistId, track.id]
+        );
+        if (existing) {
+            return res.status(200).json({ success: true, alreadyInPlaylist: true, message: 'Track is already in the playlist' });
+        }
+
         await db.run(
             `INSERT INTO playlist_tracks (playlist_id, track_id, title, artist, thumbnail) VALUES (?, ?, ?, ?, ?)`,
             [playlistId, track.id, meta.title, meta.artist, meta.thumbnail]

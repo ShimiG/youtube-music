@@ -74,6 +74,25 @@ describe('Custom Playlist API (authenticated)', () => {
             expect(res.body).toHaveProperty('success', true);
         });
 
+        it('does not add a track that is already in the playlist (200, alreadyInPlaylist)', async () => {
+            mockDb.get
+                .mockResolvedValueOnce({ id: 10 })   // ownership check passes
+                .mockResolvedValueOnce({ id: 1 })    // source lookup
+                .mockResolvedValueOnce({ id: 99 })   // track lookup
+                .mockResolvedValueOnce({ id: 5 });   // already a row in playlist_tracks
+            mockDb.run.mockResolvedValue({});
+
+            const res = await request(app)
+                .post('/api/custom-playlists/10/tracks')
+                .set(auth)
+                .send({ sourceName: 'youtube', externalId: 'dQw4w9WgXcQ', title: 'Never Gonna Give You Up' });
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body).toMatchObject({ success: true, alreadyInPlaylist: true });
+            const inserts = mockDb.run.mock.calls.filter(([sql]) => sql.includes('INSERT INTO playlist_tracks'));
+            expect(inserts).toHaveLength(0);
+        });
+
         it('returns 404 when the playlist does not belong to the user', async () => {
             mockDb.get.mockResolvedValueOnce(undefined); // ownership check fails
 

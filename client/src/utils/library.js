@@ -23,3 +23,29 @@ export async function unlikeTrack(source, trackId) {
     await apiFetch(paths.unlike(source, trackId), { method: 'DELETE' });
     return { ok: true };
 }
+
+// --- Custom (local) playlists -------------------------------------------------
+
+export async function createCustomPlaylist(name) {
+    return apiFetch('/api/custom-playlists', { method: 'POST', body: { name } });
+}
+
+export async function listCustomPlaylists() {
+    const data = await apiFetch(paths.playlists('custom'));
+    return data.items || [];
+}
+
+// Adds a normalised Track (from any source) to one of the user's custom
+// playlists. Resolves with { alreadyInPlaylist } when it was there already.
+export async function addTrackToCustomPlaylist(playlistId, track) {
+    return apiFetch(`/api/custom-playlists/${encodeURIComponent(playlistId)}/tracks`, {
+        method: 'POST',
+        body: {
+            sourceName: track.source || 'youtube',
+            externalId: String(track.id),
+            title: track.title,
+            artist: track.artist || track.channelTitle || null,
+            thumbnail: track.thumbnail || track.image || null
+        }
+    });
+}

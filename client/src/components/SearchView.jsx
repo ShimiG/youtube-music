@@ -81,7 +81,7 @@ export default function SearchView() {
             )}
             <div style={{ display: 'flex', flexDirection: 'column', marginTop: '10px' }}>
                 {search.items.map(track => (
-                    <TrackRow key={`search-${track.source}-${track.id}`} track={track} onPlay={playTrack} onQueue={addToQueue} onLike={onLike} imageSize={60} />
+                    <TrackRow key={`search-${track.source}-${track.id}`} track={track} onPlay={playTrack} onQueue={addToQueue} onLike={onLike} canAddToPlaylist imageSize={60} />
                 ))}
             </div>
 

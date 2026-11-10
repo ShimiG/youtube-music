@@ -103,9 +103,56 @@ locations are listed by name.
 `GET /api/health` (requires login) reports which versions were found, and
 reports `degraded` when one is missing.
 
+## Installers
+
+`.github/workflows/release.yml` ("Build desktop installers") builds the full
+desktop app, with the server, ffmpeg and yt-dlp inside:
+
+| Platform | File |
+|---|---|
+| macOS, Apple Silicon | `Music Manager_<version>_aarch64.dmg` |
+| Windows x64 | `Music Manager_<version>_x64-setup.exe` (no admin rights needed) or `..._x64_en-US.msi` |
+
+- **Publishing a GitHub release** attaches the installers to it.
+- **Actions tab → Build desktop installers → Run workflow** builds them
+  without a release; download them from the run's *Artifacts* section.
+
+### Installing an unsigned build
+
+The installers aren't signed with a paid certificate, so the system warns
+once:
+
+- **macOS:** open the `.dmg` and drag Music Manager to Applications. On first
+  launch macOS refuses to open it. Either allow it under System Settings →
+  Privacy & Security → "Open Anyway", or run:
+
+  ```bash
+  xattr -cr "/Applications/Music Manager.app"
+  ```
+
+  Keep the app in `/Applications`: `musicmanager://` login links only reach
+  an installed app.
+- **Windows:** SmartScreen shows "Windows protected your PC". Choose More
+  info → Run anyway.
+
+### First run
+
+1. Start Music Manager once. It creates its data folder (see above) with a
+   settings file, `.env`.
+2. Open that `.env`, fill in `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`,
+   save, and restart the app (Quit from the tray icon, then open it again).
+   Credentials are never built into the installers, because they're public
+   downloads.
+3. Register, then Connect YouTube.
+
+Until the credentials are set, the app runs but doesn't offer "Connect
+YouTube". The app uses port 3000: quit a development server (`npm run dev`)
+before starting it.
+
 ## Signing (not automated yet)
 
-- **macOS:** the build is signed ad hoc, which is enough to run locally.
+- **macOS:** the build is signed ad hoc (`bundle.macOS.signingIdentity: "-"`
+  in `tauri.conf.json`), which is enough to run locally.
   Distributing outside your own machine needs a Developer ID signature with
   the hardened runtime and notarisation. Tauri can sign the sidecars as part of
   `tauri build` once signing identities are configured.

@@ -24,7 +24,7 @@ function autoUpdateEnabled() {
 // Wrapped so tests can stub the process call.
 const runner = {
     exec: (args, options = {}) => new Promise((resolve, reject) => {
-        execFile(ytDlpPath, args, { timeout: UPDATE_TIMEOUT_MS, ...options }, (error, stdout, stderr) => {
+        execFile(ytDlpPath, args, { timeout: UPDATE_TIMEOUT_MS, windowsHide: true, ...options }, (error, stdout, stderr) => {
             if (error) {
                 error.stdout = stdout ? stdout.toString() : '';
                 error.stderr = stderr ? stderr.toString() : '';

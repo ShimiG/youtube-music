@@ -6,3 +6,7 @@ process.env.NODE_ENV = 'test';
 process.env.YTDLP_AUTO_UPDATE = 'false';
 // Deterministic token-encryption key, so tests never create a .token-key file.
 process.env.TOKEN_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+// Dummy Google OAuth client, so YouTube counts as configured (isAvailable /
+// the connect URL). Never a real credential.
+process.env.GOOGLE_CLIENT_ID = 'test-google-client-id.apps.googleusercontent.com';
+process.env.GOOGLE_CLIENT_SECRET = 'test-google-client-secret';

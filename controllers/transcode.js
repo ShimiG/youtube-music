@@ -173,7 +173,9 @@ function streamTranscoded(_req, res, { sourceUrl, cacheKey, seekTime = 0, allowC
         '-'
     ];
 
-    const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs);
+    // windowsHide: the desktop app has no console; without it every transcode
+    // would flash a console window on Windows.
+    const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs, { windowsHide: true });
     let finished = false;
 
     // One place that guarantees the child process is gone. Called on error,

@@ -17,6 +17,13 @@ const oauth2Client = new auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
 // so we carry the userId across in `state` — a short-lived signed token Google
 // echoes back to us untouched.
 const getGoogleAuthUrl = (req, res) => {
+    if (!CLIENT_ID || !CLIENT_SECRET) {
+        return res.status(503).json({
+            error: 'YouTube is not configured on this server: set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.',
+            code: 'SOURCE_NOT_CONFIGURED',
+            source: 'youtube'
+        });
+    }
     const state = jwt.sign(
         // ret: where the flow ends (web client or the desktop app's deep link);
         // signed, so the callback cannot be pointed anywhere else.

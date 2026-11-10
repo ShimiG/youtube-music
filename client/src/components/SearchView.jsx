@@ -17,12 +17,17 @@ export default function SearchView() {
     const [chosenSource, setChosenSource] = useState(null);
     const [input, setInput] = useState('');
 
-    // Default to the first searchable source that is connected, else the first
-    // searchable one at all, until the user picks another.
+    // Searching needs the user's own connection only for sources that say so
+    // (the server's searchRequiresConnection); others search public content.
+    const searchNeedsConnection = (s) => s.searchRequiresConnection !== false && Boolean(s.connect && s.connect.required);
+    const canSearchNow = (s) => s.connected || !searchNeedsConnection(s);
+
+    // Default to the first searchable source that can be searched right now,
+    // else the first searchable one at all, until the user picks another.
     const searchable = sources.filter(s => s.capabilities && s.capabilities.search);
     const activeSource = chosenSource && searchable.some(s => s.name === chosenSource)
         ? chosenSource
-        : ((searchable.find(s => s.connected) || searchable[0] || {}).name || null);
+        : ((searchable.find(canSearchNow) || searchable[0] || {}).name || null);
     const service = searchable.find(s => s.name === activeSource) || null;
 
     const search = useSearch(activeSource);
@@ -57,6 +62,7 @@ export default function SearchView() {
                         sources={searchable}
                         value={activeSource}
                         onChange={switchSource}
+                        requiresConnection={searchNeedsConnection}
                         ariaLabel="Search source"
                     />
                 )}

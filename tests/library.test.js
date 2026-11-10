@@ -144,6 +144,24 @@ describe('GET /api/sources', () => {
         expect(byName.youtube.connected).toBe(false);
         expect(byName.soundcloud.connected).toBe(true);
     });
+
+    it('keeps an expired YouTube connection connected when the server can renew it', async () => {
+        app.locals.db.all.mockResolvedValueOnce([
+            { source_name: 'youtube', expires_at: EXPIRED.expires_at, refreshable: 1 }
+        ]);
+        const res = await request(app).get('/api/sources').set(auth);
+        const byName = Object.fromEntries(res.body.sources.map(s => [s.name, s]));
+        expect(byName.youtube.connected).toBe(true);
+    });
+
+    it('says which sources need a connection to search (SoundCloud searches public tracks without one)', async () => {
+        app.locals.db.all.mockResolvedValueOnce([]);
+        const res = await request(app).get('/api/sources').set(auth);
+        const byName = Object.fromEntries(res.body.sources.map(s => [s.name, s]));
+        expect(byName.youtube.searchRequiresConnection).toBe(true);
+        expect(byName.soundcloud.searchRequiresConnection).toBe(false);
+        expect(byName.custom.searchRequiresConnection).toBe(false);
+    });
 });
 
 // --- Per-source token errors -------------------------------------------------------

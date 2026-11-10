@@ -7,6 +7,7 @@ const tokens = require('../controllers/soundcloud/tokens');
 const soundcloudController = require('../controllers/soundcloudController');
 const ytdlp = require('../controllers/soundcloud/ytdlp');
 const { decrypt } = require('../services/tokenCrypto');
+const { withMedia } = require('./helpers/media');
 
 const validToken = jwt.sign({ userId: 1 }, process.env.JWT_SECRET, { expiresIn: '1h' });
 const authHeader = { Authorization: `Bearer ${validToken}` };
@@ -242,12 +243,12 @@ describe("Library (sourceToken('soundcloud') middleware)", () => {
 
 describe('Playback routing', () => {
     it('GET /stream with an unknown source returns 400', async () => {
-        const res = await request(app).get('/stream?videoId=123&source=napster');
+        const res = await request(app).get(withMedia('/stream?videoId=123&source=napster'));
         expect(res.statusCode).toBe(400);
     });
 
     it('GET /stream?source=soundcloud rejects a non-numeric id', async () => {
-        const res = await request(app).get('/stream?videoId=dQw4w9WgXcQ&source=soundcloud');
+        const res = await request(app).get(withMedia('/stream?videoId=dQw4w9WgXcQ&source=soundcloud'));
         expect(res.statusCode).toBe(400);
     });
 
@@ -255,7 +256,7 @@ describe('Playback routing', () => {
         app.locals.db.get.mockResolvedValueOnce({ access_token: 'app-tok', refresh_token: 'r', expires_at: Date.now() + 600000 });
         fetchMock.mockResolvedValueOnce(jsonResponse(200, {}));
 
-        const res = await request(app).get('/stream?videoId=123456&source=soundcloud');
+        const res = await request(app).get(withMedia('/stream?videoId=123456&source=soundcloud'));
         expect(res.statusCode).toBe(404);
         expect(res.body.code).toBe('TRACK_UNAVAILABLE');
         expect(res.body.reason).toBe('blocked');
@@ -266,13 +267,13 @@ describe('Playback routing', () => {
         app.locals.db.get.mockResolvedValueOnce({ access_token: 'app-tok', refresh_token: 'r', expires_at: Date.now() + 600000 });
         fetchMock.mockResolvedValueOnce(jsonResponse(200, { urn: 'soundcloud:tracks:999', duration: 183000 }));
 
-        const res = await request(app).get('/duration?videoId=999&source=soundcloud');
+        const res = await request(app).get(withMedia('/duration?videoId=999&source=soundcloud'));
         expect(res.statusCode).toBe(200);
         expect(res.body.duration).toBe(183);
     });
 
     it('GET /stream without a source still routes to YouTube and validates the 11-char id', async () => {
-        const res = await request(app).get('/stream?videoId=short');
+        const res = await request(app).get(withMedia('/stream?videoId=short'));
         expect(res.statusCode).toBe(400);
     });
 });
@@ -365,7 +366,7 @@ describe('yt-dlp fallback (no credentials or API trouble)', () => {
         delete process.env.SOUNDCLOUD_CLIENT_ID;
         ytdlpExec.mockResolvedValueOnce('\n'); // no URL
 
-        const res = await request(app).get('/stream?videoId=123456&source=soundcloud');
+        const res = await request(app).get(withMedia('/stream?videoId=123456&source=soundcloud'));
 
         expect(res.statusCode).toBe(404);
         expect(res.body.code).toBe('TRACK_UNAVAILABLE');
@@ -378,7 +379,7 @@ describe('yt-dlp fallback (no credentials or API trouble)', () => {
         delete process.env.SOUNDCLOUD_CLIENT_ID;
         ytdlpExec.mockResolvedValueOnce('183.4\n');
 
-        const res = await request(app).get('/duration?videoId=4242&source=soundcloud');
+        const res = await request(app).get(withMedia('/duration?videoId=4242&source=soundcloud'));
 
         expect(res.statusCode).toBe(200);
         expect(res.body.duration).toBe(183);

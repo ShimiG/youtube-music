@@ -66,3 +66,34 @@ it('frees the background slot when ffmpeg exits', () => {
     children[0].emit('close', 1);
     expect(transcode._backgroundTranscodes()).toBe(0);
 });
+
+it('refuses to start more than MAX_CONCURRENT_TRANSCODES ffmpeg processes at once (503), and frees slots as they exit', () => {
+    const max = transcode.MAX_CONCURRENT_TRANSCODES;
+    for (let i = 0; i < max; i++) {
+        transcode.streamTranscoded({}, fakeRes(), { sourceUrl: 'https://media.example/a', cacheKey: `youtube_c${i}aaaaaaaa`, seekTime: 10 });
+    }
+    expect(children).toHaveLength(max);
+    expect(transcode._activeTranscodes()).toBe(max);
+
+    const refused = fakeRes();
+    transcode.streamTranscoded({}, refused, { sourceUrl: 'https://media.example/a', cacheKey: 'youtube_overaaaaaaa', seekTime: 10 });
+    expect(children).toHaveLength(max); // no new process
+    expect(refused.status).toHaveBeenCalledWith(503);
+    expect(refused.json.mock.calls[0][0]).toMatchObject({ code: 'SERVER_BUSY' });
+    expect(refused.setHeader).toHaveBeenCalledWith('Retry-After', '5');
+
+    children[0].emit('close', 0);
+    expect(transcode._activeTranscodes()).toBe(max - 1);
+    transcode.streamTranscoded({}, fakeRes(), { sourceUrl: 'https://media.example/a', cacheKey: 'youtube_nextaaaaaaa', seekTime: 10 });
+    expect(children).toHaveLength(max + 1);
+});
+
+it('a failed spawn releases its slot exactly once', () => {
+    transcode.streamTranscoded({}, fakeRes(), { sourceUrl: 'https://media.example/a', cacheKey: 'youtube_failaaaaaaa', seekTime: 10 });
+    expect(transcode._activeTranscodes()).toBe(1);
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    children[0].emit('error', new Error('spawn ENOENT'));
+    children[0].emit('close', -2);
+    console.error.mockRestore();
+    expect(transcode._activeTranscodes()).toBe(0);
+});

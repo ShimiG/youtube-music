@@ -36,6 +36,13 @@ const inFlightCaching = new Set();
 const MAX_BACKGROUND_TRANSCODES = 2;
 let backgroundTranscodes = 0;
 
+// Hard ceiling on ffmpeg processes running at once, whatever their state. One
+// listener needs two (the current track, plus the next one preloading) and up
+// to MAX_BACKGROUND_TRANSCODES finishing in the background; beyond this the
+// server answers 503 instead of starting another process.
+const MAX_CONCURRENT_TRANSCODES = 6;
+let activeTranscodes = 0;
+
 if (!fs.existsSync(cacheDir)) {
     fs.mkdirSync(cacheDir, { recursive: true });
 }
@@ -173,10 +180,25 @@ function streamTranscoded(_req, res, { sourceUrl, cacheKey, seekTime = 0, allowC
         '-'
     ];
 
+    if (activeTranscodes >= MAX_CONCURRENT_TRANSCODES) {
+        res.setHeader('Retry-After', '5');
+        return res.status(503).json({ error: 'Too many streams in progress. Try again in a moment.', code: 'SERVER_BUSY' });
+    }
+
     // windowsHide: the desktop app has no console; without it every transcode
     // would flash a console window on Windows.
     const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs, { windowsHide: true });
     let finished = false;
+
+    // Count this process until it is gone. A failed spawn emits 'error' and
+    // may not emit 'close', so both release the slot, once.
+    activeTranscodes++;
+    let slotReleased = false;
+    const releaseSlot = () => {
+        if (slotReleased) return;
+        slotReleased = true;
+        activeTranscodes--;
+    };
 
     // One place that guarantees the child process is gone. Called on error,
     // on completion, on client disconnect, and by the safety timeout.
@@ -185,6 +207,7 @@ function streamTranscoded(_req, res, { sourceUrl, cacheKey, seekTime = 0, allowC
     }, MAX_TRANSCODE_MS);
 
     ffmpegProcess.on('error', (err) => {
+        releaseSlot();
         console.error('Failed to start FFmpeg:', err.message);
         if (!res.headersSent) res.status(500).json({ error: 'Audio processor unavailable' });
     });
@@ -236,6 +259,7 @@ function streamTranscoded(_req, res, { sourceUrl, cacheKey, seekTime = 0, allowC
     });
 
     ffmpegProcess.on('close', (code) => {
+        releaseSlot();
         finished = true;
         if (inBackground) backgroundTranscodes--;
         clearTimeout(cleanupTimer);
@@ -271,5 +295,7 @@ module.exports = {
     prepareCache,
     cacheMaxBytes,
     MAX_BACKGROUND_TRANSCODES,
+    MAX_CONCURRENT_TRANSCODES,
+    _activeTranscodes: () => activeTranscodes,
     _backgroundTranscodes: () => backgroundTranscodes
 };

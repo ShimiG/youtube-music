@@ -151,7 +151,7 @@ that needs a search is recorded as `error` and retried after `MATCH_ERROR_TTL_MS
 | `POST /api/match/override` `{ source, id, videoId }` | JWT (existing user) | pin a YouTube video for a track; automatic resolution never overwrites it |
 | `POST /api/match/report` `{ source, id, reason, videoId?, note? }` | JWT (existing user) | `reason` is `wrong_match`, `unavailable` or `other`; a `videoId` also sets the override, `unavailable` also hides the track |
 | `DELETE /api/match/:source/:id` | JWT | forget the row so the next read resolves again |
-| `GET /stream?source=spotify&videoId=<spotify id>`, `GET /duration?...` | rate-limited | play the matched video; 404 `MATCH_REQUIRED` (call resolve first), 404 `TRACK_UNAVAILABLE`, 503 `MATCH_PENDING` |
+| `GET /stream?source=spotify&videoId=<spotify id>&t=`, `GET /duration?...` | media token, rate-limited | play the matched video; 404 `MATCH_REQUIRED` (call resolve first), 404 `TRACK_UNAVAILABLE`, 503 `MATCH_PENDING` |
 
 Validation errors are 400 `MATCH_BAD_REQUEST`; a source that is not in match mode is 400
 `MATCH_BAD_SOURCE` (the name is not echoed); a valid token for a deleted account is 401
@@ -239,7 +239,8 @@ see [docs/packaging.md](docs/packaging.md).
 | `GET /auth/google`, `GET /auth/google/callback` | — | Connect a Google/YouTube account |
 | `GET /search?q=` | Google token | Search YouTube |
 | `GET /playlists`, `GET /playlists/:id/tracks` | Google token | The user's YouTube playlists |
-| `GET /stream?videoId=&source=`, `GET /duration?videoId=&source=` | rate-limited | Audio stream / duration; `source=spotify` plays the matched YouTube video |
+| `GET /api/media/token` | JWT | Short-lived media token for the two routes below |
+| `GET /stream?videoId=&source=&t=`, `GET /duration?videoId=&source=&t=` | media token (`t`), rate-limited | Audio stream / duration; `source=spotify` plays the matched YouTube video |
 | `GET/DELETE /api/match/:source/:id`, `POST /api/match/resolve`, `.../override`, `.../report` | JWT | Match engine (see "Matching engine") |
 | `GET /history`, `POST /history` | JWT | Play history |
 | `GET/POST /api/custom-playlists`, `.../:playlistId/tracks` | JWT | Local playlists |
@@ -251,8 +252,10 @@ see [docs/packaging.md](docs/packaging.md).
   storage/Postgres to scale horizontally as a web service).
 - **Packaging.** The server ships as a Node single executable (SEA), built per platform; see
   [docs/packaging.md](docs/packaging.md). It replaced `pkg` (abandoned, Node 18 only).
-- **`/stream` is not per-user authenticated** because the browser `<audio>` element cannot
-  send an `Authorization` header. It is protected by input validation + rate limiting instead.
+- **`/stream` and `/duration` take a media token in the URL** (`t`), because the browser
+  `<audio>` element cannot send an `Authorization` header. The logged-in client gets the
+  token from `GET /api/media/token` (valid 6 hours, renewed automatically); it only works
+  on these two routes and never as a login. The server also runs at most 6 transcodes at once.
 
 ## Tech stack
 

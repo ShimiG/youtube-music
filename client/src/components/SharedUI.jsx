@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { serviceOf } from '../utils/services';
+import AddToPlaylist from './AddToPlaylist';
 
 // Rows and cards render the normalised Track / Playlist shapes from the
 // library API. Where older rows (history, custom playlists written before
@@ -81,7 +82,7 @@ const LikeButton = ({ track, onLike, onUnlike }) => {
 };
 
 //  LIST ROW
-export const TrackRow = ({ track, onPlay, onQueue, onLike, onUnlike, imageSize = 50 }) => {
+export const TrackRow = ({ track, onPlay, onQueue, onLike, onUnlike, canAddToPlaylist = false, imageSize = 50 }) => {
     const blocked = track.playable === false;
     const play = () => { if (!blocked) onPlay(track); };
     return (
@@ -103,6 +104,7 @@ export const TrackRow = ({ track, onPlay, onQueue, onLike, onUnlike, imageSize =
                 </div>
             </div>
             {(onLike || onUnlike) && !blocked && <LikeButton track={track} onLike={onLike} onUnlike={onUnlike} />}
+            {canAddToPlaylist && !blocked && <AddToPlaylist track={track} />}
             {onQueue && !blocked && (
                 <button
                     onClick={() => onQueue(track)}

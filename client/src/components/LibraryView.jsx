@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { PlaylistCard, TrackRow } from './SharedUI';
 import SourcePicker from './SourcePicker';
 import { useMusic } from '../context/hook';
 import { useSources } from '../hooks/useSources';
 import { useLibrary, usePlaylistTracks } from '../hooks/useLibrary';
 import { describeSourceError } from '../utils/services';
-import { likeTrack, unlikeTrack } from '../utils/library';
+import { likeTrack, unlikeTrack, createCustomPlaylist } from '../utils/library';
+import { toast } from '../utils/toast';
 
 const panelStyle = { gridColumn: '1 / -1', padding: '20px', background: '#ff4d4d20', color: '#ff4d4d', borderRadius: '8px', textAlign: 'center', border: '1px solid #ff4d4d' };
 const pillButton = (bg) => ({ marginTop: '10px', padding: '10px 20px', background: bg, color: 'white', border: 'none', borderRadius: '20px', cursor: 'pointer', fontWeight: 'bold' });
@@ -72,6 +73,40 @@ export default function LibraryView() {
     const playlists = useLibrary(activeSource);
     const tracks = usePlaylistTracks(selectedPlaylist && selectedPlaylist.source, selectedPlaylist && selectedPlaylist.id);
 
+    // "Create Playlist" card: turns into a small form in place.
+    const [creating, setCreating] = useState(false);
+    const [newName, setNewName] = useState('');
+    const [saving, setSaving] = useState(false);
+
+    const submitNewPlaylist = async (e) => {
+        e.preventDefault();
+        const name = newName.trim();
+        if (!name || saving) return;
+        setSaving(true);
+        try {
+            await createCustomPlaylist(name);
+            toast(`Playlist "${name}" created.`);
+            setNewName('');
+            setCreating(false);
+            playlists.reload();
+        } catch (err) {
+            toast(err.message || 'Could not create the playlist.', { kind: 'error' });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    // A track added from a row's "+ Playlist" menu changes the song counts
+    // (and may have created a playlist): refresh the local source's list.
+    const reloadPlaylists = playlists.reload;
+    const isLocal = Boolean(service && service.local);
+    useEffect(() => {
+        if (!isLocal) return;
+        const onChange = () => reloadPlaylists();
+        window.addEventListener('custom-playlists-changed', onChange);
+        return () => window.removeEventListener('custom-playlists-changed', onChange);
+    }, [isLocal, reloadPlaylists]);
+
     const selectSource = (name) => {
         if (name === activeSource) return;
         setSelectedPlaylist(null);
@@ -106,14 +141,41 @@ export default function LibraryView() {
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '20px' }}>
-                    {service && service.local && (
-                        <div
-                            onClick={() => console.log('Open Create Modal')}
-                            style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: '#1db95420', borderRadius: '8px', cursor: 'pointer', border: '2px dashed #1db954', minHeight: '200px' }}
+                    {service && service.local && !creating && (
+                        <button
+                            type="button"
+                            onClick={() => setCreating(true)}
+                            style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: '#1db95420', borderRadius: '8px', cursor: 'pointer', border: '2px dashed #1db954', minHeight: '200px', font: 'inherit' }}
                         >
                             <span style={{ fontSize: '40px', color: '#1db954' }}>+</span>
                             <span style={{ color: '#1db954', fontWeight: 'bold' }}>Create Playlist</span>
-                        </div>
+                        </button>
+                    )}
+                    {service && service.local && creating && (
+                        <form
+                            onSubmit={submitNewPlaylist}
+                            style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '10px', background: '#1db95420', borderRadius: '8px', border: '2px dashed #1db954', minHeight: '200px', padding: '16px', boxSizing: 'border-box' }}
+                        >
+                            <label htmlFor="new-playlist-name" style={{ color: '#1db954', fontWeight: 'bold' }}>New playlist</label>
+                            <input
+                                id="new-playlist-name"
+                                autoFocus
+                                value={newName}
+                                onChange={(e) => setNewName(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Escape') { setCreating(false); setNewName(''); } }}
+                                placeholder="Playlist name"
+                                maxLength={120}
+                                style={{ padding: '8px 10px', borderRadius: '4px', border: '1px solid #555', background: '#181818', color: '#eee', font: 'inherit', minWidth: 0 }}
+                            />
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button type="submit" disabled={saving || !newName.trim()} style={{ flex: 1, padding: '8px', borderRadius: '4px', border: 'none', background: '#1db954', color: '#000', fontWeight: 'bold', cursor: 'pointer', opacity: saving || !newName.trim() ? 0.5 : 1 }}>
+                                    {saving ? 'Creating…' : 'Create'}
+                                </button>
+                                <button type="button" onClick={() => { setCreating(false); setNewName(''); }} style={{ padding: '8px 12px', borderRadius: '4px', border: '1px solid #555', background: 'transparent', color: '#ddd', cursor: 'pointer' }}>
+                                    Cancel
+                                </button>
+                            </div>
+                        </form>
                     )}
 
                     {renderError(playlists.error, service, () => { reloadSources(); playlists.reload(); })}
@@ -162,7 +224,7 @@ export default function LibraryView() {
             <div style={{ display: 'flex', flexDirection: 'column' }}>
                 {renderError(tracks.error, service, tracks.reload)}
                 {!tracks.error && tracks.items.map((track, index) => (
-                    <TrackRow key={`pl-track-${track.source}-${track.id}-${index}`} track={track} onPlay={playTrack} onQueue={addToQueue} onLike={onLike} onUnlike={onUnlike} />
+                    <TrackRow key={`pl-track-${track.source}-${track.id}-${index}`} track={track} onPlay={playTrack} onQueue={addToQueue} onLike={onLike} onUnlike={onUnlike} canAddToPlaylist={selectedPlaylist.source !== 'custom'} />
                 ))}
                 {!tracks.error && tracks.loading && tracks.items.length === 0 && (
                     <div style={{ textAlign: 'center', padding: '20px', color: '#888' }}>Loading tracks...</div>

@@ -12,6 +12,7 @@
 // form SOURCE_<CODE> plus `source`, so the client can show one panel for all.
 // Track lists additionally carry `matching` (a summary) when they held tracks
 // of a match-mode source; see withMatching below.
+const { canRefresh } = require('../services/connections');
 const { listProviders } = require('../providers');
 const { SourceError } = require('../providers/errors');
 const { likedPlaylist, LIKED_PLAYLIST_ID } = require('../providers/normalize');
@@ -86,9 +87,11 @@ const getSources = async (req, res, next) => {
             } else if (!row) {
                 connected = false;
             } else {
-                // SoundCloud tokens are renewed server-side, so a stored refresh
-                // token keeps the connection alive past expires_at.
-                const renews = p.name === 'soundcloud' && Boolean(row.refreshable);
+                // The server renews tokens itself (services/connections.js), so a
+                // stored refresh token keeps the connection alive past expires_at.
+                // This used to name SoundCloud only; since Stage 3 YouTube renews
+                // too, and showed as disconnected an hour after connecting.
+                const renews = canRefresh(p.name, row.refreshable);
                 connected = renews || !row.expires_at || row.expires_at > now;
             }
             return {
@@ -101,6 +104,10 @@ const getSources = async (req, res, next) => {
                     available: typeof p.isAvailable === 'function' ? Boolean(p.isAvailable()) : true
                 },
                 connected,
+                // Whether searching this source needs the user's own connection.
+                // SoundCloud searches public tracks without one, so the Search
+                // tab must stay usable even when it cannot be connected here.
+                searchRequiresConnection: Boolean(p.connect.required && p.searchRequiresToken),
                 expiresAt: row && row.expires_at ? row.expires_at : null
             };
         });

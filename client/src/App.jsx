@@ -11,6 +11,7 @@ import Toaster from './components/Toaster';
 import { toast } from './utils/toast';
 import { isDesktopApp, onOAuthResult, openExternal } from './utils/desktop';
 import { SERVICE_LIST } from './utils/services';
+import { warmMediaToken } from './utils/media';
 import './App.css';
 
 // Services whose OAuth callback reports back as #<callbackParam>=connected|error.
@@ -83,6 +84,7 @@ function App() {
         localStorage.setItem('localUserId', userId);
         localStorage.setItem('localUserName', username);
         setLocalUser({ id: userId, username });
+        warmMediaToken(); // so the first play can start straight from the click
     };
 
     const handleLogout = () => {

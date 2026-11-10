@@ -1,6 +1,7 @@
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const app = require('../app');
+const { withMedia } = require('./helpers/media');
 
 // A valid token the app will accept (JWT_SECRET is set in tests/setup.js).
 const validToken = jwt.sign({ userId: 1 }, process.env.JWT_SECRET, { expiresIn: '1h' });
@@ -108,7 +109,7 @@ describe('Input validation', () => {
     });
 
     it('GET /stream rejects an invalid videoId with 400', async () => {
-        const res = await request(app).get('/stream?videoId=../../etc/passwd');
+        const res = await request(app).get(withMedia('/stream?videoId=../../etc/passwd'));
         expect(res.statusCode).toBe(400);
     });
 });

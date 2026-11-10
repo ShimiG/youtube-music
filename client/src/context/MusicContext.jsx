@@ -2,6 +2,7 @@ import {  useState, useRef, useEffect, useCallback } from 'react';
 import { MusicContext } from './hook';
 import { toast } from '../utils/toast';
 import { DEFAULT_SOURCE } from '../utils/services';
+import { mediaUrl, mediaUrlSync, warmMediaToken } from '../utils/media';
 
 
 export const MusicProvider = ({ children }) => {
@@ -23,7 +24,42 @@ export const MusicProvider = ({ children }) => {
     const playStartTime = useRef(0);
     
     
+    // Media URLs carry a short-lived token (utils/media.js). Keep one ready so
+    // playback can start synchronously from a click, and renew it in time.
+    useEffect(() => {
+        warmMediaToken();
+        const timer = setInterval(warmMediaToken, 5 * 60 * 1000);
+        return () => clearInterval(timer);
+    }, []);
+
+    // Sets the audio source and starts playing. With a token in memory this
+    // runs synchronously (inside the user's click); otherwise it waits for
+    // one. `isCurrent` drops a load that a newer one has replaced meanwhile.
+    const startStream = useCallback((params, isCurrent, failureLabel) => {
+        const audio = audioRef.current;
+        const begin = (url) => {
+            if (!isCurrent()) return;
+            audio.src = url;
+            audio.play()
+                .then(() => setIsPlaying(true))
+                .catch(e => {
+                    console.error(failureLabel, e);
+                    setIsLoading(false);
+                });
+        };
+        const ready = mediaUrlSync('/stream', params);
+        if (ready) return begin(ready);
+        mediaUrl('/stream', params).then(begin).catch(e => {
+            if (!isCurrent()) return;
+            console.error(failureLabel, e);
+            setIsLoading(false);
+            toast('Could not start playback. Try again, or log in again.', { kind: 'error' });
+        });
+    }, []);
+    const loadSeq = useRef(0);
+
     const loadAudio = useCallback((track) => {
+        const seq = ++loadSeq.current;
         playStartTime.current = Date.now();
         setCurrentTrack(track);
         setIsLoading(true); 
@@ -39,7 +75,8 @@ export const MusicProvider = ({ children }) => {
         if (knownDuration) {
             setDuration(knownDuration);
         } else {
-            fetch(`http://localhost:3000/duration?videoId=${safeId}&source=${source}`)
+            mediaUrl('/duration', { videoId: safeId, source })
+                .then(url => fetch(url))
                 .then(res => res.json())
                 .then(data => {
                     if (data.duration) {
@@ -67,17 +104,8 @@ export const MusicProvider = ({ children }) => {
             }).catch(err => console.error("Failed to log history:", err));
         }
         
-        const streamUrl = `http://localhost:3000/stream?videoId=${safeId}&source=${source}`;
-        audioRef.current.src = streamUrl;
-
-        
-        audioRef.current.play()
-            .then(() => setIsPlaying(true))
-            .catch(e => {
-                console.error("Playback failed:", e);
-                setIsLoading(false);
-            });
-    }, []);
+        startStream({ videoId: safeId, source }, () => seq === loadSeq.current, "Playback failed:");
+    }, [startStream]);
 
     const playTrack = useCallback((track) => {
         if (currentTrack?.id !== track.id || (currentTrack?.source || DEFAULT_SOURCE) !== (track.source || DEFAULT_SOURCE)) {
@@ -224,19 +252,11 @@ const seek = useCallback((time) => {
 
             const safeId = currentTrack.id || currentTrack.videoId;
             const source = currentTrack.source || DEFAULT_SOURCE;
-            const streamUrl = `http://localhost:3000/stream?videoId=${safeId}&source=${source}&seek=${cleanTime}`;
-            
             audio.pause();
-            audio.src = streamUrl;
-            
-            audio.play()
-                .then(() => setIsPlaying(true))
-                .catch(e => {
-                    console.error("Audio Playback Failed after seek:", e);
-                    setIsLoading(false);
-                });
+            const seq = ++loadSeq.current;
+            startStream({ videoId: safeId, source, seek: cleanTime }, () => seq === loadSeq.current, "Audio Playback Failed after seek:");
         }
-    }, [currentTrack]);
+    }, [currentTrack, startStream]);
 
 
     useEffect(() => {
@@ -282,11 +302,13 @@ const seek = useCallback((time) => {
             if (bufferedEnd >= audio.duration - 2) {
                 if (!hasPreloadedNext.current && queueIndex < queue.length - 1) {
                     const nextTrack = queue[queueIndex + 1];
-                    const preloadUrl = `http://localhost:3000/stream?videoId=${nextTrack.id}&source=${nextTrack.source || DEFAULT_SOURCE}&seek=0`;
-                    preloadAudioRef.current.src = preloadUrl;
-                    preloadAudioRef.current.load(); 
-                    
                     hasPreloadedNext.current = true;
+                    mediaUrl('/stream', { videoId: nextTrack.id, source: nextTrack.source || DEFAULT_SOURCE, seek: 0 })
+                        .then(preloadUrl => {
+                            preloadAudioRef.current.src = preloadUrl;
+                            preloadAudioRef.current.load();
+                        })
+                        .catch(() => { hasPreloadedNext.current = false; });
                 }
             }
         };

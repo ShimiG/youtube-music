@@ -6,6 +6,8 @@ const rateLimit = require('express-rate-limit');
 const requireAuth = require('./middleware/requireAuth');
 const requireExistingUser = require('./middleware/requireExistingUser');
 const sourceToken = require('./middleware/sourceToken');
+const requireMediaToken = require('./middleware/requireMediaToken');
+const { issueMediaToken } = require('./services/mediaToken');
 
 const authController = require('./controllers/authController');
 const { registerUser, loginUser } = require('./controllers/UserController');
@@ -139,11 +141,18 @@ app.post('/api/match/override', requireAuth, requireExistingUser, matchControlle
 app.post('/api/match/report', requireAuth, requireExistingUser, matchController.report);
 app.delete('/api/match/:source/:id', requireAuth, matchController.forget);
 
-// --- Media (rate-limited + input-validated; no Bearer header because the
-// browser <audio> element cannot send one). `source` selects the provider;
-// `source=spotify` goes through the match table first (controllers/matchedStream.js). ---
-app.get('/stream', mediaLimiter, streamingController.handleStream);
-app.get('/duration', mediaLimiter, streamingController.handleDuration);
+// --- Media (rate-limited + input-validated). The browser <audio> element
+// cannot send a Bearer header, so these two routes take a short-lived media
+// token in the URL instead (`t`, from GET /api/media/token; see
+// services/mediaToken.js). Without it any page in the user's browser could
+// start transcodes. `source` selects the provider; `source=spotify` goes
+// through the match table first (controllers/matchedStream.js). ---
+app.get('/api/media/token', requireAuth, (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(issueMediaToken(req.userId));
+});
+app.get('/stream', mediaLimiter, requireMediaToken, streamingController.handleStream);
+app.get('/duration', mediaLimiter, requireMediaToken, streamingController.handleDuration);
 
 // --- History (our own login required) ---
 app.post('/history', requireAuth, historyController.logHistory);

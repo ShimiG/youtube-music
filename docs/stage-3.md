@@ -79,7 +79,7 @@ agent checked each finding against this branch and wrote the fix plan. Files:
 | Production dependency advisories | high | Fixed: `npm audit fix`, CI gate |
 | Shared track metadata poisoning across users | medium | Fixed: validated input (https thumbnails only), per-user metadata columns |
 | yt-dlp processes orphaned, no timeout | medium | Fixed: 60 s timeout, killed on disconnect, no ffmpeg for a dead request |
-| Unauthenticated `/stream` transcode DoS | medium | **Partly mitigated**: at most 2 background transcodes, loopback bind. Open: signed short-lived media token |
+| Unauthenticated `/stream` transcode DoS | medium | Fixed: `/stream` and `/duration` require a signed, short-lived media token (issue #53); at most 6 transcodes at once, 2 after a disconnect; loopback bind |
 | Tauri CSP `null`, broad shell allowlist | medium | Fixed: strict CSP, no `execute`, `open` limited to https |
 | OAuth `error` parameter log injection | low | Fixed for SoundCloud; the Google part was a false positive |
 | JWT without algorithm pin / expiry | low | Fixed: HS256 pinned, `exp` and session purpose required |
@@ -88,6 +88,6 @@ agent checked each finding against this branch and wrote the fix plan. Files:
 SQL injection, IDOR, path traversal, argument injection, CORS and rate
 limiting were attempted and held.
 
-Follow-ups: the signed media token for `/stream` and `/duration`; once
+Follow-up: once
 pre-upgrade sessions (7-day TTL) have expired, require `purpose: 'session'` on
 every token.

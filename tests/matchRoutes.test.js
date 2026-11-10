@@ -30,6 +30,7 @@ const { getYouTubeClient } = require('../controllers/youtubeClient');
 const matcher = require('../services/matcher');
 const YouTubeController = require('../controllers/YouTubeController');
 const app = require('../app');
+const { withMedia } = require('./helpers/media');
 
 const validToken = jwt.sign({ userId: 1 }, process.env.JWT_SECRET, { expiresIn: '1h' });
 const auth = { Authorization: `Bearer ${validToken}` };
@@ -341,7 +342,7 @@ describe('GET /stream?source=spotify', () => {
     it('streams the matched YouTube video, passing the YouTube id without mutating the request', async () => {
         matcher.getMatch.mockResolvedValueOnce(matchedRow());
 
-        const res = await request(app).get(`/stream?source=spotify&videoId=${SPOTIFY_ID}`);
+        const res = await request(app).get(withMedia(`/stream?source=spotify&videoId=${SPOTIFY_ID}`));
 
         expect(res.statusCode).toBe(200);
         expect(res.body).toEqual({ streamed: YT_ID });
@@ -353,7 +354,7 @@ describe('GET /stream?source=spotify', () => {
 
     it('returns 404 MATCH_REQUIRED when the track has no row yet', async () => {
         matcher.getMatch.mockResolvedValueOnce(null);
-        const res = await request(app).get(`/stream?source=spotify&videoId=${SPOTIFY_ID}`);
+        const res = await request(app).get(withMedia(`/stream?source=spotify&videoId=${SPOTIFY_ID}`));
         expect(res.statusCode).toBe(404);
         expect(res.body).toEqual({ error: 'Track has not been matched yet', code: 'MATCH_REQUIRED' });
         expect(streamVideo).not.toHaveBeenCalled();
@@ -361,7 +362,7 @@ describe('GET /stream?source=spotify', () => {
 
     it('returns 404 TRACK_UNAVAILABLE for a not_found row', async () => {
         matcher.getMatch.mockResolvedValueOnce(matchedRow({ status: 'not_found', videoId: null }));
-        const res = await request(app).get(`/stream?source=spotify&videoId=${SPOTIFY_ID}`);
+        const res = await request(app).get(withMedia(`/stream?source=spotify&videoId=${SPOTIFY_ID}`));
         expect(res.statusCode).toBe(404);
         expect(res.body.code).toBe('TRACK_UNAVAILABLE');
         expect(streamVideo).not.toHaveBeenCalled();
@@ -369,18 +370,18 @@ describe('GET /stream?source=spotify', () => {
 
     it.each(['error', 'pending'])('returns 503 MATCH_PENDING for a %s row', async (status) => {
         matcher.getMatch.mockResolvedValueOnce(matchedRow({ status, videoId: null }));
-        const res = await request(app).get(`/stream?source=spotify&videoId=${SPOTIFY_ID}`);
+        const res = await request(app).get(withMedia(`/stream?source=spotify&videoId=${SPOTIFY_ID}`));
         expect(res.statusCode).toBe(503);
         expect(res.body.code).toBe('MATCH_PENDING');
         expect(streamVideo).not.toHaveBeenCalled();
     });
 
     it('validates the external id before looking anything up', async () => {
-        const bad = await request(app).get('/stream?source=spotify&videoId=../x');
+        const bad = await request(app).get(withMedia('/stream?source=spotify&videoId=../x'));
         expect(bad.statusCode).toBe(400);
-        const missing = await request(app).get('/stream?source=spotify');
+        const missing = await request(app).get(withMedia('/stream?source=spotify'));
         expect(missing.statusCode).toBe(400);
-        const long = await request(app).get(`/stream?source=spotify&videoId=${'a'.repeat(129)}`);
+        const long = await request(app).get(withMedia(`/stream?source=spotify&videoId=${'a'.repeat(129)}`));
         expect(long.statusCode).toBe(400);
         expect(matcher.getMatch).not.toHaveBeenCalled();
         expect(streamVideo).not.toHaveBeenCalled();
@@ -388,15 +389,15 @@ describe('GET /stream?source=spotify', () => {
 
     it('reports a failed match lookup as 500 instead of hanging the <audio> element', async () => {
         matcher.getMatch.mockRejectedValueOnce(new Error('db down'));
-        const res = await request(app).get(`/stream?source=spotify&videoId=${SPOTIFY_ID}`);
+        const res = await request(app).get(withMedia(`/stream?source=spotify&videoId=${SPOTIFY_ID}`));
         expect(res.statusCode).toBe(500);
         expect(streamVideo).not.toHaveBeenCalled();
     });
 
     it('the YouTube source keeps validating its own id and seek before yt-dlp', async () => {
-        expect((await request(app).get('/stream?videoId=short')).statusCode).toBe(400);
-        expect((await request(app).get('/stream')).body).toEqual({ error: 'Missing videoId' });
-        const seek = await request(app).get(`/stream?videoId=${YT_ID}&seek=abc`);
+        expect((await request(app).get(withMedia('/stream?videoId=short'))).statusCode).toBe(400);
+        expect((await request(app).get(withMedia('/stream'))).body).toEqual({ error: 'Missing videoId' });
+        const seek = await request(app).get(withMedia(`/stream?videoId=${YT_ID}&seek=abc`));
         expect(seek.statusCode).toBe(400);
         expect(seek.body.error).toMatch(/seek/i);
         expect(matcher.getMatch).not.toHaveBeenCalled();
@@ -406,7 +407,7 @@ describe('GET /stream?source=spotify', () => {
 describe('GET /duration?source=spotify', () => {
     it('answers with the matched video\'s duration', async () => {
         matcher.getMatch.mockResolvedValueOnce(matchedRow());
-        const res = await request(app).get(`/duration?source=spotify&videoId=${SPOTIFY_ID}`);
+        const res = await request(app).get(withMedia(`/duration?source=spotify&videoId=${SPOTIFY_ID}`));
         expect(res.statusCode).toBe(200);
         expect(res.body).toEqual({ duration: 248 });
         // The response is passed so yt-dlp is killed if the client disconnects.
@@ -415,17 +416,17 @@ describe('GET /duration?source=spotify', () => {
 
     it('mirrors the stream status codes when there is nothing to play', async () => {
         matcher.getMatch.mockResolvedValueOnce(null);
-        const none = await request(app).get(`/duration?source=spotify&videoId=${SPOTIFY_ID}`);
+        const none = await request(app).get(withMedia(`/duration?source=spotify&videoId=${SPOTIFY_ID}`));
         expect(none.statusCode).toBe(404);
         expect(none.body.code).toBe('MATCH_REQUIRED');
 
         matcher.getMatch.mockResolvedValueOnce(matchedRow({ status: 'not_found', videoId: null }));
-        const gone = await request(app).get(`/duration?source=spotify&videoId=${SPOTIFY_ID}`);
+        const gone = await request(app).get(withMedia(`/duration?source=spotify&videoId=${SPOTIFY_ID}`));
         expect(gone.statusCode).toBe(404);
         expect(gone.body.code).toBe('TRACK_UNAVAILABLE');
 
         matcher.getMatch.mockResolvedValueOnce(matchedRow({ status: 'error', videoId: null }));
-        const pending = await request(app).get(`/duration?source=spotify&videoId=${SPOTIFY_ID}`);
+        const pending = await request(app).get(withMedia(`/duration?source=spotify&videoId=${SPOTIFY_ID}`));
         expect(pending.statusCode).toBe(503);
         expect(pending.body.code).toBe('MATCH_PENDING');
         expect(durationOf).not.toHaveBeenCalled();
@@ -434,13 +435,13 @@ describe('GET /duration?source=spotify', () => {
     it('answers 502 { duration: 0 } when yt-dlp fails, like the YouTube route does', async () => {
         matcher.getMatch.mockResolvedValueOnce(matchedRow());
         durationOf.mockRejectedValueOnce(new Error('yt-dlp failed'));
-        const res = await request(app).get(`/duration?source=spotify&videoId=${SPOTIFY_ID}`);
+        const res = await request(app).get(withMedia(`/duration?source=spotify&videoId=${SPOTIFY_ID}`));
         expect(res.statusCode).toBe(502);
         expect(res.body).toEqual({ duration: 0 });
     });
 
     it('the YouTube source still validates its own id', async () => {
-        expect((await request(app).get('/duration?videoId=short')).statusCode).toBe(400);
+        expect((await request(app).get(withMedia('/duration?videoId=short'))).statusCode).toBe(400);
         expect(matcher.getMatch).not.toHaveBeenCalled();
     });
 });

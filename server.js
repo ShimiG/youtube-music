@@ -46,6 +46,10 @@ initDB()
         app.locals.db = db;
         app.listen(PORT, HOST, () => {
             console.log(`Server running on http://${HOST}:${PORT}`);
+            // Which helper binaries this run uses: the first thing to check when
+            // nothing plays (also in GET /api/health, with their versions).
+            console.log(`Using yt-dlp: ${require('./services/ytdlp').ytDlpPath}`);
+            console.log(`Using ffmpeg: ${require('./services/paths').resolveFfmpeg()}`);
             // Remove stale .part files, migrate legacy cache names, apply the size cap.
             prepareCache().catch((err) => console.warn('Cache housekeeping failed:', err.message));
             // Best-effort, in the background: a stale yt-dlp is the usual reason

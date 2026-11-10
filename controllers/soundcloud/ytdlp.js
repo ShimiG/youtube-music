@@ -34,7 +34,7 @@ const PREVIEW_SNIPPET_SECONDS = 30;
 // Wrapped so tests can stub process spawning.
 const runner = {
     exec: (args) => new Promise((resolve, reject) => {
-        execFile(ytDlpPath, args, { timeout: EXEC_TIMEOUT_MS, maxBuffer: MAX_STDOUT_BYTES }, (error, stdout, stderr) => {
+        execFile(ytDlpPath, args, { timeout: EXEC_TIMEOUT_MS, maxBuffer: MAX_STDOUT_BYTES, windowsHide: true }, (error, stdout, stderr) => {
             if (error) {
                 const err = new Error(`yt-dlp failed: ${(stderr || error.message || '').toString().trim().split('\n').pop()}`);
                 err.code = 'YTDLP_FAILED';

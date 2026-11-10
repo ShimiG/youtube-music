@@ -23,7 +23,7 @@ const runner = {
         // A bare name ("ffmpeg") is looked up on the PATH by execFile itself.
         const isBareName = bin && !bin.includes('/') && !bin.includes('\\');
         if (!bin || (!isBareName && !fs.existsSync(bin))) return resolve(null);
-        execFile(bin, args, { timeout: PROBE_TIMEOUT_MS }, (err, stdout) => {
+        execFile(bin, args, { timeout: PROBE_TIMEOUT_MS, windowsHide: true }, (err, stdout) => {
             if (err) return resolve(null);
             resolve(String(stdout).split('\n')[0].trim() || null);
         });

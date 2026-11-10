@@ -21,6 +21,12 @@ function validateEnv() {
     if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
         console.warn('Warning: JWT_SECRET is short; use at least 32 random characters.');
     }
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+        const where = require('./services/paths').isPackaged()
+            ? require('path').join(require('./services/paths').dataDir(), '.env')
+            : '.env';
+        console.warn(`YouTube: no Google OAuth credentials. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in ${where} to connect YouTube.`);
+    }
     if (!process.env.SOUNDCLOUD_CLIENT_ID || !process.env.SOUNDCLOUD_CLIENT_SECRET) {
         console.warn('SoundCloud: no API credentials (SOUNDCLOUD_CLIENT_ID / SECRET). Search and playback run through yt-dlp; connecting an account and the library need the official API.');
     }

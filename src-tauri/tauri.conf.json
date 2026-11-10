@@ -36,12 +36,20 @@
       "../bin/music-server",
       "../bin/ffmpeg",
       "../bin/yt-dlp"
-    ]
+    ],
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "11.0"
+    },
+    "category": "Music",
+    "shortDescription": "Music Manager"
   },
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["musicmanager"]
+        "schemes": [
+          "musicmanager"
+        ]
       }
     }
   }

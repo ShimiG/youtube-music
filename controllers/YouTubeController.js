@@ -31,7 +31,7 @@ function describeYtDlpFailure(error, stderr) {
 
 function runYtDlp(res, args, onDone) {
     let clientGone = false;
-    const child = runner.execFile(ytDlpPath, args, { timeout: YTDLP_TIMEOUT_MS }, (error, stdout, stderr) => {
+    const child = runner.execFile(ytDlpPath, args, { timeout: YTDLP_TIMEOUT_MS, windowsHide: true }, (error, stdout, stderr) => {
         if (clientGone) return; // nobody to answer; never start ffmpeg for a dead request
         onDone(error, stdout, stderr);
     });
@@ -112,7 +112,7 @@ function durationOf(videoId, { res } = {}) {
     const args = ['--print', 'duration', `https://www.youtube.com/watch?v=${videoId}`];
 
     return new Promise((resolve, reject) => {
-        const child = runner.execFile(ytDlpPath, args, { timeout: YTDLP_TIMEOUT_MS }, (error, stdout, stderr) => {
+        const child = runner.execFile(ytDlpPath, args, { timeout: YTDLP_TIMEOUT_MS, windowsHide: true }, (error, stdout, stderr) => {
             if (error) {
                 console.error(`YouTube ${videoId}: could not read duration: ${describeYtDlpFailure(error, stderr)}`);
                 return reject(error);

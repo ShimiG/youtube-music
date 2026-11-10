@@ -240,7 +240,9 @@ module.exports = {
     connect: { kind: 'oauth', required: true },
     capabilities: { search: true, playlists: true, liked: true, like: true, stream: true },
     searchRequiresToken: true,
-    isAvailable: () => true,
+    // Connecting needs the server's Google OAuth client; without it the
+    // connect button would only lead to a Google error page.
+    isAvailable: () => Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
     getToken,
     getPlaylists,
     getPlaylistTracks,

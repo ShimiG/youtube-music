@@ -1,6 +1,6 @@
 [package]
 name = "music-manager"
-version = "2.0.0"
+version = "2.0.1"
 description = "A hybrid React/Node/Rust music player"
 authors = ["Shimi Goldshlak"]
 edition = "2021"

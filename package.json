@@ -1,6 +1,6 @@
 {
   "name": "music-manager",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Hybrid React, Node, and Tauri Music Player",
   "main": "server.js",
   "author": "Shimi G",

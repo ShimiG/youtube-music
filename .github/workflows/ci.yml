@@ -150,13 +150,23 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v5
 
-      # Normally under a minute. Connections that stall are dropped after 30 s
-      # and retried, nothing may wait for input, and the step gives up after
-      # 8 minutes: this step once hung for an hour and a half on a mirror.
+      # Normally under a minute. GitHub's runners fetch Ubuntu packages from an
+      # Azure mirror first; when that mirror stops answering, apt waits 20 s
+      # on it for each of ~180 packages (this step once ran for an hour and a
+      # half). So: if the mirror does not answer a quick probe, take it out of
+      # the list and use archive.ubuntu.com; stalled connections are dropped
+      # and retried; nothing may wait for input; and the step gives up after
+      # 8 minutes whatever happens.
       - name: Install Tauri system libraries
         timeout-minutes: 8
         run: |
-          APT="sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=120"
+          MIRRORS=/etc/apt/apt-mirrors.txt
+          if [ -f "$MIRRORS" ] && ! curl -fsS --max-time 8 -o /dev/null "http://azure.archive.ubuntu.com/ubuntu/dists/$(lsb_release -cs)/InRelease"; then
+            echo "The Azure package mirror is not answering; using the other mirrors."
+            sudo sed -i '/azure\.archive\.ubuntu\.com/d' "$MIRRORS"
+            cat "$MIRRORS"
+          fi
+          APT="sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 -o DPkg::Lock::Timeout=120"
           $APT update
           $APT install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 

@@ -24,6 +24,8 @@ jobs:
   build:
     name: installer (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # A full build takes 10 to 20 minutes; a stalled one must not run for hours.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:

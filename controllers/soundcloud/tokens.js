@@ -84,6 +84,13 @@ async function getAppToken(db) {
     return appTokenInFlight;
 }
 
+/** Drops the app-level token: it belongs to the app credentials it was issued for. */
+async function forgetAppToken(db) {
+    appTokenMemo = null;
+    appTokenInFlight = null;
+    await db.run(`DELETE FROM app_tokens WHERE provider = ?`, [PROVIDER_KEY]);
+}
+
 /** Stores the tokens obtained when a user connects their SoundCloud account. */
 async function storeUserTokens(db, userId, tokens) {
     await db.run(
@@ -175,6 +182,7 @@ module.exports = {
     SOURCE_SOUNDCLOUD,
     EXPIRY_SKEW_MS,
     getAppToken,
+    forgetAppToken,
     getUserToken,
     storeUserTokens,
     getUserConnection,

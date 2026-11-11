@@ -1,10 +1,11 @@
 import React from 'react';
+import { openSettings } from '../utils/navigation';
 
 // The one source switch, shared by Library and Search. Takes the sources from
 // useSources(): a usable source is selectable; one that needs a connection the
 // user does not have is shown greyed and clicking it opens its connect action
-// instead (or, when the server cannot connect it, explains why). No service is
-// named here.
+// instead (or, when this installation is not set up for it yet, Settings ->
+// Accounts, where that is done). No service is named here.
 //
 // `requiresConnection(source)` says whether this screen needs the user's own
 // connection for that source. The Library always does; Search passes its own
@@ -19,7 +20,9 @@ export default function SourcePicker({ sources, value, onChange, filter, require
 
     const handleClick = (s) => {
         if (!needsConnect(s)) return onChange(s.name);
-        if (!unavailable(s) && s.connectAction) s.connectAction();
+        if (unavailable(s)) return openSettings('accounts');
+        if (s.connectAction) return s.connectAction();
+        return undefined;
     };
 
     return (
@@ -29,7 +32,7 @@ export default function SourcePicker({ sources, value, onChange, filter, require
                 const greyed = needsConnect(s);
                 const blocked = unavailable(s);
                 const title = blocked
-                    ? `${s.label} cannot be connected on this server`
+                    ? `${s.label} is not set up on this computer yet. Open Settings, Accounts.`
                     : greyed ? `Connect ${s.label}` : s.label;
                 return (
                     <button
@@ -37,12 +40,11 @@ export default function SourcePicker({ sources, value, onChange, filter, require
                         type="button"
                         role="tab"
                         aria-selected={selected}
-                        aria-disabled={blocked}
                         title={title}
                         onClick={() => handleClick(s)}
                         style={{
                             padding: '6px 14px', borderRadius: '16px', border: 'none', fontWeight: 'bold', fontSize: '13px',
-                            cursor: blocked ? 'not-allowed' : 'pointer',
+                            cursor: 'pointer',
                             background: selected ? s.color : 'transparent',
                             color: selected ? 'white' : (greyed ? '#666' : '#b3b3b3'),
                             opacity: blocked ? 0.5 : 1

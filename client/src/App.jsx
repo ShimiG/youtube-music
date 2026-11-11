@@ -10,6 +10,7 @@ import ConnectServices from './components/ConnectServices';
 import SettingsView from './components/SettingsView';
 import NowPlayingView from './components/NowPlayingView';
 import useArtworkTheme from './hooks/useArtworkTheme';
+import { onOpenSettings } from './utils/navigation';
 import { useMusic } from './context/hook';
 import Toaster from './components/Toaster';
 import { toast } from './utils/toast';
@@ -40,6 +41,14 @@ function reportConnectResult(fragment) {
 
 function App() {
     const [view, setView] = useState('search'); 
+    // Any screen can send the user to Settings, optionally at a section
+    // (utils/navigation.js): the connect banner, a greyed-out service tab.
+    const [settingsSection, setSettingsSection] = useState(null);
+    useEffect(() => onOpenSettings((section) => {
+        // A new object each time, so asking for the same section twice scrolls again.
+        setSettingsSection(section ? { id: section } : null);
+        setView('settings');
+    }), []);
 
     // The expanded Now Playing drawer; only meaningful while a track is loaded.
     const { currentTrack } = useMusic();
@@ -150,7 +159,7 @@ function App() {
                     <Sidebar view={view} setView={setView} handleLogout={handleLogout} />
 
                     <main className="content" style={{ padding: '20px' }}>
-                        <ConnectServices />
+                        {view !== 'settings' && <ConnectServices />}
                         {(view === 'search' || view === 'history') && (
                             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', width: '100%', boxSizing: 'border-box' }}> 
                                 <div>
@@ -161,7 +170,7 @@ function App() {
                             </div>
                         )}
                         {view === 'library' && <LibraryView />}
-                        {view === 'settings' && <SettingsView />}
+                        {view === 'settings' && <SettingsView section={settingsSection} />}
                     </main>
 
                     <NowPlayingView open={nowPlayingShown} onClose={closeNowPlaying} />

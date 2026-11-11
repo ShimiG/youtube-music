@@ -22,6 +22,8 @@ const matchController = require('./controllers/matchController');
 const localController = require('./controllers/localController');
 const lyricsController = require('./controllers/lyricsController');
 const artworkController = require('./controllers/artworkController');
+const settingsController = require('./controllers/settingsController');
+const logFile = require('./services/logFile');
 
 const app = express();
 
@@ -64,6 +66,8 @@ const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
 // a page of a playlist needs one call, so this is generous for a person and
 // tight for a script.
 const matchResolveLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 120 });
+// Changing the installation's service credentials is rare.
+const settingsLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30 });
 // One lyrics request per track played; a lookup may call the lyrics server.
 const lyricsLimiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
 // One per track played; each new cover costs a download and an ffmpeg run.
@@ -82,10 +86,17 @@ app.get('/test', (req, res) => res.send('Server is working!'));
 // login because binary versions help an attacker pick a known exploit.
 app.get('/api/health', requireAuth, async (req, res, next) => {
     try {
-        res.json(await getHealth());
+        res.json(await getHealth({ fresh: req.query.fresh === '1' }));
     } catch (err) {
         next(err);
     }
+});
+
+// The end of the server's log (services/logFile.js), for a problem report.
+// Owner only: the log covers every account on this installation.
+app.get('/api/system/log', requireAuth, settingsController.requireOwner, (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ file: `logs/${logFile.FILE_NAME}`, lines: logFile.readRecent(req.query.lines) });
 });
 
 // --- Local account auth ---
@@ -101,6 +112,14 @@ app.post('/api/login', authLimiter, loginUser);
 app.get('/auth/google/url', requireAuth, requireExistingUser, authController.getGoogleAuthUrl);
 app.get('/auth/google/callback', authController.googleCallback);
 app.get('/api/user/connections', requireAuth, authController.getConnections);
+app.delete('/api/user/connections/youtube', requireAuth, authController.disconnectGoogle);
+
+// --- Settings -> Accounts: this installation's service credentials. Anyone
+// logged in sees what is set up (never the values); only the installation's
+// owner changes it (services/appSettings.js). ---
+app.get('/api/settings/services', requireAuth, settingsController.listServices);
+app.put('/api/settings/services/:source', requireAuth, settingsLimiter, settingsController.requireOwner, settingsController.saveService);
+app.delete('/api/settings/services/:source', requireAuth, settingsLimiter, settingsController.requireOwner, settingsController.clearService);
 
 // --- Legacy YouTube-only routes. Kept as thin aliases for one release; the
 // generic /api/library and /api/search routes below replace them. Same

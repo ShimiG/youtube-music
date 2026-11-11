@@ -23,3 +23,5 @@ database.sqlite-shm
 database.sqlite-wal
 .claude/worktrees/
 reports/security/*.tmp
+# Server log (services/logFile.js)
+logs/

@@ -14,7 +14,11 @@ const ffmpegPath = resolveFfmpeg();
 const { cacheDir, cacheMaxBytes } = require('../controllers/transcode');
 const pkg = require('../package.json');
 
+const logFile = require('./logFile');
+
 const PROBE_TTL_MS = 10 * 60 * 1000;
+// "Check again" in Settings asks for a fresh probe; not more often than this.
+const FRESH_PROBE_MIN_MS = 5 * 1000;
 const PROBE_TIMEOUT_MS = 15 * 1000;
 
 // Wrapped so tests can stub the process calls.
@@ -38,8 +42,9 @@ function parseFfmpegVersion(line) {
     return m ? m[1] : line;
 }
 
-async function probeBinaries() {
-    if (memo && Date.now() - memo.at < PROBE_TTL_MS) return memo.binaries;
+async function probeBinaries(fresh = false) {
+    const maxAge = fresh ? FRESH_PROBE_MIN_MS : PROBE_TTL_MS;
+    if (memo && Date.now() - memo.at < maxAge) return memo.binaries;
     const [ytDlp, ffmpegLine] = await Promise.all([
         runner.version(ytDlpPath, ['--version']),
         runner.version(ffmpegPath, ['-version'])
@@ -67,16 +72,19 @@ async function cacheUsage() {
     return { files, bytes, maxBytes: cacheMaxBytes() };
 }
 
-async function getHealth() {
-    const [binaries, cache] = await Promise.all([probeBinaries(), cacheUsage()]);
+async function getHealth({ fresh = false } = {}) {
+    const [binaries, cache] = await Promise.all([probeBinaries(fresh), cacheUsage()]);
     const degraded = !binaries.ytDlp.available || !binaries.ffmpeg.available;
     return {
         status: degraded ? 'degraded' : 'ok',
         version: pkg.version,
         node: process.version,
         uptimeSec: Math.round(process.uptime()),
+        platform: process.platform,
         binaries,
-        cache
+        cache,
+        // Relative to the data folder; absolute paths stay out of responses.
+        log: { enabled: logFile.enabled(), file: `logs/${logFile.FILE_NAME}` }
     };
 }
 

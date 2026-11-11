@@ -1,6 +1,11 @@
 // .env from the working directory; when packaged, also from the data folder,
 // plus a generated JWT_SECRET (services/runtimeConfig.js). Must run first.
 require('./services/runtimeConfig').loadRuntimeConfig();
+// From here on, everything printed also goes to logs/server.log in the data
+// folder, so a problem can be looked at after the window is closed.
+if (require('./services/logFile').install()) {
+    console.log(`---- Music Manager ${require('./package.json').version} starting (Node ${process.version}, ${process.platform} ${process.arch}) ----`);
+}
 
 const app = require('./app');
 const initDB = require('./config/db');
@@ -25,7 +30,7 @@ function validateEnv() {
         const where = require('./services/paths').isPackaged()
             ? require('path').join(require('./services/paths').dataDir(), '.env')
             : '.env';
-        console.warn(`YouTube: no Google OAuth credentials. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in ${where} to connect YouTube.`);
+        console.warn(`YouTube: no Google OAuth credentials in the environment. Enter them in the app (Settings, Accounts) or set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in ${where}.`);
     }
     if (!process.env.SOUNDCLOUD_CLIENT_ID || !process.env.SOUNDCLOUD_CLIENT_SECRET) {
         console.warn('SoundCloud: no API credentials (SOUNDCLOUD_CLIENT_ID / SECRET). Search and playback run through yt-dlp; connecting an account and the library need the official API.');
@@ -48,8 +53,10 @@ function validateEnv() {
 validateEnv();
 
 initDB()
-    .then((db) => {
+    .then(async (db) => {
         app.locals.db = db;
+        // Service credentials entered in the app (Settings -> Accounts).
+        await require('./services/appSettings').applyStored(db);
         app.listen(PORT, HOST, () => {
             console.log(`Server running on http://${HOST}:${PORT}`);
             // Which helper binaries this run uses: the first thing to check when

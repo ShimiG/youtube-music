@@ -22,6 +22,8 @@ export const SERVICES = {
         icon: '▶',
         color: '#ff0000',
         connectLabel: 'Connect YouTube',
+        // One line under the name in Settings -> Accounts.
+        accountNote: 'Search, your playlists and your liked videos.',
         // connect({ scope: 'write' }) re-runs consent with the like/unlike scope.
         connect: connectGoogle,
         // The API's OAuth callback reports back with #google=connected|error.
@@ -34,6 +36,7 @@ export const SERVICES = {
         icon: '☁',
         color: '#ff5500',
         connectLabel: 'Connect SoundCloud',
+        accountNote: 'Search and playback work without an account. Connecting adds your likes and playlists.',
         connect: connectSoundCloud,
         // The API terms require crediting SoundCloud and linking to it.
         attribution: { text: 'SoundCloud', url: 'https://soundcloud.com' },

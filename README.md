@@ -196,9 +196,10 @@ Required environment variables (see `.env.example`):
 |---|---|
 | `PORT` | API port (default 3000) |
 | `JWT_SECRET` | Secret for signing login tokens — use a long random string |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth credentials |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth credentials. Can be entered in the app instead (Settings → Accounts); a value set here wins |
 | `REDIRECT_URI` | Google OAuth callback, e.g. `http://localhost:3000/auth/google/callback` |
-| `SOUNDCLOUD_CLIENT_ID` / `SOUNDCLOUD_CLIENT_SECRET` | SoundCloud app credentials (optional; enables SoundCloud) |
+| `SOUNDCLOUD_CLIENT_ID` / `SOUNDCLOUD_CLIENT_SECRET` | SoundCloud app credentials (optional; adds the SoundCloud library). Also enterable under Settings → Accounts |
+| `LOG_FILE` | `off` stops the server writing `logs/server.log` (default: on) |
 | `SOUNDCLOUD_REDIRECT_URI` | SoundCloud OAuth callback registered on the app, default `http://localhost:3000/auth/soundcloud/callback` |
 | `SOUNDCLOUD_PROVIDER` | `auto` (default), `api` or `ytdlp`; see "SoundCloud without API credentials" |
 | `YTDLP_AUTO_UPDATE` | Run `yt-dlp -U` at server start (default `true`) |
@@ -245,6 +246,9 @@ see [docs/packaging.md](docs/packaging.md).
 | `GET /api/media/token` | JWT | Short-lived media token for the two routes below |
 | `GET /stream?videoId=&source=&t=`, `GET /duration?videoId=&source=&t=` | media token (`t`), rate-limited | Audio stream / duration; `source=spotify` plays the matched YouTube video |
 | `GET/DELETE /api/match/:source/:id`, `POST /api/match/resolve`, `.../override`, `.../report` | JWT | Match engine (see "Matching engine") |
+| `GET /api/settings/services`, `PUT`/`DELETE /api/settings/services/:source` | JWT; changes: owner only | Service credentials entered in the app (never returned) |
+| `DELETE /api/user/connections/youtube`, `.../soundcloud` | JWT | Disconnect a service account |
+| `GET /api/health`, `GET /api/system/log` | JWT; log: owner only | yt-dlp / ffmpeg versions and cache use; the end of the server log |
 | `GET /api/lyrics?source=&id=&title=&artist=&duration=&online=1` | JWT, rate-limited | Lyrics for the playing track (see below) |
 | `GET /api/artwork/colors?url=` | JWT, rate-limited | Theme colours from a cover image (see below) |
 | `GET /history`, `POST /history` | JWT | Play history |
@@ -252,6 +256,14 @@ see [docs/packaging.md](docs/packaging.md).
 
 ## Notes & known limitations
 
+- **Accounts and the owner.** Settings → Accounts connects and disconnects services and holds
+  this installation's own service credentials (encrypted in the database, applied without
+  a restart). The first account created on an installation is its owner: only it can change
+  those credentials or read the server log.
+- **When nothing plays.** Settings → System shows whether `yt-dlp` and `ffmpeg` were found.
+  The server keeps its output in `logs/server.log` (in the project folder when run from
+  source, in the data folder when installed), rotated at 1 MB, with URL query strings and
+  tokens cut; the System section can copy its last lines.
 - **Colours from the cover art.** The player bar and the Now Playing view take their colours
   from the playing track's cover (Settings → Appearance turns this off). The server reads
   the image, since a web page may not read another site's pixels, and only fetches plain

@@ -4,7 +4,7 @@
 // gets the same disk cache, seeking, transcode limits and media-token check
 // (app.js) as YouTube and SoundCloud.
 const audius = require('../providers/audius');
-const { parseSeek, serveFromCache, streamTranscoded } = require('./transcode');
+const { parseSeek, serveFromCache, streamTranscoded, qualityCacheKey } = require('./transcode');
 const { sendSourceError } = require('../services/errors');
 
 function sendAudiusError(res, err, videoId) {
@@ -27,7 +27,7 @@ const streamTrack = async (req, res) => {
     const { seekTime, error: seekError } = parseSeek(req.query.seek);
     if (seekError) return res.status(400).json({ error: seekError });
 
-    const cacheKey = `audius_${id}`;
+    const cacheKey = qualityCacheKey(req, `audius_${id}`);
     if (serveFromCache(res, cacheKey)) return;
 
     // Resolving is two API calls; if the listener leaves meanwhile, do not

@@ -3,6 +3,7 @@
 // login in a header (see services/mediaToken.js on the server). The token is
 // fetched with the login, kept in memory only, and renewed before it expires.
 import { API_BASE, apiFetch } from './api';
+import { getAudioQuality, isDefaultQuality } from './settings';
 
 // Renew this long before expiry, so a URL handed to <audio> stays valid.
 const REFRESH_MARGIN_MS = 15 * 60 * 1000;
@@ -46,6 +47,12 @@ function build(path, params, token) {
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(params || {})) {
         if (value !== undefined && value !== null) query.set(key, String(value));
+    }
+    // The chosen audio quality (Settings) applies to streams; the default is
+    // left out so standard-quality URLs and cache entries stay as they were.
+    if (path === '/stream') {
+        const quality = getAudioQuality();
+        if (!isDefaultQuality(quality)) query.set('quality', quality);
     }
     query.set('t', token);
     return `${API_BASE}${path}?${query}`;

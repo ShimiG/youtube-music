@@ -4,6 +4,7 @@ const audiusController = require('./audiusController');
 const deezerController = require('./deezerController');
 const localController = require('./localController');
 const { handlersFor } = require('./matchedStream');
+const { isValidQuality } = require('./transcode');
 
 // Every source that plays through the server. Adding one means adding its
 // stream and duration handlers here; app.js never learns service details.
@@ -32,6 +33,10 @@ function resolveSource(req, res) {
 
 class StreamingController {
     static handleStream(req, res) {
+        // ?quality= selects the transcode bitrate (controllers/transcode.js).
+        if (!isValidQuality(req.query.quality)) {
+            return res.status(400).json({ error: 'Invalid quality (use low, standard or high)' });
+        }
         const provider = resolveSource(req, res);
         if (provider) return provider.stream(req, res);
     }

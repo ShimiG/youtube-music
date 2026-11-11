@@ -17,6 +17,7 @@ export default function Sidebar({ view, setView, handleLogout }) {
             <button onClick={() => setView('search')} style={getBtnStyle('search')}>🔍 Search</button>
             <button onClick={() => setView('library')} style={getBtnStyle('library')}>📚 My Library</button>
             <button onClick={() => setView('history')} style={getBtnStyle('history')}>🕒 Recently Played</button>
+            <button onClick={() => setView('settings')} style={getBtnStyle('settings')}>⚙️ Settings</button>
 
             <div style={{ flex: 1 }}></div> 
             {/* Shrink-wrap the button to its text so only the label is clickable,

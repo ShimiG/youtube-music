@@ -1,8 +1,9 @@
 # Music Manager
 
-A desktop music player that plays **YouTube** and **SoundCloud**. A React UI runs
+A desktop music player that plays **YouTube**, **SoundCloud** and **Audius**. A React UI runs
 inside a **Tauri** desktop window and talks to a local **Node/Express** API, which
-resolves audio (YouTube via `yt-dlp`, SoundCloud via its official API), transcodes
+resolves audio (YouTube via `yt-dlp`, SoundCloud via its official API, Audius via its
+open API, no account needed), transcodes
 it to MP3 with `ffmpeg`, and streams it to the player. Custom playlists and play
 history are stored in a local **SQLite** file.
 

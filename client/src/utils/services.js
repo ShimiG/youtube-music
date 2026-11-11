@@ -38,6 +38,16 @@ export const SERVICES = {
         // The API terms require crediting SoundCloud and linking to it.
         attribution: { text: 'SoundCloud', url: 'https://soundcloud.com' },
         callbackParam: 'soundcloud'
+    },
+    audius: {
+        name: 'audius',
+        label: 'Audius',
+        icon: '♫',
+        color: '#cc0fe0',
+        // No account: search and playback are public. Rows link back to the
+        // track on Audius.
+        connect: null,
+        attribution: { text: 'Audius', url: 'https://audius.co' }
     }
 };
 

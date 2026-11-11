@@ -68,7 +68,10 @@ export default function LibraryView() {
 
     // The first listed source (the local one, per the registry order) until the
     // user picks another.
-    const activeSource = chosenSource && sources.some(s => s.name === chosenSource) ? chosenSource : (sources[0] ? sources[0].name : null);
+    // Only sources with a library (playlists) belong here; search-only sources
+    // such as Audius appear in Search instead.
+    const librarySources = sources.filter(s => !s.capabilities || s.capabilities.playlists);
+    const activeSource = chosenSource && librarySources.some(s => s.name === chosenSource) ? chosenSource : (librarySources[0] ? librarySources[0].name : null);
     const service = sources.find(s => s.name === activeSource) || null;
 
     const playlists = useLibrary(activeSource);
@@ -138,7 +141,7 @@ export default function LibraryView() {
                     <h1 style={{ marginTop: 0, marginBottom: 0 }}>Your Library</h1>
                     {sourcesLoading
                         ? <span style={{ color: '#888' }}>Loading sources…</span>
-                        : <SourcePicker sources={sources} value={activeSource} onChange={selectSource} ariaLabel="Library source" />}
+                        : <SourcePicker sources={librarySources} value={activeSource} onChange={selectSource} ariaLabel="Library source" />}
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '20px' }}>

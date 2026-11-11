@@ -97,3 +97,13 @@ it('a failed spawn releases its slot exactly once', () => {
     console.error.mockRestore();
     expect(transcode._activeTranscodes()).toBe(0);
 });
+
+it('passes the reconnect options for network inputs only (a local file: input would be refused)', () => {
+    const { spawn } = require('child_process');
+    transcode.streamTranscoded({}, fakeRes(), { sourceUrl: 'https://media.example/a', cacheKey: 'youtube_netaaaaaaaa', seekTime: 0 });
+    transcode.streamTranscoded({}, fakeRes(), { sourceUrl: 'file:/music/a.ogg', cacheKey: 'local_1', seekTime: 0, allowCache: false });
+    const [netArgs, fileArgs] = spawn.mock.calls.slice(-2).map((c) => c[1]);
+    expect(netArgs).toContain('-reconnect_streamed');
+    expect(fileArgs).not.toContain('-reconnect_streamed');
+    expect(fileArgs.slice(fileArgs.indexOf('-i'), fileArgs.indexOf('-i') + 2)).toEqual(['-i', 'file:/music/a.ogg']);
+});

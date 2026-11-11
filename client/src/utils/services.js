@@ -58,6 +58,16 @@ export const SERVICES = {
         // YouTube match when one exists, otherwise as Deezer's 30 s preview.
         connect: null,
         attribution: { text: 'Deezer', url: 'https://www.deezer.com' }
+    },
+    local: {
+        name: 'local',
+        label: 'Local Files',
+        icon: '💽',
+        color: '#3b82f6',
+        connect: null,
+        // Music folders on this computer: the Library shows the folder panel.
+        // (Not `local: true`, which marks the custom-playlist database.)
+        manageFolders: true
     }
 };
 

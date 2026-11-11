@@ -21,13 +21,15 @@ const soundcloud = require('./soundcloud');
 const custom = require('./custom');
 const audius = require('./audius');
 const deezer = require('./deezer');
+const local = require('./local');
 
 const PROVIDERS = Object.freeze({
     [custom.name]: custom,
     [youtube.name]: youtube,
     [soundcloud.name]: soundcloud,
     [audius.name]: audius,
-    [deezer.name]: deezer
+    [deezer.name]: deezer,
+    [local.name]: local
 });
 
 const SOURCE_NAME = /^[a-z][a-z0-9_-]{0,31}$/;

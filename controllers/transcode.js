@@ -60,6 +60,17 @@ function setMediaHeaders(res) {
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
 }
 
+/**
+ * Sends a whole local audio file as it is (local files, issue #24), with HTTP
+ * Range support from sendFile so the browser can seek, and the same
+ * cross-origin header as every other media response.
+ */
+function sendMediaFile(res, filePath, contentType) {
+    setMediaHeaders(res);
+    res.type(contentType);
+    res.sendFile(filePath, { dotfiles: 'allow', headers: { 'Content-Type': contentType } });
+}
+
 // Only characters that are safe in a filename; bounded length.
 function isValidCacheKey(key) {
     return typeof key === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(key);
@@ -168,9 +179,11 @@ function serveFromCache(res, cacheKey) {
 function streamTranscoded(_req, res, { sourceUrl, cacheKey, seekTime = 0, allowCache = true }) {
     const finalFilePath = cachePathFor(cacheKey);
 
+    // The reconnect options only exist for network inputs; ffmpeg refuses to
+    // open a local file (`file:` input, local files) when they are given.
+    const isNetworkInput = /^https?:\/\//i.test(sourceUrl);
     const ffmpegArgs = [
-        '-reconnect_streamed', '1',
-        '-reconnect_delay_max', '5',
+        ...(isNetworkInput ? ['-reconnect_streamed', '1', '-reconnect_delay_max', '5'] : []),
         '-ss', seekTime.toString(),
         '-i', sourceUrl,
         '-vn',
@@ -290,6 +303,7 @@ module.exports = {
     isValidCacheKey,
     parseSeek,
     serveFromCache,
+    sendMediaFile,
     streamTranscoded,
     enforceCacheLimit,
     prepareCache,

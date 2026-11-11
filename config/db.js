@@ -28,7 +28,7 @@ async function initDB(filename = path.join(dataDir(), 'database.sqlite')) {
         );
     `);
 
-    await db.run(`INSERT OR IGNORE INTO sources (id, name) VALUES (1, 'youtube'), (2, 'spotify'), (3, 'soundcloud'), (4, 'audius'), (5, 'deezer')`);
+    await db.run(`INSERT OR IGNORE INTO sources (id, name) VALUES (1, 'youtube'), (2, 'spotify'), (3, 'soundcloud'), (4, 'audius'), (5, 'deezer'), (6, 'local')`);
 
     // App-level (client_credentials) tokens, one row per provider. SoundCloud
     // rate-limits new client_credentials tokens, so the token survives restarts
@@ -152,6 +152,40 @@ async function initDB(filename = path.join(dataDir(), 'database.sqlite')) {
     if (!matchColumns.some((col) => col.name === 'duration_sec')) {
         await db.exec(`ALTER TABLE track_matches ADD COLUMN duration_sec INTEGER`);
     }
+
+    // Local files (issue #24): folders a user added, and the audio files found
+    // in them. Tracks are addressed by their row id, never by a path from the
+    // client; rel_path is relative to the folder and re-checked on every play.
+    await db.exec(`
+        CREATE TABLE IF NOT EXISTS local_folders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            path TEXT NOT NULL,                 -- real (resolved) absolute path
+            added_at INTEGER NOT NULL,
+            last_scan_at INTEGER,
+            file_count INTEGER NOT NULL DEFAULT 0,
+            scan_error TEXT,
+            truncated INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE(user_id, path)
+        );
+        CREATE TABLE IF NOT EXISTS local_tracks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            folder_id INTEGER NOT NULL,
+            rel_path TEXT NOT NULL,
+            size INTEGER NOT NULL,
+            mtime_ms INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            artist TEXT,
+            album TEXT,
+            track_no INTEGER,
+            duration_sec INTEGER,
+            format TEXT,
+            FOREIGN KEY (folder_id) REFERENCES local_folders(id) ON DELETE CASCADE,
+            UNIQUE(folder_id, rel_path)
+        );
+        CREATE INDEX IF NOT EXISTS idx_local_tracks_folder ON local_tracks(folder_id);
+    `);
 
     // Tokens written before encryption at rest existed are rewritten encrypted.
     await migratePlaintextTokens(db);

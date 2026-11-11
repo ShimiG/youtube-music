@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { PlaylistCard, TrackRow } from './SharedUI';
 import SourcePicker from './SourcePicker';
 import VirtualList from './VirtualList';
+import LocalFoldersPanel from './LocalFoldersPanel';
 import { useMusic } from '../context/hook';
 import { useSources } from '../hooks/useSources';
 import { useLibrary, usePlaylistTracks } from '../hooks/useLibrary';
@@ -143,6 +144,8 @@ export default function LibraryView() {
                         ? <span style={{ color: '#888' }}>Loading sources…</span>
                         : <SourcePicker sources={librarySources} value={activeSource} onChange={selectSource} ariaLabel="Library source" />}
                 </div>
+
+                {service && service.manageFolders && <LocalFoldersPanel onChange={reloadPlaylists} />}
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '20px' }}>
                     {service && service.local && !creating && (

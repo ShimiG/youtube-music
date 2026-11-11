@@ -2,6 +2,7 @@ const YouTubeController = require('./YouTubeController');
 const soundcloudController = require('./soundcloudController');
 const audiusController = require('./audiusController');
 const deezerController = require('./deezerController');
+const localController = require('./localController');
 const { handlersFor } = require('./matchedStream');
 
 // Every source that plays through the server. Adding one means adding its
@@ -11,6 +12,7 @@ const SOURCES = {
     soundcloud: { stream: soundcloudController.streamTrack, duration: soundcloudController.getDuration },
     audius: { stream: audiusController.streamTrack, duration: audiusController.getDuration },
     deezer: { stream: deezerController.streamTrack, duration: deezerController.getDuration },
+    local: { stream: localController.streamTrack, duration: localController.getDuration },
     // Spotify has no audio we can fetch: the match engine picks a YouTube video
     // for the track first and playback is served from the YouTube path with
     // that id (sources.id 2 = spotify already exists in config/db.js).

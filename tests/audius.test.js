@@ -184,6 +184,20 @@ describe('/stream?source=audius', () => {
         expect(mockStreamTranscoded).not.toHaveBeenCalled();
     });
 
+    it('uses a separate cache entry for another quality, and rejects an unknown one', async () => {
+        fetchMock
+            .mockResolvedValueOnce(json(200, { data: track() }))
+            .mockResolvedValueOnce(json(200, { data: 'https://creatornode.example/s.mp3' }));
+        mockStreamTranscoded.mockImplementation((req, res) => res.status(200).end());
+        await request(app).get(withMedia('/stream?source=audius&videoId=D7KyD&quality=high'));
+        expect(mockStreamTranscoded.mock.calls[0][2].cacheKey).toBe('audius_D7KyD_q256');
+        expect(mockStreamTranscoded.mock.calls[0][0].query.quality).toBe('high');
+
+        const bad = await request(app).get(withMedia('/stream?source=audius&videoId=D7KyD&quality=ultra'));
+        expect(bad.statusCode).toBe(400);
+        expect(fetchMock).toHaveBeenCalledTimes(2); // nothing fetched for the rejected request
+    });
+
     it('validates the id and requires a media token', async () => {
         expect((await request(app).get(withMedia('/stream?source=audius&videoId=../etc'))).statusCode).toBe(400);
         expect((await request(app).get('/stream?source=audius&videoId=D7KyD')).statusCode).toBe(401);

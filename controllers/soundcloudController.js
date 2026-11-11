@@ -9,7 +9,7 @@ const { parseReturnTarget, finishOAuth } = require('../services/oauthReturn');
 const client = require('./soundcloud/client');
 const tokens = require('./soundcloud/tokens');
 const ytdlp = require('./soundcloud/ytdlp');
-const { parseSeek, serveFromCache, streamTranscoded } = require('./transcode');
+const { parseSeek, serveFromCache, streamTranscoded, qualityCacheKey } = require('./transcode');
 
 
 const SEARCH_LIMIT = 30;
@@ -286,7 +286,7 @@ const streamTrack = async (req, res) => {
     if (seekError) return res.status(400).json({ error: seekError });
 
     // Both providers use the same numeric id, so one cache entry serves both.
-    const cacheKey = `soundcloud_${id}`;
+    const cacheKey = qualityCacheKey(req, `soundcloud_${id}`);
     if (serveFromCache(res, cacheKey)) return;
 
     const viaApi = async () => {

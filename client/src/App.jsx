@@ -7,6 +7,7 @@ import PlayerFooter from './components/PlayerFooter';
 import Queue from './components/Queue';
 import AuthScreen from './components/AuthScreen';
 import ConnectServices from './components/ConnectServices';
+import SettingsView from './components/SettingsView';
 import Toaster from './components/Toaster';
 import { toast } from './utils/toast';
 import { isDesktopApp, onOAuthResult, openExternal } from './utils/desktop';
@@ -149,6 +150,7 @@ function App() {
                             </div>
                         )}
                         {view === 'library' && <LibraryView />}
+                        {view === 'settings' && <SettingsView />}
                     </main>
 
                     <PlayerFooter />

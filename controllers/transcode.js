@@ -25,6 +25,32 @@ function cacheMaxBytes() {
     return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_CACHE_MAX_BYTES;
 }
 
+// Audio quality of the transcode path (issue #39), chosen per request with
+// ?quality=. YouTube, SoundCloud, Audius and Deezer previews are lossy at the
+// source (roughly 128-160 kbps), so `high` cannot add detail; it avoids losing
+// more in the conversion to MP3. Local MP3 / M4A / FLAC / WAV files do not come
+// through here at all: they are sent as they are (controllers/localController.js).
+// `standard` keeps the cache file names used before this setting existed.
+const QUALITIES = Object.freeze({
+    low: { bitrate: '96k', cacheSuffix: '_q96' },
+    standard: { bitrate: '128k', cacheSuffix: '' },
+    high: { bitrate: '256k', cacheSuffix: '_q256' }
+});
+const DEFAULT_QUALITY = 'standard';
+
+const isValidQuality = (value) => value === undefined || Object.prototype.hasOwnProperty.call(QUALITIES, value);
+
+/** The quality name a request asks for; `standard` when absent or unknown. */
+function qualityOf(req) {
+    const value = req && req.query ? req.query.quality : undefined;
+    return typeof value === 'string' && Object.prototype.hasOwnProperty.call(QUALITIES, value) ? value : DEFAULT_QUALITY;
+}
+
+/** The cache key for a track at the request's quality, e.g. youtube_<id>_q256. */
+function qualityCacheKey(req, baseKey) {
+    return `${baseKey}${QUALITIES[qualityOf(req)].cacheSuffix}`;
+}
+
 // Cache keys currently being written, so two concurrent plays of the same
 // track do not both try to produce the same cache file.
 const inFlightCaching = new Set();
@@ -176,7 +202,7 @@ function serveFromCache(res, cacheKey) {
  * and `allowCache` is true, a copy is written to the disk cache under
  * `cacheKey` once the transcode completes successfully.
  */
-function streamTranscoded(_req, res, { sourceUrl, cacheKey, seekTime = 0, allowCache = true }) {
+function streamTranscoded(req, res, { sourceUrl, cacheKey, seekTime = 0, allowCache = true }) {
     const finalFilePath = cachePathFor(cacheKey);
 
     // The reconnect options only exist for network inputs; ffmpeg refuses to
@@ -188,7 +214,7 @@ function streamTranscoded(_req, res, { sourceUrl, cacheKey, seekTime = 0, allowC
         '-i', sourceUrl,
         '-vn',
         '-c:a', 'libmp3lame',
-        '-b:a', '128k',
+        '-b:a', QUALITIES[qualityOf(req)].bitrate,
         '-f', 'mp3',
         '-'
     ];
@@ -302,6 +328,10 @@ module.exports = {
     cacheDir,
     isValidCacheKey,
     parseSeek,
+    QUALITIES,
+    isValidQuality,
+    qualityOf,
+    qualityCacheKey,
     serveFromCache,
     sendMediaFile,
     streamTranscoded,

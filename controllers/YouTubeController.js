@@ -1,5 +1,5 @@
 const { execFile } = require('child_process');
-const { parseSeek, serveFromCache, streamTranscoded } = require('./transcode');
+const { parseSeek, serveFromCache, streamTranscoded, qualityCacheKey } = require('./transcode');
 const { ytDlpPath } = require('../services/ytdlp');
 const { sendSourceError } = require('../services/errors');
 
@@ -64,7 +64,7 @@ function streamVideo(req, res, videoId) {
     if (seekError) return res.status(400).json({ error: seekError });
 
     // Cache hit: sendFile supports HTTP Range natively, so the browser can seek.
-    const cacheKey = `youtube_${videoId}`;
+    const cacheKey = qualityCacheKey(req, `youtube_${videoId}`);
     if (serveFromCache(res, cacheKey)) return;
 
     // Ask for the audio stream explicitly. A bare `-g` lets yt-dlp choose its

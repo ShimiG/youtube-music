@@ -197,7 +197,7 @@ Tests: PKCE challenge, token grants, single-use refresh handling, app-token cach
 | #27 List virtualization | Stage 0, catch-up | next |
 | #38 Deezer | Stage 6 | **done** (search; full track via match, else preview) |
 | #24 Local file scanning | Stage 6 | **done** (folders, tags, search, direct FLAC/WAV) |
-| #39 Lossless audio (FLAC/WAV) | Stage 6 | partly done (local FLAC/WAV play as-is; quality setting open) |
+| #39 Lossless audio (FLAC/WAV) | Stage 6 | **done** (local FLAC/WAV as-is; quality setting for streams) |
 | #29 Persistent controls in an expanded view | Stage 7 | planned |
 | #30 Lyrics | Stage 7, after #29 | planned |
 | #26 Dynamic theming | Stage 7 | planned |
@@ -379,12 +379,16 @@ Quick wins that reuse the provider interface unchanged. Any of these can be pull
   (HTTP range, native seeking), other formats (OGG, Opus, AIFF, WMA) and any
   unbuffered seek go through ffmpeg. Not yet: album art (embedded covers are
   skipped for now) and a native folder picker in the desktop app.
-- Lossless (issue #39), after local files: YouTube and SoundCloud only stream
-  lossy audio, so lossless means local FLAC/WAV (and later Navidrome /
-  Jellyfin). **Partly done with local files:** FLAC and WAV are already served
-  as they are, in original quality. Still open: a quality setting for the
-  transcode path (128 kbps today). Check that WKWebView (macOS) plays FLAC; if not, transcode to ALAC
-  or WAV there. One to two days.
+- **Lossless and audio quality (issue #39): shipped.** YouTube, SoundCloud,
+  Audius and Deezer only provide lossy audio, so lossless means local files:
+  FLAC and WAV (and MP3, M4A) are sent as they are, in original quality. For
+  streamed sources, Settings has an audio quality choice kept on the device:
+  Data Saver (96 kbps), Standard (128 kbps, the default) or High (256 kbps).
+  `/stream?quality=low|standard|high` picks the MP3 bitrate of the transcode
+  (`controllers/transcode.js`); each quality has its own cache entry
+  (`<key>_q96`, `<key>`, `<key>_q256`). High cannot add detail the source
+  does not have; it avoids losing more in the conversion. Lossless from
+  Navidrome / Jellyfin comes with that source.
 
 ## Stage 7: Player experience
 

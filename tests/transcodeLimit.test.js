@@ -107,3 +107,29 @@ it('passes the reconnect options for network inputs only (a local file: input wo
     expect(fileArgs).not.toContain('-reconnect_streamed');
     expect(fileArgs.slice(fileArgs.indexOf('-i'), fileArgs.indexOf('-i') + 2)).toEqual(['-i', 'file:/music/a.ogg']);
 });
+
+describe('audio quality (issue #39)', () => {
+    const bitrateOf = (args) => args[args.indexOf('-b:a') + 1];
+
+    it('transcodes at 96 / 128 / 256 kbps for low / standard / high, 128 by default', () => {
+        const { spawn } = require('child_process');
+        const run = (query) => {
+            transcode.streamTranscoded({ query }, fakeRes(), { sourceUrl: 'https://media.example/a', cacheKey: 'youtube_qaaaaaaaaaa', seekTime: 5 });
+            return bitrateOf(spawn.mock.calls[spawn.mock.calls.length - 1][1]);
+        };
+        expect(run({ quality: 'low' })).toBe('96k');
+        expect(run({ quality: 'standard' })).toBe('128k');
+        expect(run({ quality: 'high' })).toBe('256k');
+        expect(run({})).toBe('128k');
+        expect(run({ quality: 'ultra' })).toBe('128k'); // unknown values never reach ffmpeg
+        expect(run({ quality: ['high', 'low'] })).toBe('128k');
+    });
+
+    it('keeps one cache entry per quality, and the old name for standard', () => {
+        expect(transcode.qualityCacheKey({ query: {} }, 'youtube_abcdefghijk')).toBe('youtube_abcdefghijk');
+        expect(transcode.qualityCacheKey({ query: { quality: 'standard' } }, 'youtube_abcdefghijk')).toBe('youtube_abcdefghijk');
+        expect(transcode.qualityCacheKey({ query: { quality: 'high' } }, 'youtube_abcdefghijk')).toBe('youtube_abcdefghijk_q256');
+        expect(transcode.qualityCacheKey({ query: { quality: 'low' } }, 'soundcloud_12')).toBe('soundcloud_12_q96');
+        expect(transcode.isValidCacheKey('youtube_abcdefghijk_q256')).toBe(true);
+    });
+});

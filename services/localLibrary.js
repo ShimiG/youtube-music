@@ -117,6 +117,11 @@ async function resolveFolder(input) {
     const roots = configuredRoots();
     if (!isAllowedLocation(resolved, roots)) throw new LocalError('LOCAL_NOT_ALLOWED', NOT_ALLOWED_MESSAGE, 403);
 
+    // Canonical allow-list roots, then ensure the candidate is still inside one
+    // of them before dereferencing it with realpath/stat.
+    const realRoots = (await Promise.all(roots.map((r) => fs.promises.realpath(r).catch(() => null)))).filter(Boolean);
+    if (!isAllowedLocation(resolved, realRoots)) throw new LocalError('LOCAL_NOT_ALLOWED', NOT_ALLOWED_MESSAGE, 403);
+
     let real;
     try {
         real = await fs.promises.realpath(resolved);
@@ -130,7 +135,6 @@ async function resolveFolder(input) {
 
     // Again on the real path, against the roots' own real paths: a symlink
     // inside an allowed root must not lead out of every allowed root.
-    const realRoots = (await Promise.all(roots.map((r) => fs.promises.realpath(r).catch(() => null)))).filter(Boolean);
     if (!isAllowedLocation(real, realRoots)) throw new LocalError('LOCAL_NOT_ALLOWED', NOT_ALLOWED_MESSAGE, 403);
     return real;
 }

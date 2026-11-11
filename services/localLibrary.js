@@ -56,22 +56,44 @@ function expandHome(input) {
 // --- Where folders may be -----------------------------------------------------------
 //
 // A music folder is, by design, a path the user chooses on their own computer.
-// It is still confined: it must be inside the user's home folder, on another
-// drive or mounted volume, or under a root listed in LOCAL_MUSIC_ROOTS
-// (separated by the platform's path delimiter). System locations and other
-// users' folders are refused, so an abused session cannot make the server
-// index, say, /etc or C:\Windows. The check is made twice: on the typed path
-// before the filesystem is touched, and on the real path after symlinks are
-// resolved (a link inside an allowed root that points outside is refused).
+// Two rules keep that safe:
 //
-// Characters are deliberately not restricted beyond control characters:
-// folder names legitimately contain spaces, parentheses, apostrophes, `&`,
-// `~` (Windows short names) and non-Latin letters.
+// 1. Location. The folder must be inside the user's home folder, on another
+//    drive or mounted volume, or under a root listed in LOCAL_MUSIC_ROOTS
+//    (separated by the platform's path delimiter). System locations and other
+//    users' folders are refused, so an abused session cannot make the server
+//    index, say, /etc or C:\Windows.
+// 2. The typed text never reaches the filesystem. The folder is found by
+//    starting at the allowed root (which comes from configuration, not from
+//    the request) and walking down one level at a time, matching each typed
+//    name against the names the directory listing returns. The path that is
+//    opened is therefore built only from the root and from real entry names.
+//    Afterwards its real path (symlinks resolved) must still be inside an
+//    allowed root, so a link inside a root cannot lead out of it.
+//
+// Folder names are deliberately not restricted by character: they
+// legitimately contain spaces, parentheses, apostrophes, `&` and non-Latin
+// letters. Only control characters are refused.
 
 // Windows and macOS file systems are case-insensitive by default.
 const CASE_INSENSITIVE = process.platform === 'win32' || process.platform === 'darwin';
 const fold = (p) => (CASE_INSENSITIVE ? p.toLowerCase() : p);
 const isInsideRoot = (child, root) => isInside(fold(child), fold(root));
+// macOS stores names decomposed (NFD) while typed text is usually composed.
+const sameName = (a, b) => fold(a.normalize('NFC')) === fold(b.normalize('NFC'));
+
+const DRIVE_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+/** On Windows, the root of a drive other than the system drive, e.g. "D:\\". */
+function otherDriveRoot(resolved) {
+    if (process.platform !== 'win32') return null;
+    const typed = /^([A-Za-z]):[\\/]/.exec(resolved);
+    if (!typed) return null;
+    // Taken from the constant list, so the root is never the typed text.
+    const letter = DRIVE_LETTERS.find((l) => l === typed[1].toUpperCase());
+    const system = String(process.env.SystemDrive || 'C:').charAt(0).toUpperCase();
+    return letter && letter !== system ? `${letter}:\\` : null;
+}
 
 function configuredRoots() {
     const roots = [os.homedir()];
@@ -83,23 +105,48 @@ function configuredRoots() {
     return roots;
 }
 
-// On Windows, any drive or network share other than the system drive.
-function isOtherWindowsDrive(candidate) {
-    if (process.platform !== 'win32') return false;
-    const systemRoot = path.parse(path.resolve(process.env.SystemDrive ? `${process.env.SystemDrive}\\` : 'C:\\')).root;
-    const root = path.parse(candidate).root;
-    return Boolean(root) && fold(root) !== fold(systemRoot);
-}
-
-function isAllowedLocation(candidate, roots) {
-    if (isOtherWindowsDrive(candidate)) return true;
-    for (const root of roots) {
-        if (isInsideRoot(candidate, root)) return true;
-    }
-    return false;
+/**
+ * Every allowed root as { typed, real }: the path as configured and its real
+ * path. Roots that do not exist are dropped.
+ */
+async function allowedRoots(resolved) {
+    const list = configuredRoots();
+    const drive = otherDriveRoot(resolved);
+    if (drive) list.push(drive);
+    const roots = await Promise.all(list.map(async (typed) => {
+        try {
+            return { typed, real: await fs.promises.realpath(typed) };
+        } catch {
+            return null;
+        }
+    }));
+    return roots.filter(Boolean);
 }
 
 const NOT_ALLOWED_MESSAGE = 'Choose a folder inside your home folder or on another drive. Other locations can be allowed with LOCAL_MUSIC_ROOTS.';
+const notAllowed = () => new LocalError('LOCAL_NOT_ALLOWED', NOT_ALLOWED_MESSAGE, 403);
+const notFound = () => new LocalError('LOCAL_NOT_FOUND', 'That folder does not exist or cannot be read.');
+
+/**
+ * Walks from `base` down the typed `segments`, choosing at each level the
+ * directory entry whose name matches. Returns the path built from those
+ * entry names, or null when a level has no such entry.
+ */
+async function descend(base, segments) {
+    let current = base;
+    for (const segment of segments) {
+        let names;
+        try {
+            names = await fs.promises.readdir(current);
+        } catch {
+            return null;
+        }
+        const entry = names.find((name) => name === segment) || names.find((name) => sameName(name, segment));
+        if (!entry) return null;
+        current = path.join(current, entry);
+    }
+    return current;
+}
 
 /** Validates a folder the user typed and returns its real path. */
 async function resolveFolder(input) {
@@ -111,31 +158,37 @@ async function resolveFolder(input) {
     const expanded = expandHome(input.trim());
     if (!path.isAbsolute(expanded)) throw new LocalError('LOCAL_BAD_PATH', 'Use a full path, for example ~/Music or /Users/you/Music.');
 
-    // Normalise first (this also folds any "." and ".." segments), then check
-    // the location before touching the filesystem.
+    // Normalised ("." and ".." folded); used only to decide which allowed
+    // root the folder is under and which names lead to it from there.
     const resolved = path.resolve(expanded);
-    const roots = configuredRoots();
-    if (!isAllowedLocation(resolved, roots)) throw new LocalError('LOCAL_NOT_ALLOWED', NOT_ALLOWED_MESSAGE, 403);
+    const roots = await allowedRoots(resolved);
+    let base = null;
+    let segments = null;
+    for (const root of roots) {
+        // The user may type the root either as configured or as its real path.
+        const prefix = [root.typed, root.real].find((p) => isInsideRoot(resolved, p));
+        if (prefix === undefined) continue;
+        base = root.real;
+        segments = path.relative(prefix, resolved).split(path.sep).filter(Boolean);
+        break;
+    }
+    if (!base || segments.includes('..')) throw notAllowed();
 
-    // Canonical allow-list roots, then ensure the candidate is still inside one
-    // of them before dereferencing it with realpath/stat.
-    const realRoots = (await Promise.all(roots.map((r) => fs.promises.realpath(r).catch(() => null)))).filter(Boolean);
-    if (!isAllowedLocation(resolved, realRoots)) throw new LocalError('LOCAL_NOT_ALLOWED', NOT_ALLOWED_MESSAGE, 403);
+    const found = await descend(base, segments);
+    if (!found) throw notFound();
 
     let real;
     try {
-        real = await fs.promises.realpath(resolved);
+        real = await fs.promises.realpath(found);
         const st = await fs.promises.stat(real);
         if (!st.isDirectory()) throw new LocalError('LOCAL_NOT_A_FOLDER', 'That path is not a folder.');
     } catch (err) {
         if (err instanceof LocalError) throw err;
-        throw new LocalError('LOCAL_NOT_FOUND', 'That folder does not exist or cannot be read.');
+        throw notFound();
     }
     if (path.parse(real).root === real) throw new LocalError('LOCAL_BAD_PATH', 'Choose a folder, not the whole disk.');
-
-    // Again on the real path, against the roots' own real paths: a symlink
-    // inside an allowed root must not lead out of every allowed root.
-    if (!isAllowedLocation(real, realRoots)) throw new LocalError('LOCAL_NOT_ALLOWED', NOT_ALLOWED_MESSAGE, 403);
+    // A symlink on the way must not lead out of every allowed root.
+    if (!roots.some((root) => isInsideRoot(real, root.real))) throw notAllowed();
     return real;
 }
 

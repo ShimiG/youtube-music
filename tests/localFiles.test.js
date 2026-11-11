@@ -136,6 +136,28 @@ describe('adding folders', () => {
         expect(res.body.code).toBe('LOCAL_NOT_ALLOWED');
     });
 
+    it('finds the folder by walking the directory listing from the allowed root', async () => {
+        // A name stored decomposed (as macOS does) is found when typed composed.
+        const stored = 'Bjo\u0308rk';   // "o" + combining diaeresis
+        const typed = 'Bj\u00f6rk';     // precomposed "ö"
+        fs.mkdirSync(path.join(tmp, stored));
+        await expect(lib().resolveFolder(path.join(tmp, typed))).resolves.toBe(realOf(path.join(tmp, stored)));
+        // Names are matched literally: nothing is treated as a pattern.
+        fs.mkdirSync(path.join(tmp, 'Jazz'));
+        await expect(lib().resolveFolder(path.join(tmp, 'J*'))).rejects.toMatchObject({ code: 'LOCAL_NOT_FOUND' });
+        await expect(lib().resolveFolder(path.join(tmp, 'Jazz', 'missing', 'deeper'))).rejects.toMatchObject({ code: 'LOCAL_NOT_FOUND' });
+    });
+
+    it('accepts a folder typed by its real path when the allowed root is configured through a symlink', async () => {
+        const target = path.join(tmp, 'Disk');
+        fs.mkdirSync(path.join(target, 'Albums'), { recursive: true });
+        const viaLink = path.join(tmp, 'mount');
+        fs.symlinkSync(target, viaLink);
+        process.env.LOCAL_MUSIC_ROOTS = viaLink;
+        await expect(lib().resolveFolder(path.join(viaLink, 'Albums'))).resolves.toBe(realOf(path.join(target, 'Albums')));
+        await expect(lib().resolveFolder(path.join(realOf(target), 'Albums'))).resolves.toBe(realOf(path.join(target, 'Albums')));
+    });
+
     it('treats a symlinked alias of an added folder as a duplicate', async () => {
         await addAndScan();
         const alias = path.join(tmp, 'alias');

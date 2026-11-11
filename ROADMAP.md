@@ -125,6 +125,16 @@ Exit criteria: Library shows Custom Playlists and YouTube with identical behavio
 
 Effort: 3 to 4 days.
 
+### Catch-up (issues found after the stage shipped)
+
+- **#28 Source-aware seek bar colour.** The seek bar fills in the colour of the
+  playing track's source (YouTube red, SoundCloud orange, Spotify green, the
+  app green for local), read from the client registry, `utils/services.js`.
+  Nothing else in the player names a service.
+- **#27 List virtualization.** Track lists that grow with "Load more" (liked
+  songs, long playlists, search) render only the rows on screen, so a
+  10,000-track list stays responsive. Short lists render as before.
+
 ### Adding a new service after Stage 0
 
 1. `providers/<name>.js` implementing the interface and declaring capabilities.
@@ -174,10 +184,42 @@ Tests: PKCE challenge, token grants, single-use refresh handling, app-token cach
   is a Spotify Premium or Apple Music subscription. Without one, they add only
   YouTube-matched playback, and Apple Music needs a paid Apple Developer
   Program membership even for catalog search.
-- Next: **Stage 6** (open and self-hosted sources), which needs no accounts or
-  subscriptions and plugs into the Stage 0 provider interface.
+- Next: **catch-up on finished stages** (issues #27, #28), then **Stage 6**
+  (open and self-hosted sources), which needs no accounts or subscriptions and
+  plugs into the Stage 0 provider interface, then **Stage 7** (player
+  experience).
+
+### Open GitHub issues in this plan
+
+| Issue | Where it lives | Status |
+|---|---|---|
+| #28 Source-aware seek bar colour | Stage 0, catch-up | next |
+| #27 List virtualization | Stage 0, catch-up | next |
+| #38 Deezer | Stage 6 | planned (previews + match; see the stage) |
+| #24 Local file scanning | Stage 6 | planned |
+| #39 Lossless audio (FLAC/WAV) | Stage 6, after #24 | planned |
+| #29 Persistent controls in an expanded view | Stage 7 | planned |
+| #30 Lyrics | Stage 7, after #29 | planned |
+| #26 Dynamic theming | Stage 7 | planned |
+| #40 Remote control from a phone | Stage 7 | planned, needs a security design |
+| #23 Spotify | Stage 2 | on hold |
+| #36 Apple Music | Stage 4 | on hold |
+
+### Leftovers from finished stages (no issue yet)
+
+- Remove a track from a custom playlist; delete a playlist (the API and UI
+  only create and add today).
+- The Repeat button in the player bar does nothing yet.
+- Remove the legacy `/search`, `/playlists` and `/api/soundcloud/*` aliases
+  (deprecated in v2.0.0).
+- From 16 Nov 2026: require `purpose: 'session'` on every login token (old
+  tokens without it have expired by then).
+- YouTube playback in the installed app is not yet confirmed on a real Mac.
 
 ## Stage 2: Spotify and the match engine (on hold)
+
+Issue: #23 (Spotify login and metadata, audio via YouTube), which is exactly
+the free-account plan below.
 
 Goal: Spotify library for everyone, native playback for Premium, YouTube-backed
 playback with honest availability for free accounts.
@@ -269,6 +311,9 @@ Effort: 4 to 6 days.
 
 ## Stage 4: Apple Music (on hold)
 
+Issue: #36. Its in-app MusicKit playback was ruled out by the Stage 3 DRM
+decision (option c); catalog search plus match remains possible.
+
 Prerequisites: Apple Developer Program membership, a MusicKit identifier and private key, Team ID, Key ID.
 
 Server
@@ -296,8 +341,46 @@ Quick wins that reuse the provider interface unchanged. Any of these can be pull
 
 - Audius: open API, `GET /v1/tracks/search` and `GET /v1/tracks/{id}/stream`, no auth. Half a day.
 - Jamendo: free app key, Creative Commons catalog, direct stream URLs. Half a day.
-- Deezer: public search returns 30 s preview MP3s with no auth; there is no user API for new apps. Treat as a catalog source with match; ISRC is present. One day.
+- Deezer (issue #38): public search returns 30 s preview MP3s with no auth;
+  there is no user API for new apps. Treat as a catalog source with match;
+  ISRC is present. One day. The issue's OAuth login and full-track Web SDK
+  playback are not possible: Deezer no longer registers new apps, and its
+  full-track player is DRM-protected (Stage 3 decision).
 - Navidrome, Subsonic, Jellyfin: user enters server URL and credentials as a connection; the server proxies their stream endpoints. One to two days.
+- Local files (issue #24): a `local` provider over folders the user picks.
+  A scanner reads tags (title, artist, album, duration, embedded art) into
+  the database and rescans on demand; playback reads the file directly, with
+  no yt-dlp. The folder list lives in settings; paths outside those folders
+  are refused. One to two days.
+- Lossless (issue #39), after local files: YouTube and SoundCloud only stream
+  lossy audio, so lossless means local FLAC/WAV (and later Navidrome /
+  Jellyfin). Serve those files as they are (with HTTP range) instead of
+  transcoding to 128 kbps MP3, and add a quality setting for the transcode
+  path. Check that WKWebView (macOS) plays FLAC; if not, transcode to ALAC
+  or WAV there. One to two days.
+
+## Stage 7: Player experience
+
+Everything around playback that is not a new source.
+
+- Expanded "Now Playing" view with persistent controls (issue #29). There is
+  no expanded view yet; build it as a drawer that slides up behind the player
+  bar (large art, queue), with the bar's controls fixed at the bottom. One to
+  two days.
+- Lyrics (issue #30), as a tab in that view next to the queue: synced lyrics
+  where available (LRC, highlighted in time with playback), plain lyrics as a
+  fallback, and a "No lyrics found" state. Needs a lyrics source whose terms
+  allow this use; decide before building. One to two days.
+- Dynamic theming (issue #26): take the dominant colours of the album art and
+  apply them to the player and the expanded view. Thumbnails come from other
+  sites, so read the colours on the server (or through a server proxy) rather
+  than from a cross-origin canvas. One day.
+- Remote control from a phone (issue #40): control the desktop app (play,
+  pause, skip, volume) from a phone. Needs a security design first: the
+  server only listens on this computer (127.0.0.1) by design, so a phone on
+  the network requires an opt-in setting, pairing (for example a one-time
+  code shown on the desktop) and an authenticated WebSocket, rather than
+  "same Google account" as the issue suggests. Two to three days.
 
 ## Parked
 

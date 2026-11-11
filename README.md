@@ -245,10 +245,18 @@ see [docs/packaging.md](docs/packaging.md).
 | `GET /api/media/token` | JWT | Short-lived media token for the two routes below |
 | `GET /stream?videoId=&source=&t=`, `GET /duration?videoId=&source=&t=` | media token (`t`), rate-limited | Audio stream / duration; `source=spotify` plays the matched YouTube video |
 | `GET/DELETE /api/match/:source/:id`, `POST /api/match/resolve`, `.../override`, `.../report` | JWT | Match engine (see "Matching engine") |
+| `GET /api/lyrics?source=&id=&title=&artist=&duration=&online=1` | JWT, rate-limited | Lyrics for the playing track (see below) |
 | `GET /history`, `POST /history` | JWT | Play history |
 | `GET/POST /api/custom-playlists`, `.../:playlistId/tracks` | JWT | Local playlists |
 
 ## Notes & known limitations
+
+- **Lyrics.** For your own files, lyrics come from a `.lrc` file with the same name next to
+  the track, or from the file's tags, and nothing is sent anywhere. For everything else the
+  app can look lyrics up on [LRCLIB](https://lrclib.net) (free, open, no API key). A lookup
+  sends the playing track's title, artist and length, so the app asks before the first one
+  and the choice can be changed in Settings; `LYRICS_ONLINE=off` in `.env` turns online
+  lookups off entirely, and `LRCLIB_URL` points at a self-hosted instance.
 
 - **Single-instance by design.** In-memory rate limiting, a local file cache, and local
   SQLite mean this runs as one process (correct for a desktop app; would need Redis/object

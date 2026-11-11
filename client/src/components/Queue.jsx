@@ -2,19 +2,20 @@ import React from 'react';
 import { useMusic } from '../context/hook';
 
 // "Up Next". `theme="dark"` is used inside the Now Playing view; the default
-// light card is the one beside Search and Recently Played.
+// light card is the one beside Search and Recently Played. `heading={false}`
+// leaves the title out where a tab already names the list.
 const THEMES = {
     light: { panel: '#f9f9f9', heading: 'black', rule: '#ddd', row: 'white', rowActive: '#1db95420', text: 'black', empty: '#888', shadow: '0 1px 3px rgba(0,0,0,0.1)' },
     dark: { panel: 'transparent', heading: 'white', rule: '#333', row: '#ffffff0d', rowActive: '#1db95430', text: '#eee', empty: '#999', shadow: 'none' }
 };
 
-export default function Queue({ theme = 'light' }) {
+export default function Queue({ theme = 'light', heading = true }) {
     const { queue, queueIndex, playQueueIndex, removeFromQueue } = useMusic();
     const c = THEMES[theme] || THEMES.light;
 
     return (
         <div style={{ background: c.panel, padding: theme === 'dark' ? 0 : '15px', borderRadius: '8px', height: 'fit-content' }}>
-            <h2 style={{ borderBottom: `1px solid ${c.rule}`, paddingBottom: '10px', marginTop: 0, color: c.heading }}>Up Next</h2>
+            {heading && <h2 style={{ borderBottom: `1px solid ${c.rule}`, paddingBottom: '10px', marginTop: 0, color: c.heading }}>Up Next</h2>}
             
             {!queue || queue.length === 0 ? (
                 <p style={{ color: c.empty, fontStyle: 'italic' }}>Your queue is empty.</p>

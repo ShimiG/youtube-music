@@ -199,7 +199,7 @@ Tests: PKCE challenge, token grants, single-use refresh handling, app-token cach
 | #24 Local file scanning | Stage 6 | **done** (folders, tags, search, direct FLAC/WAV) |
 | #39 Lossless audio (FLAC/WAV) | Stage 6 | **done** (local FLAC/WAV as-is; quality setting for streams) |
 | #29 Persistent controls in an expanded view | Stage 7 | **done** |
-| #30 Lyrics | Stage 7, after #29 | planned |
+| #30 Lyrics | Stage 7, after #29 | **done** (.lrc / tags for local files; LRCLIB, opt-in, for the rest) |
 | #26 Dynamic theming | Stage 7 | planned |
 | #40 Remote control from a phone | Stage 7 | planned, needs a security design |
 | #23 Spotify | Stage 2 | on hold |
@@ -403,10 +403,23 @@ Everything around playback that is not a new source.
   the track area of the bar, closed with its button or Escape; focus moves in
   and back; closed, it is `inert`. One column on narrow windows. Cover art
   falls back to a locally drawn placeholder (no third-party image service).
-- Lyrics (issue #30), as a tab in that view next to the queue: synced lyrics
-  where available (LRC, highlighted in time with playback), plain lyrics as a
-  fallback, and a "No lyrics found" state. Needs a lyrics source whose terms
-  allow this use; decide before building. One to two days.
+- **Lyrics (issue #30): shipped.** A "Lyrics" tab next to "Up Next" in the
+  Now Playing view. Timed lyrics follow the music (the current line is
+  highlighted and kept in the middle; choosing a line jumps to it); lyrics
+  without times are shown as text; "No lyrics found" and "Instrumental" have
+  their own states. Sources, in order (`services/lyrics.js`,
+  `GET /api/lyrics`):
+  1. The user's own files: a `.lrc` file with the same name next to the
+     track, then lyrics in the file's tags. Nothing leaves the computer.
+  2. [LRCLIB](https://lrclib.net), a free, open lyrics database (no API key,
+     no account; self-hostable, `LRCLIB_URL`). A lookup sends the title,
+     artist and length of the playing track, so the app asks first and the
+     choice is a switch in Settings; `LYRICS_ONLINE=off` disables it for the
+     whole installation. Nothing is asked until the Lyrics tab is opened.
+     Answers are cached in the database (`lyrics_cache`; "not found" for a
+     day), and timed lyrics are only used when their length matches the
+     track's, otherwise only the words.
+  Not done: word-by-word highlighting, editing or contributing lyrics.
 - Dynamic theming (issue #26): take the dominant colours of the album art and
   apply them to the player and the expanded view. Thumbnails come from other
   sites, so read the colours on the server (or through a server proxy) rather

@@ -27,3 +27,36 @@ export function setAudioQuality(value) {
 }
 
 export const isDefaultQuality = (value) => value === DEFAULT_QUALITY;
+
+// Online lyrics lookups (issue #30). Lyrics kept with the user's own files are
+// always shown; for everything else the app asks a lyrics server, which means
+// sending it the playing track's title and artist. That needs a yes first:
+// 'ask' until the user decides, then 'on' or 'off'.
+const ONLINE_LYRICS_KEY = 'onlineLyrics';
+const ONLINE_LYRICS_EVENT = 'settings:onlineLyrics';
+let onlineLyricsUnsaved = null; // the choice when storage is unavailable; lasts until reload
+
+export function getOnlineLyrics() {
+    try {
+        const stored = localStorage.getItem(ONLINE_LYRICS_KEY);
+        if (stored === 'on' || stored === 'off') return stored;
+    } catch { /* fall through */ }
+    return onlineLyricsUnsaved || 'ask';
+}
+
+export function setOnlineLyrics(value) {
+    if (value !== 'on' && value !== 'off') return;
+    onlineLyricsUnsaved = value;
+    try { localStorage.setItem(ONLINE_LYRICS_KEY, value); } catch { /* kept in memory only */ }
+    window.dispatchEvent(new Event(ONLINE_LYRICS_EVENT));
+}
+
+/** Calls `onChange` when the choice changes, here or in another window. */
+export function subscribeOnlineLyrics(onChange) {
+    window.addEventListener(ONLINE_LYRICS_EVENT, onChange);
+    window.addEventListener('storage', onChange);
+    return () => {
+        window.removeEventListener(ONLINE_LYRICS_EVENT, onChange);
+        window.removeEventListener('storage', onChange);
+    };
+}

@@ -44,7 +44,8 @@ module.exports = [
                 afterEach: 'readonly',
                 beforeAll: 'readonly',
                 afterAll: 'readonly',
-                jest: 'readonly'
+                jest: 'readonly',
+                Response: 'readonly'
             }
         }
     },

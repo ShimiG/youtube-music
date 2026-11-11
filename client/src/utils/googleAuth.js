@@ -1,4 +1,5 @@
 import { startOAuth } from './desktop';
+import { toast } from './toast';
 
 // Starts the Google connect flow for the logged-in user. The API returns a
 // consent URL tied to our session through the signed `state`. In the browser
@@ -16,5 +17,6 @@ export async function connectGoogle({ scope } = {}) {
         if (!result.ok && result.status !== undefined) throw new Error(result.error || 'Failed to get Google auth URL');
     } catch (err) {
         console.error('Could not start Google connect flow:', err);
+        toast(err.message || 'Could not start connecting YouTube.', { kind: 'error' });
     }
 }

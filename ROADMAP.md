@@ -215,6 +215,13 @@ Tests: PKCE challenge, token grants, single-use refresh handling, app-token cach
 - From 16 Nov 2026: require `purpose: 'session'` on every login token (old
   tokens without it have expired by then).
 - YouTube playback in the installed app is not yet confirmed on a real Mac.
+  Settings → System now shows whether yt-dlp and ffmpeg were found
+  and the server keeps a log file, so the next failure can be diagnosed.
+- Versions in `package.json`, `client/package.json`, `src-tauri/tauri.conf.json`
+  and `src-tauri/Cargo.toml` still say 2.0.1 although v2.1.0 was released;
+  bump them with the next release.
+- Run from source, yt-dlp is not fetched automatically (`bin/` is not in the
+  repository): it must be installed or placed in `bin/` by hand.
 
 ## Stage 2: Spotify and the match engine (on hold)
 

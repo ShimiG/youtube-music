@@ -3,23 +3,31 @@
 const { auth } = require('@googleapis/youtube');
 const jwt = require('jsonwebtoken');
 
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:3000/auth/google/callback';
-
-const { SOURCE_IDS, storeConnection } = require('../services/connections');
+const connections = require('../services/connections');
+const { SOURCE_IDS, storeConnection } = connections;
 const { parseReturnTarget, finishOAuth } = require('../services/oauthReturn');
 
-const oauth2Client = new auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
+const DEFAULT_REDIRECT_URI = 'http://localhost:3000/auth/google/callback';
+const GOOGLE_REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
+const REVOKE_TIMEOUT_MS = 5000;
+
+// Read on every use, not once at start: the credentials can be entered in the
+// app while it runs (Settings -> Accounts, services/appSettings.js).
+const isConfigured = () => Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+const oauthClient = () => new auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.REDIRECT_URI || DEFAULT_REDIRECT_URI
+);
 
 // Returns the Google consent URL for the logged-in user (requireAuth runs first).
 // The callback arrives as a bare browser redirect with no Authorization header,
 // so we carry the userId across in `state` — a short-lived signed token Google
 // echoes back to us untouched.
 const getGoogleAuthUrl = (req, res) => {
-    if (!CLIENT_ID || !CLIENT_SECRET) {
+    if (!isConfigured()) {
         return res.status(503).json({
-            error: 'YouTube is not configured on this server: set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.',
+            error: 'YouTube is not set up on this computer yet. Add its Google credentials under Settings, Accounts.',
             code: 'SOURCE_NOT_CONFIGURED',
             source: 'youtube'
         });
@@ -43,7 +51,7 @@ const getGoogleAuthUrl = (req, res) => {
     ];
     if (req.query.scope === 'write') scope.push('https://www.googleapis.com/auth/youtube');
 
-    const url = oauth2Client.generateAuthUrl({
+    const url = oauthClient().generateAuthUrl({
         access_type: 'offline',
         prompt: 'consent',
         scope,
@@ -74,7 +82,7 @@ const googleCallback = async (req, res, next) => {
     // retrieving access token", which hid database errors behind the wrong cause.
     let tokens;
     try {
-        ({ tokens } = await oauth2Client.getToken(code));
+        ({ tokens } = await oauthClient().getToken(code));
     } catch (error) {
         console.error('Google token exchange failed:', error.message);
         return finishOAuth(res, ret, `google=error&reason=token_exchange`);
@@ -143,4 +151,32 @@ const getConnections = async (req, res, next) => {
     }
 };
 
-module.exports = { getGoogleAuthUrl, googleCallback, getConnections };
+// Disconnects the user's YouTube account: the stored tokens are deleted, and
+// Google is asked (best effort) to revoke the grant so the tokens are dead
+// there too. Revoking either token revokes the whole grant.
+const disconnectGoogle = async (req, res, next) => {
+    try {
+        const db = req.app.locals.db;
+        let stored = null;
+        try {
+            stored = await connections.getConnection(db, req.userId, 'youtube');
+        } catch { /* undecryptable: nothing to revoke, the row is still removed */ }
+        await db.run(`DELETE FROM user_connections WHERE user_id = ? AND source_id = ?`, [req.userId, SOURCE_IDS.youtube]);
+        const token = stored && (stored.refreshToken || stored.accessToken);
+        if (token) {
+            try {
+                await connections.http.fetch(GOOGLE_REVOKE_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ token }),
+                    signal: AbortSignal.timeout(REVOKE_TIMEOUT_MS)
+                });
+            } catch { /* offline, or already revoked: the local copy is gone either way */ }
+        }
+        res.status(204).end();
+    } catch (err) {
+        next(err);
+    }
+};
+
+module.exports = { getGoogleAuthUrl, googleCallback, getConnections, disconnectGoogle };

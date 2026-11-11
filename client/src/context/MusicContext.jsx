@@ -1,6 +1,7 @@
 import {  useState, useRef, useEffect, useCallback } from 'react';
 import { MusicContext } from './hook';
 import { toast } from '../utils/toast';
+import { apiFetch } from '../utils/api';
 import { DEFAULT_SOURCE } from '../utils/services';
 import { mediaUrl, mediaUrlSync, warmMediaToken } from '../utils/media';
 import { artOf } from '../utils/artwork';
@@ -335,12 +336,25 @@ const seek = useCallback((time) => {
             setIsLoading(false);
             setIsPlaying(false);
             const title = currentTrack?.title ? `"${currentTrack.title}"` : 'This track';
-            if (queueIndex < queue.length - 1) {
-                toast(`${title} is unavailable. Skipping to the next track.`, { kind: 'warning' });
-                playNext();
-            } else {
-                toast(`${title} is unavailable right now.`, { kind: 'warning' });
-            }
+            const canSkip = queueIndex < queue.length - 1;
+            const failedLoad = loadSeq.current;
+            // A missing helper program stops every streamed track, so say that
+            // (once) instead of skipping through the whole queue.
+            apiFetch('/api/health')
+                .then(health => ['ytDlp', 'ffmpeg'].filter(name => health.binaries && health.binaries[name] && !health.binaries[name].available))
+                .catch(() => [])
+                .then(missing => {
+                    if (loadSeq.current !== failedLoad) return; // another track was started meanwhile
+                    if (missing.length) {
+                        const names = missing.map(name => (name === 'ytDlp' ? 'yt-dlp' : name)).join(' and ');
+                        toast(`Nothing can play: ${names} was not found on this computer. See Settings, System.`, { kind: 'error', timeoutMs: 12000 });
+                    } else if (canSkip) {
+                        toast(`${title} is unavailable. Skipping to the next track.`, { kind: 'warning' });
+                        playNext();
+                    } else {
+                        toast(`${title} could not be played. Settings, System has the details.`, { kind: 'warning' });
+                    }
+                });
         };
         audio.addEventListener('ended', handleEnded);
         audio.addEventListener('waiting', handleWaiting);

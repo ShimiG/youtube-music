@@ -70,7 +70,10 @@ project folder, as before.
 The server reads `.env` from the working directory, and when packaged also
 from the data folder. On first run it creates `JWT_SECRET` and the
 token-encryption key itself, so the app starts with no setup. To connect
-services, put the credentials in the data folder's `.env`:
+services, enter their credentials in the app (Settings → Accounts; stored
+encrypted in the database, no restart needed), or put them in the data
+folder's `.env` (which then takes precedence and cannot be changed from the
+app):
 
 ```
 GOOGLE_CLIENT_ID=...
@@ -137,13 +140,19 @@ once:
 
 ### First run
 
-1. Start Music Manager once. It creates its data folder (see above) with a
-   settings file, `.env`.
-2. Open that `.env`, fill in `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`,
-   save, and restart the app (Quit from the tray icon, then open it again).
-   Credentials are never built into the installers, because they're public
-   downloads.
-3. Register, then Connect YouTube.
+1. Start Music Manager and register. The first account created on a computer
+   is its owner: the only one that can change service credentials and read
+   the log.
+2. Open Settings → Accounts → Set up YouTube, and paste the Client ID and
+   Client secret of your Google OAuth client (the form shows the redirect
+   address to register on it). Credentials are never built into the
+   installers, because they're public downloads. The `.env` file in the data
+   folder still works instead, if you prefer a file.
+3. Connect YouTube, in the same place.
+
+If nothing plays, Settings → System shows whether yt-dlp and ffmpeg were
+found, and can copy the end of the server's log (`logs/server.log` in the
+data folder), which is kept across restarts.
 
 Until the credentials are set, the app runs but doesn't offer "Connect
 YouTube". The app uses port 3000: quit a development server (`npm run dev`)

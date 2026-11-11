@@ -216,6 +216,16 @@ async function initDB(filename = path.join(dataDir(), 'database.sqlite')) {
         CREATE INDEX IF NOT EXISTS idx_artwork_colors_fetched ON artwork_colors(fetched_at);
     `);
 
+    // Service credentials entered in the app (Settings -> Accounts), encrypted
+    // like the tokens; see services/appSettings.js.
+    await db.exec(`
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+    `);
+
     // Tokens written before encryption at rest existed are rewritten encrypted.
     await migratePlaintextTokens(db);
 

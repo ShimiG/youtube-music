@@ -46,7 +46,7 @@ own and leaves the app working.
 | Spotify | OAuth, 1 h token + refresh | Own and followed playlists | `GET /me/tracks`, like via `PUT /me/tracks` | remote (Spotify Connect) | match | 2 |
 | Apple Music | MusicKit user token (minted in client) | Library playlists (subscribers only) | No loved-songs endpoint; `me/library/songs` stands in, labelled Library Songs | client-sdk (DRM) | match, catalog search only | 4 |
 | Tidal | OAuth PKCE | Own playlists | Favorite tracks endpoint | client-sdk (DRM) | match | 5 |
-| Audius | none, or a public handle | Public playlists | `users/{id}/favorites`, read-only | server-stream, free | same | 6 |
+| Audius | none (search, playback); a public handle or Log in with Audius for the library, later | Public playlists (later) | `users/{id}/favorites`, read-only (later) | server-stream, free | same | **shipped (search + playback)** |
 | Jamendo | app key | none | none without user OAuth | server-stream, free | same | 6 |
 | Deezer | none | none for new apps | none | none supported | match, plus 30 s previews | 6 |
 | Navidrome / Subsonic / Jellyfin | server URL + credentials | Own playlists | Starred (Subsonic) or favorites (Jellyfin) | server-stream | same | 6 |
@@ -339,7 +339,17 @@ Effort: 3 to 4 days.
 
 Quick wins that reuse the provider interface unchanged. Any of these can be pulled forward.
 
-- Audius: open API, `GET /v1/tracks/search` and `GET /v1/tracks/{id}/stream`, no auth. Half a day.
+- **Audius: shipped (search and playback).** `providers/audius.js` and
+  `controllers/audiusController.js`: `GET /v1/tracks/search` (offset paging),
+  `GET /v1/tracks/{id}`, and `GET /v1/tracks/{id}/stream?no_redirect=true`
+  (`&preview=true` for a stream-gated track with a preview; gated tracks
+  without one show "Not streamable"). Audio goes through the shared transcode
+  pipeline (cache key `audius_<id>`, media token, limits). No account or key;
+  `AUDIUS_API_KEY` is optional (higher rate limits). Built against Audius's
+  OpenAPI spec and tested against a local stand-in; the live API was not
+  reachable from the build environment, so the first real search is on a
+  user's machine. Next for Audius: the library (favorites, playlists) via a
+  public handle or Log in with Audius.
 - Jamendo: free app key, Creative Commons catalog, direct stream URLs. Half a day.
 - Deezer (issue #38): public search returns 30 s preview MP3s with no auth;
   there is no user API for new apps. Treat as a catalog source with match;

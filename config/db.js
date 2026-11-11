@@ -28,7 +28,7 @@ async function initDB(filename = path.join(dataDir(), 'database.sqlite')) {
         );
     `);
 
-    await db.run(`INSERT OR IGNORE INTO sources (id, name) VALUES (1, 'youtube'), (2, 'spotify'), (3, 'soundcloud')`);
+    await db.run(`INSERT OR IGNORE INTO sources (id, name) VALUES (1, 'youtube'), (2, 'spotify'), (3, 'soundcloud'), (4, 'audius')`);
 
     // App-level (client_credentials) tokens, one row per provider. SoundCloud
     // rate-limits new client_credentials tokens, so the token survives restarts

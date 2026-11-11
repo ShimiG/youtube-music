@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import { serviceOf } from '../utils/services';
 import AddToPlaylist from './AddToPlaylist';
+import { PLACEHOLDER_ART, artOf } from '../utils/artwork';
 
 // Rows and cards render the normalised Track / Playlist shapes from the
 // library API. Where older rows (history, custom playlists written before
 // Stage 0) still carry legacy field names, the small helpers below accept both.
 const artistOf = (t) => t.artist || t.channelTitle || 'Unknown Artist';
-const artOf = (t) => t.thumbnail || t.image || null;
 
-const PLACEHOLDER_50 = 'https://via.placeholder.com/50?text=🎵';
-const PLACEHOLDER_150 = 'https://via.placeholder.com/150?text=🎵';
+// Drawn locally (utils/artwork.js); no request to a placeholder service.
+const PLACEHOLDER_50 = PLACEHOLDER_ART;
+const PLACEHOLDER_150 = PLACEHOLDER_ART;
 
 // Inline markers a row can carry: an attribution link for sources whose terms
 // require crediting them (declared in the registry), plus the preview /

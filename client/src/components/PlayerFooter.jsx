@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { useMusic } from '../context/hook';
 import { DEFAULT_SOURCE, SERVICES } from '../utils/services';
+import { artOf } from '../utils/artwork';
+import Artwork from './Artwork';
 
 // Seek bar fill per source (issue #28). Unknown sources (and local ones) use
 // the app colour rather than the registry's neutral grey.
 const APP_COLOR = '#1db954';
 const seekColorFor = (source) => (SERVICES[source] && SERVICES[source].color) || APP_COLOR;
 
-export default function PlayerFooter() {
+export default function PlayerFooter({ expanded = false, onToggleExpanded }) {
     const { 
         currentTrack, isPlaying, isLoading, togglePlay, playNext, playPrev, 
         currentTime, duration, volume, updateVolume, toggleMute, seek, isShuffle, toggleShuffle 
@@ -15,6 +17,21 @@ export default function PlayerFooter() {
     
     const [sliderValue, setSliderValue] = useState(0);
     const [isDragging, setIsDragging] = useState(false);
+
+    // Publish the bar's height, so the Now Playing drawer can stop exactly at
+    // its top edge and the controls stay put while the drawer slides.
+    const barRef = useRef(null);
+    const hasTrack = Boolean(currentTrack);
+    useLayoutEffect(() => {
+        const bar = barRef.current;
+        if (!bar) return undefined;
+        const publish = () => document.documentElement.style.setProperty('--player-height', `${bar.offsetHeight}px`);
+        publish();
+        if (typeof ResizeObserver === 'undefined') return undefined;
+        const observer = new ResizeObserver(publish);
+        observer.observe(bar);
+        return () => observer.disconnect();
+    }, [hasTrack]);
 
 
     const formatTime = (seconds) => {
@@ -31,14 +48,24 @@ export default function PlayerFooter() {
     const seekColor = seekColorFor(currentTrack.source || DEFAULT_SOURCE);
 
     return (
-        <div className="player-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', background: '#181818', color: 'white', position: 'fixed', bottom: 0, left: 0, right: 0 }}>
+        <div ref={barRef} className="player-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', background: '#181818', color: 'white', position: 'fixed', bottom: 0, left: 0, right: 0 }}>
             {/* Track Info */}
-            <div style={{ display: 'flex', alignItems: 'center', width: '30%' }}>
-                <img src={currentTrack.thumbnail || currentTrack.image} style={{width: 50, height: 50, borderRadius: 4, marginRight: 15}} alt="Album Art" />
-                <div>
-                    <div style={{ fontWeight: 'bold' }}>{currentTrack.title}</div>
-                    <div style={{ fontSize: '0.8em', color: '#aaa' }}>{currentTrack.channelTitle || currentTrack.artist}</div>
-                </div>
+            <div style={{ display: 'flex', alignItems: 'center', width: '30%', minWidth: 0 }}>
+                <button
+                    type="button"
+                    className="player-track-button"
+                    onClick={onToggleExpanded}
+                    aria-expanded={expanded}
+                    aria-label={expanded ? 'Close Now Playing' : 'Open Now Playing'}
+                    title={expanded ? 'Close Now Playing' : 'Open Now Playing'}
+                >
+                    <Artwork src={artOf(currentTrack)} alt="" style={{ width: 50, height: 50, borderRadius: 4, objectFit: 'cover', flexShrink: 0 }} />
+                    <span className="player-track-text">
+                        <div style={{ fontWeight: 'bold' }}>{currentTrack.title}</div>
+                        <div style={{ fontSize: '0.8em', color: '#aaa' }}>{currentTrack.channelTitle || currentTrack.artist}</div>
+                    </span>
+                    <svg className="chevron" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M7.4 15.4 12 10.800l4.600 4.600L18 14l-6-6-6 6z" /></svg>
+                </button>
             </div>
             
             {/* Controls & Seek Bar */}

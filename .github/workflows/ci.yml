@@ -10,12 +10,20 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request replaces the run for the previous one.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Every job has a time limit. Without one a stalled step (a package mirror
+# that stops answering, say) holds the check for GitHub's default 6 hours.
 jobs:
   backend:
     # Stage 3: the desktop app ships for macOS and Windows, so the server
     # (native sqlite3, ffmpeg-static, path handling) is tested on both, plus Linux.
     name: backend (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -104,6 +112,7 @@ jobs:
 
   client:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout Code
         uses: actions/checkout@v5
@@ -136,14 +145,20 @@ jobs:
     # needs the server executable and a signing setup; `cargo clippy` checks
     # the Rust code, the config, capabilities and plugin wiring in ~3 minutes.
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout Code
         uses: actions/checkout@v5
 
+      # Normally under a minute. Connections that stall are dropped after 30 s
+      # and retried, nothing may wait for input, and the step gives up after
+      # 8 minutes: this step once hung for an hour and a half on a mirror.
       - name: Install Tauri system libraries
+        timeout-minutes: 8
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          APT="sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=120"
+          $APT update
+          $APT install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
       # tauri-build checks that the bundled binaries and the frontend exist;
       # placeholders are enough for a compile check.

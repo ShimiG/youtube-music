@@ -21,6 +21,7 @@ const libraryController = require('./controllers/libraryController');
 const matchController = require('./controllers/matchController');
 const localController = require('./controllers/localController');
 const lyricsController = require('./controllers/lyricsController');
+const artworkController = require('./controllers/artworkController');
 
 const app = express();
 
@@ -65,6 +66,8 @@ const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
 const matchResolveLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 120 });
 // One lyrics request per track played; a lookup may call the lyrics server.
 const lyricsLimiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
+// One per track played; each new cover costs a download and an ffmpeg run.
+const artworkLimiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
 
 // Apply the baseline limiter to every route (defined before the routes so it
 // sits in front of them all).
@@ -143,6 +146,11 @@ app.delete('/api/local/folders/:id', requireAuth, localController.removeFolder);
 // --- Lyrics (issue #30): from the user's own files, or looked up online when
 // the client says the user agreed (services/lyrics.js). ---
 app.get('/api/lyrics', requireAuth, lyricsLimiter, lyricsController.getLyrics);
+
+// --- Theme colours from the playing track's cover (issue #26). The server
+// reads the image because the browser may not read another site's pixels;
+// services/artworkColors.js keeps that fetch away from private addresses. ---
+app.get('/api/artwork/colors', requireAuth, artworkLimiter, artworkController.getColors);
 
 // --- Match engine (Stage 2). Tracks of a match-mode source (Spotify) must be
 // matched to an official YouTube video before they can play; these routes read,

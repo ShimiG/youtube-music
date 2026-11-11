@@ -60,3 +60,36 @@ export function subscribeOnlineLyrics(onChange) {
         window.removeEventListener('storage', onChange);
     };
 }
+
+// Dynamic theming (issue #26): the player bar and the Now Playing view take
+// their colours from the playing track's cover. On unless turned off.
+const DYNAMIC_THEME_KEY = 'dynamicTheme';
+const DYNAMIC_THEME_EVENT = 'settings:dynamicTheme';
+let dynamicThemeUnsaved = null; // the choice when storage is unavailable; lasts until reload
+
+export function getDynamicTheme() {
+    try {
+        return localStorage.getItem(DYNAMIC_THEME_KEY) !== 'off';
+    } catch {
+        return dynamicThemeUnsaved ?? true;
+    }
+}
+
+export function setDynamicTheme(on) {
+    dynamicThemeUnsaved = Boolean(on);
+    try {
+        if (on) localStorage.removeItem(DYNAMIC_THEME_KEY);
+        else localStorage.setItem(DYNAMIC_THEME_KEY, 'off');
+    } catch { /* kept in memory only */ }
+    window.dispatchEvent(new Event(DYNAMIC_THEME_EVENT));
+}
+
+/** Calls `onChange` when the choice changes, here or in another window. */
+export function subscribeDynamicTheme(onChange) {
+    window.addEventListener(DYNAMIC_THEME_EVENT, onChange);
+    window.addEventListener('storage', onChange);
+    return () => {
+        window.removeEventListener(DYNAMIC_THEME_EVENT, onChange);
+        window.removeEventListener('storage', onChange);
+    };
+}

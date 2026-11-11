@@ -203,6 +203,19 @@ async function initDB(filename = path.join(dataDir(), 'database.sqlite')) {
         CREATE INDEX IF NOT EXISTS idx_lyrics_cache_fetched ON lyrics_cache(fetched_at);
     `);
 
+    // Dominant colour of cover images (issue #26), so each cover is downloaded
+    // and read once. Keyed by a hash of the image URL; "none" marks an image
+    // without colour (services/artworkColors.js).
+    await db.exec(`
+        CREATE TABLE IF NOT EXISTS artwork_colors (
+            url_hash TEXT PRIMARY KEY,
+            status TEXT NOT NULL,               -- ok | none
+            color TEXT,                         -- #rrggbb when ok
+            fetched_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_artwork_colors_fetched ON artwork_colors(fetched_at);
+    `);
+
     // Tokens written before encryption at rest existed are rewritten encrypted.
     await migratePlaintextTokens(db);
 

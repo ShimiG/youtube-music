@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
 import { useMusic } from '../context/hook';
+import { DEFAULT_SOURCE, SERVICES } from '../utils/services';
+
+// Seek bar fill per source (issue #28). Unknown sources (and local ones) use
+// the app colour rather than the registry's neutral grey.
+const APP_COLOR = '#1db954';
+const seekColorFor = (source) => (SERVICES[source] && SERVICES[source].color) || APP_COLOR;
 
 export default function PlayerFooter() {
     const { 
@@ -19,6 +25,10 @@ export default function PlayerFooter() {
     };
 
     if (!currentTrack) return null;
+
+    const shownTime = isDragging ? sliderValue : (currentTime || 0);
+    const playedPct = duration ? Math.min(100, Math.max(0, (shownTime / duration) * 100)) : 0;
+    const seekColor = seekColorFor(currentTrack.source || DEFAULT_SOURCE);
 
     return (
         <div className="player-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', background: '#181818', color: 'white', position: 'fixed', bottom: 0, left: 0, right: 0 }}>
@@ -53,7 +63,7 @@ export default function PlayerFooter() {
                     <span style={{ fontSize: '12px', minWidth: '35px', textAlign: 'right', color: '#b3b3b3' }}>
                         {formatTime(isDragging ? sliderValue : currentTime)}
                     </span>
-                    <input type="range" min="0" max={duration || 0} step="any" value={isDragging ? sliderValue : (currentTime || 0)} disabled={!duration} onMouseDown={() => setIsDragging(true)} onTouchStart={() => setIsDragging(true)} onChange={(e) => setSliderValue(Number(e.target.value))} onMouseUp={() => { setIsDragging(false); seek(sliderValue); }} onTouchEnd={() => { setIsDragging(false); seek(sliderValue); }} style={{ flex: 1, cursor: 'pointer', accentColor: '#1db954' }} />
+                    <input type="range" className="seek-slider" aria-label="Seek" min="0" max={duration || 0} step="any" value={shownTime} disabled={!duration} onMouseDown={() => setIsDragging(true)} onTouchStart={() => setIsDragging(true)} onChange={(e) => setSliderValue(Number(e.target.value))} onMouseUp={() => { setIsDragging(false); seek(sliderValue); }} onTouchEnd={() => { setIsDragging(false); seek(sliderValue); }} style={{ '--seek-color': seekColor, '--seek-pct': `${playedPct}%` }} data-source={currentTrack.source || DEFAULT_SOURCE} />
                     <span style={{ fontSize: '12px', minWidth: '35px', color: '#b3b3b3' }}>{formatTime(duration)}</span>
                 </div>
             </div>

@@ -11,7 +11,7 @@ const { SourceError } = require('./errors');
 const { encrypt, decrypt } = require('./tokenCrypto');
 const soundcloudTokens = require('../controllers/soundcloud/tokens');
 
-const SOURCE_IDS = { youtube: 1, spotify: 2, soundcloud: 3, audius: 4, deezer: 5 }; // sources.id, see config/db.js
+const SOURCE_IDS = { youtube: 1, spotify: 2, soundcloud: 3, audius: 4, deezer: 5, local: 6 }; // sources.id, see config/db.js
 
 // Treat a token as expired a little early so a request never dies mid-flight.
 const EXPIRY_SKEW_MS = 60 * 1000;

@@ -19,6 +19,7 @@ const { getHealth } = require('./services/health');
 const soundcloudController = require('./controllers/soundcloudController');
 const libraryController = require('./controllers/libraryController');
 const matchController = require('./controllers/matchController');
+const localController = require('./controllers/localController');
 
 const app = express();
 
@@ -127,6 +128,14 @@ app.delete('/api/library/:source/liked/:id', requireAuth, sourceToken(), library
 // Search runs the token lookup in optional mode: some sources (SoundCloud) can
 // search public content without the user's own token.
 app.get('/api/search/:source', requireAuth, sourceToken(null, { optional: true }), libraryController.search);
+
+// --- Local files (issue #24): the folders a user plays music from. Adding a
+// folder starts a background scan; tracks then appear under source=local in
+// the Library and Search. ---
+app.get('/api/local/folders', requireAuth, localController.listFolders);
+app.post('/api/local/folders', requireAuth, requireExistingUser, localController.addFolder);
+app.post('/api/local/folders/:id/rescan', requireAuth, localController.rescanFolder);
+app.delete('/api/local/folders/:id', requireAuth, localController.removeFolder);
 
 // --- Match engine (Stage 2). Tracks of a match-mode source (Spotify) must be
 // matched to an official YouTube video before they can play; these routes read,

@@ -63,7 +63,7 @@ describe('initDB on a real file', () => {
         expect((await db.get('PRAGMA journal_mode')).journal_mode).toBe('wal');
         expect((await db.get('PRAGMA foreign_keys')).foreign_keys).toBe(1);
         const sources = await db.all('SELECT name FROM sources ORDER BY id');
-        expect(sources.map((s) => s.name)).toEqual(['youtube', 'spotify', 'soundcloud', 'audius', 'deezer']);
+        expect(sources.map((s) => s.name)).toEqual(['youtube', 'spotify', 'soundcloud', 'audius', 'deezer', 'local']);
         const historyCols = (await db.all('PRAGMA table_info(history)')).map((c) => c.name);
         expect(historyCols).toEqual(expect.arrayContaining(['title', 'artist', 'thumbnail']));
         await db.close();

@@ -58,6 +58,9 @@ initDB()
             console.log(`Using ffmpeg: ${require('./services/paths').resolveFfmpeg()}`);
             // Remove stale .part files, migrate legacy cache names, apply the size cap.
             prepareCache().catch((err) => console.warn('Cache housekeeping failed:', err.message));
+            // Pick up music added or removed in local folders while the app was closed.
+            require('./services/localLibrary').rescanAll(db)
+                .catch((err) => console.warn('Local files: rescan at startup failed:', err.message));
             // Best-effort, in the background: a stale yt-dlp is the usual reason
             // YouTube or SoundCloud playback stops working.
             updateYtDlp();

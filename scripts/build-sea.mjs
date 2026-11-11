@@ -82,6 +82,9 @@ await esbuild.build({
     target: 'node22',
     format: 'cjs',
     external: ['ffmpeg-static'],
+    // music-metadata (local file tags) is ESM-only; `module-sync` is the export
+    // Node itself uses when CommonJS require()s it.
+    conditions: ['module-sync'],
     legalComments: 'external',
     logLevel: 'warning'
 });

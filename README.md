@@ -1,6 +1,7 @@
 # Music Manager
 
-A desktop music player that plays **YouTube**, **SoundCloud**, **Audius** and **Deezer**. A React UI runs
+A desktop music player that plays **YouTube**, **SoundCloud**, **Audius**, **Deezer** and
+**music files on your computer** (MP3, M4A, FLAC, WAV, OGG, Opus…). A React UI runs
 inside a **Tauri** desktop window and talks to a local **Node/Express** API, which
 resolves audio (YouTube via `yt-dlp`, SoundCloud via its official API, Audius via its
 open API, no account needed; Deezer tracks through a YouTube match, or Deezer's 30 s

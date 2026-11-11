@@ -8,7 +8,8 @@ import { paths, serviceOf } from '../utils/services';
 //
 //   name, label, capabilities, connected, expiresAt     from the server
 //   connect: { required, kind, available }              from the server
-//   icon, color, connectLabel, attribution, local       from the registry
+//   icon, color, connectLabel, attribution, local,
+//   manageFolders                                       from the registry
 //   connectAction: () => void | null                    the registry's connect flow
 export function useSources() {
     // null while the first load is in flight; [] when logged out.
@@ -27,6 +28,7 @@ export function useSources() {
                         connectLabel: visuals.connectLabel || `Connect ${s.label}`,
                         attribution: visuals.attribution || null,
                         local: Boolean(visuals.local),
+                        manageFolders: Boolean(visuals.manageFolders),
                         connectAction: typeof visuals.connect === 'function' ? visuals.connect : null
                     };
                 });

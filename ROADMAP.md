@@ -196,8 +196,8 @@ Tests: PKCE challenge, token grants, single-use refresh handling, app-token cach
 | #28 Source-aware seek bar colour | Stage 0, catch-up | next |
 | #27 List virtualization | Stage 0, catch-up | next |
 | #38 Deezer | Stage 6 | **done** (search; full track via match, else preview) |
-| #24 Local file scanning | Stage 6 | planned |
-| #39 Lossless audio (FLAC/WAV) | Stage 6, after #24 | planned |
+| #24 Local file scanning | Stage 6 | **done** (folders, tags, search, direct FLAC/WAV) |
+| #39 Lossless audio (FLAC/WAV) | Stage 6 | partly done (local FLAC/WAV play as-is; quality setting open) |
 | #29 Persistent controls in an expanded view | Stage 7 | planned |
 | #30 Lyrics | Stage 7, after #29 | planned |
 | #26 Dynamic theming | Stage 7 | planned |
@@ -364,16 +364,24 @@ Quick wins that reuse the provider interface unchanged. Any of these can be pull
   against real recorded Deezer responses and tested against a local stand-in;
   the live API was not reachable from the build environment.
 - Navidrome, Subsonic, Jellyfin: user enters server URL and credentials as a connection; the server proxies their stream endpoints. One to two days.
-- Local files (issue #24): a `local` provider over folders the user picks.
-  A scanner reads tags (title, artist, album, duration, embedded art) into
-  the database and rescans on demand; playback reads the file directly, with
-  no yt-dlp. The folder list lives in settings; paths outside those folders
-  are refused. One to two days.
+- **Local files (issue #24): shipped.** A `local` source over folders the
+  user adds in the Library (folder panel: add by path, rescan, remove).
+  `services/localLibrary.js` scans in the background (no symlinks followed,
+  hidden entries skipped, at most 50,000 files and 20 levels per folder),
+  reads tags with `music-metadata` (title, artist, album, track number,
+  duration, codec; file name when untagged), rescans incrementally (size +
+  mtime) and again at every startup. Each folder is a playlist; search covers
+  title, artist and album. Playback (`controllers/localController.js`) is by
+  track id, scoped to the user, and re-checks that the file's real path is
+  still inside its folder; MP3, M4A, AAC, FLAC and WAV are sent as they are
+  (HTTP range, native seeking), other formats (OGG, Opus, AIFF, WMA) and any
+  unbuffered seek go through ffmpeg. Not yet: album art (embedded covers are
+  skipped for now) and a native folder picker in the desktop app.
 - Lossless (issue #39), after local files: YouTube and SoundCloud only stream
   lossy audio, so lossless means local FLAC/WAV (and later Navidrome /
-  Jellyfin). Serve those files as they are (with HTTP range) instead of
-  transcoding to 128 kbps MP3, and add a quality setting for the transcode
-  path. Check that WKWebView (macOS) plays FLAC; if not, transcode to ALAC
+  Jellyfin). **Partly done with local files:** FLAC and WAV are already served
+  as they are, in original quality. Still open: a quality setting for the
+  transcode path (128 kbps today). Check that WKWebView (macOS) plays FLAC; if not, transcode to ALAC
   or WAV there. One to two days.
 
 ## Stage 7: Player experience

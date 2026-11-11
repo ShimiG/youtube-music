@@ -366,6 +366,8 @@ Quick wins that reuse the provider interface unchanged. Any of these can be pull
 - Navidrome, Subsonic, Jellyfin: user enters server URL and credentials as a connection; the server proxies their stream endpoints. One to two days.
 - **Local files (issue #24): shipped.** A `local` source over folders the
   user adds in the Library (folder panel: add by path, rescan, remove).
+  Folders must be inside the home folder or on another drive / mounted
+  volume (`LOCAL_MUSIC_ROOTS` allows more); folder names are not restricted.
   `services/localLibrary.js` scans in the background (no symlinks followed,
   hidden entries skipped, at most 50,000 files and 20 levels per folder),
   reads tags with `music-metadata` (title, artist, album, track number,

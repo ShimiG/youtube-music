@@ -53,6 +53,54 @@ function expandHome(input) {
     return input;
 }
 
+// --- Where folders may be -----------------------------------------------------------
+//
+// A music folder is, by design, a path the user chooses on their own computer.
+// It is still confined: it must be inside the user's home folder, on another
+// drive or mounted volume, or under a root listed in LOCAL_MUSIC_ROOTS
+// (separated by the platform's path delimiter). System locations and other
+// users' folders are refused, so an abused session cannot make the server
+// index, say, /etc or C:\Windows. The check is made twice: on the typed path
+// before the filesystem is touched, and on the real path after symlinks are
+// resolved (a link inside an allowed root that points outside is refused).
+//
+// Characters are deliberately not restricted beyond control characters:
+// folder names legitimately contain spaces, parentheses, apostrophes, `&`,
+// `~` (Windows short names) and non-Latin letters.
+
+// Windows and macOS file systems are case-insensitive by default.
+const CASE_INSENSITIVE = process.platform === 'win32' || process.platform === 'darwin';
+const fold = (p) => (CASE_INSENSITIVE ? p.toLowerCase() : p);
+const isInsideRoot = (child, root) => isInside(fold(child), fold(root));
+
+function configuredRoots() {
+    const roots = [os.homedir()];
+    if (process.platform === 'darwin') roots.push('/Volumes');
+    else if (process.platform !== 'win32') roots.push('/media', '/mnt', '/run/media');
+    for (const extra of String(process.env.LOCAL_MUSIC_ROOTS || '').split(path.delimiter)) {
+        if (extra.trim() && path.isAbsolute(extra.trim())) roots.push(path.resolve(extra.trim()));
+    }
+    return roots;
+}
+
+// On Windows, any drive or network share other than the system drive.
+function isOtherWindowsDrive(candidate) {
+    if (process.platform !== 'win32') return false;
+    const systemRoot = path.parse(path.resolve(process.env.SystemDrive ? `${process.env.SystemDrive}\\` : 'C:\\')).root;
+    const root = path.parse(candidate).root;
+    return Boolean(root) && fold(root) !== fold(systemRoot);
+}
+
+function isAllowedLocation(candidate, roots) {
+    if (isOtherWindowsDrive(candidate)) return true;
+    for (const root of roots) {
+        if (isInsideRoot(candidate, root)) return true;
+    }
+    return false;
+}
+
+const NOT_ALLOWED_MESSAGE = 'Choose a folder inside your home folder or on another drive. Other locations can be allowed with LOCAL_MUSIC_ROOTS.';
+
 /** Validates a folder the user typed and returns its real path. */
 async function resolveFolder(input) {
     if (typeof input !== 'string' || !input.trim() || input.length > MAX_PATH_LENGTH) {
@@ -61,19 +109,17 @@ async function resolveFolder(input) {
     // eslint-disable-next-line no-control-regex
     if (/[\u0000-\u001f]/.test(input)) throw new LocalError('LOCAL_BAD_PATH', 'That path contains invalid characters.');
     const expanded = expandHome(input.trim());
-    // Reject explicit traversal segments in user-provided input.
-    const parts = expanded.split(/[\\/]+/).filter(Boolean);
-    if (parts.some((p) => p === '.' || p === '..')) {
-        throw new LocalError('LOCAL_BAD_PATH', 'Relative path segments are not allowed.');
-    }
-    // Conservative allowlist for path characters.
-    if (!/^[a-zA-Z0-9 _.\-:/\\]+$/.test(expanded)) {
-        throw new LocalError('LOCAL_BAD_PATH', 'That path contains invalid characters.');
-    }
     if (!path.isAbsolute(expanded)) throw new LocalError('LOCAL_BAD_PATH', 'Use a full path, for example ~/Music or /Users/you/Music.');
+
+    // Normalise first (this also folds any "." and ".." segments), then check
+    // the location before touching the filesystem.
+    const resolved = path.resolve(expanded);
+    const roots = configuredRoots();
+    if (!isAllowedLocation(resolved, roots)) throw new LocalError('LOCAL_NOT_ALLOWED', NOT_ALLOWED_MESSAGE, 403);
+
     let real;
     try {
-        real = await fs.promises.realpath(expanded);
+        real = await fs.promises.realpath(resolved);
         const st = await fs.promises.stat(real);
         if (!st.isDirectory()) throw new LocalError('LOCAL_NOT_A_FOLDER', 'That path is not a folder.');
     } catch (err) {
@@ -81,6 +127,11 @@ async function resolveFolder(input) {
         throw new LocalError('LOCAL_NOT_FOUND', 'That folder does not exist or cannot be read.');
     }
     if (path.parse(real).root === real) throw new LocalError('LOCAL_BAD_PATH', 'Choose a folder, not the whole disk.');
+
+    // Again on the real path, against the roots' own real paths: a symlink
+    // inside an allowed root must not lead out of every allowed root.
+    const realRoots = (await Promise.all(roots.map((r) => fs.promises.realpath(r).catch(() => null)))).filter(Boolean);
+    if (!isAllowedLocation(real, realRoots)) throw new LocalError('LOCAL_NOT_ALLOWED', NOT_ALLOWED_MESSAGE, 403);
     return real;
 }
 

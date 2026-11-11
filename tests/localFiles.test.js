@@ -15,6 +15,11 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const { withMedia } = require('./helpers/media');
 
+// The product resolves paths with fs.promises.realpath (the native call). On
+// Windows that expands short names such as RUNNER~1, which plain
+// fs.realpathSync does not, so the tests must use the native variant too.
+const realOf = (p) => fs.realpathSync.native(p);
+
 let tmp;
 let music;
 let db;
@@ -42,6 +47,8 @@ beforeEach(async () => {
     music = path.join(tmp, 'Music');
     fs.mkdirSync(music);
     process.env.MUSIC_DATA_DIR = path.join(tmp, 'data');
+    // Temp folders are outside the home folder; allow this test's own.
+    process.env.LOCAL_MUSIC_ROOTS = tmp;
     jest.resetModules();
     parseMock = jest.fn(async (file) => {
         const name = path.basename(file);
@@ -66,6 +73,7 @@ afterEach(async () => {
     await db.close();
     fs.rmSync(tmp, { recursive: true, force: true });
     delete process.env.MUSIC_DATA_DIR;
+    delete process.env.LOCAL_MUSIC_ROOTS;
 });
 
 const lib = () => require('../services/localLibrary');
@@ -78,13 +86,54 @@ const addAndScan = async (userId = 1, folder = music) => {
 describe('adding folders', () => {
     it('stores the real path and refuses relative paths, missing folders, files and the disk root', async () => {
         const real = await lib().resolveFolder(music);
-        expect(real).toBe(fs.realpathSync(music));
+        expect(real).toBe(realOf(music));
         await expect(lib().resolveFolder('Music')).rejects.toMatchObject({ code: 'LOCAL_BAD_PATH' });
         await expect(lib().resolveFolder(path.join(tmp, 'nope'))).rejects.toMatchObject({ code: 'LOCAL_NOT_FOUND' });
         write('file.mp3');
         await expect(lib().resolveFolder(path.join(music, 'file.mp3'))).rejects.toMatchObject({ code: 'LOCAL_NOT_A_FOLDER' });
-        await expect(lib().resolveFolder(path.parse(tmp).root)).rejects.toMatchObject({ code: 'LOCAL_BAD_PATH' });
+        // The disk root is refused: as a location, or as "not a folder to pick".
+        await expect(lib().resolveFolder(path.parse(tmp).root)).rejects.toMatchObject({ code: expect.stringMatching(/^LOCAL_(NOT_ALLOWED|BAD_PATH)$/) });
         await expect(lib().resolveFolder('/tmp/a\u0000b')).rejects.toMatchObject({ code: 'LOCAL_BAD_PATH' });
+    });
+
+    it('accepts ordinary folder names: spaces, parentheses, apostrophes, &, ~ and non-Latin letters', async () => {
+        for (const name of ["Rock & Roll (2024)", "Guns N' Roses", 'RUNNER~1', 'מוזיקה', 'Björk – Homogenic', 'a, b + c']) {
+            const dir = path.join(tmp, name);
+            fs.mkdirSync(dir);
+            await expect(lib().resolveFolder(dir)).resolves.toBe(realOf(dir));
+        }
+        // "." and ".." are simply normalised away.
+        await expect(lib().resolveFolder(path.join(music, '..', 'Music', '.'))).resolves.toBe(realOf(music));
+    });
+
+    it('refuses folders outside the allowed locations, including through a symlink', async () => {
+        const allowed = path.join(tmp, 'Allowed');
+        const outside = path.join(tmp, 'Outside');
+        fs.mkdirSync(allowed);
+        fs.mkdirSync(outside);
+        process.env.LOCAL_MUSIC_ROOTS = allowed;
+
+        await expect(lib().resolveFolder(outside)).rejects.toMatchObject({ code: 'LOCAL_NOT_ALLOWED', status: 403 });
+        // A sibling whose name merely starts with the root's name is outside too.
+        fs.mkdirSync(path.join(tmp, 'Allowed-not'));
+        await expect(lib().resolveFolder(path.join(tmp, 'Allowed-not'))).rejects.toMatchObject({ code: 'LOCAL_NOT_ALLOWED' });
+        // ".." cannot be used to climb out.
+        await expect(lib().resolveFolder(path.join(allowed, '..', 'Outside'))).rejects.toMatchObject({ code: 'LOCAL_NOT_ALLOWED' });
+        // A link inside the allowed root that points outside is refused on its
+        // real path. (On Windows the temp folder is itself inside the home
+        // folder, which is always allowed, so the case cannot be built there.)
+        const tmpIsInHome = realOf(tmp).toLowerCase().startsWith(realOf(os.homedir()).toLowerCase() + path.sep);
+        if (!tmpIsInHome) {
+            fs.symlinkSync(outside, path.join(allowed, 'link'));
+            await expect(lib().resolveFolder(path.join(allowed, 'link'))).rejects.toMatchObject({ code: 'LOCAL_NOT_ALLOWED' });
+        }
+        // Inside the root is fine, and the home folder is always allowed.
+        fs.mkdirSync(path.join(allowed, 'Albums'));
+        await expect(lib().resolveFolder(path.join(allowed, 'Albums'))).resolves.toBe(realOf(path.join(allowed, 'Albums')));
+        await expect(lib().resolveFolder('~')).resolves.toBe(realOf(os.homedir()));
+        const res = await request(app).post('/api/local/folders').set(auth).send({ path: outside });
+        expect(res.statusCode).toBe(403);
+        expect(res.body.code).toBe('LOCAL_NOT_ALLOWED');
     });
 
     it('treats a symlinked alias of an added folder as a duplicate', async () => {
@@ -220,8 +269,8 @@ describe('playback (/stream?source=local)', () => {
         await request(app).get(withMedia(`/stream?source=local&videoId=${ids['three.ogg']}`));
         await request(app).get(withMedia(`/stream?source=local&videoId=${ids['one.mp3']}&seek=42`));
         const [ogg, seek] = mockStreamTranscoded.mock.calls.map((c) => c[2]);
-        expect(ogg).toMatchObject({ sourceUrl: `file:${fs.realpathSync(path.join(music, 'three.ogg'))}`, seekTime: 0, allowCache: false });
-        expect(seek).toMatchObject({ sourceUrl: `file:${fs.realpathSync(path.join(music, 'one.mp3'))}`, seekTime: 42 });
+        expect(ogg).toMatchObject({ sourceUrl: `file:${realOf(path.join(music, 'three.ogg'))}`, seekTime: 0, allowCache: false });
+        expect(seek).toMatchObject({ sourceUrl: `file:${realOf(path.join(music, 'one.mp3'))}`, seekTime: 42 });
     });
 
     it("refuses another user's track", async () => {

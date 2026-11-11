@@ -190,6 +190,46 @@
 .volume-slider:hover::-webkit-slider-thumb {
   background: #1db954; /* Turns green when grabbing */
 }
+/* Seek bar (components/PlayerFooter.jsx). The filled part takes the playing
+   track's source colour (issue #28): --seek-color comes from the service
+   registry, --seek-pct is the played fraction. Drawn with a gradient so it
+   looks the same in Chromium (Windows) and WebKit (macOS). */
+.seek-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  background: linear-gradient(to right, var(--seek-color, #1db954) var(--seek-pct, 0%), #4d4d4d var(--seek-pct, 0%));
+}
+.seek-slider:disabled { cursor: default; opacity: 0.6; }
+.seek-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.seek-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.seek-slider:hover::-webkit-slider-thumb,
+.seek-slider:focus-visible::-webkit-slider-thumb { opacity: 1; }
+.seek-slider:hover::-moz-range-thumb,
+.seek-slider:focus-visible::-moz-range-thumb { opacity: 1; }
+.seek-slider:focus-visible { box-shadow: 0 0 0 2px #ffffff55; }
+
 /* Toasts (components/Toaster.jsx) */
 .toaster {
     position: fixed;

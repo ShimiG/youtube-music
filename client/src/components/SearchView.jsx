@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { TrackRow } from './SharedUI';
 import SourcePicker from './SourcePicker';
+import VirtualList from './VirtualList';
 import { useMusic } from '../context/hook';
 import { useSources } from '../hooks/useSources';
 import { useSearch } from '../hooks/useLibrary';
@@ -86,9 +87,13 @@ export default function SearchView() {
                 <h2 style={{ borderBottom: '1px solid #333', paddingBottom: '10px', marginTop: 0 }}>Search Results</h2>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', marginTop: '10px' }}>
-                {search.items.map(track => (
-                    <TrackRow key={`search-${track.source}-${track.id}`} track={track} onPlay={playTrack} onQueue={addToQueue} onLike={onLike} canAddToPlaylist imageSize={60} />
-                ))}
+                <VirtualList
+                    items={search.items}
+                    rowHeight={81}
+                    renderRow={(track) => (
+                        <TrackRow key={`search-${track.source}-${track.id}`} track={track} onPlay={playTrack} onQueue={addToQueue} onLike={onLike} canAddToPlaylist imageSize={60} />
+                    )}
+                />
             </div>
 
             {search.loading && <p style={{ color: '#888', textAlign: 'center' }}>Searching…</p>}

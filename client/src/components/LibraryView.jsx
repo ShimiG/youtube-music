@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { PlaylistCard, TrackRow } from './SharedUI';
 import SourcePicker from './SourcePicker';
+import VirtualList from './VirtualList';
 import { useMusic } from '../context/hook';
 import { useSources } from '../hooks/useSources';
 import { useLibrary, usePlaylistTracks } from '../hooks/useLibrary';
@@ -223,9 +224,15 @@ export default function LibraryView() {
 
             <div style={{ display: 'flex', flexDirection: 'column' }}>
                 {renderError(tracks.error, service, tracks.reload)}
-                {!tracks.error && tracks.items.map((track, index) => (
-                    <TrackRow key={`pl-track-${track.source}-${track.id}-${index}`} track={track} onPlay={playTrack} onQueue={addToQueue} onLike={onLike} onUnlike={onUnlike} canAddToPlaylist={selectedPlaylist.source !== 'custom'} />
-                ))}
+                {!tracks.error && (
+                    <VirtualList
+                        items={tracks.items}
+                        rowHeight={71}
+                        renderRow={(track, index) => (
+                            <TrackRow key={`pl-track-${track.source}-${track.id}-${index}`} track={track} onPlay={playTrack} onQueue={addToQueue} onLike={onLike} onUnlike={onUnlike} canAddToPlaylist={selectedPlaylist.source !== 'custom'} />
+                        )}
+                    />
+                )}
                 {!tracks.error && tracks.loading && tracks.items.length === 0 && (
                     <div style={{ textAlign: 'center', padding: '20px', color: '#888' }}>Loading tracks...</div>
                 )}

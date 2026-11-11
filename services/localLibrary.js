@@ -61,6 +61,15 @@ async function resolveFolder(input) {
     // eslint-disable-next-line no-control-regex
     if (/[\u0000-\u001f]/.test(input)) throw new LocalError('LOCAL_BAD_PATH', 'That path contains invalid characters.');
     const expanded = expandHome(input.trim());
+    // Reject explicit traversal segments in user-provided input.
+    const parts = expanded.split(/[\\/]+/).filter(Boolean);
+    if (parts.some((p) => p === '.' || p === '..')) {
+        throw new LocalError('LOCAL_BAD_PATH', 'Relative path segments are not allowed.');
+    }
+    // Conservative allowlist for path characters.
+    if (!/^[a-zA-Z0-9 _.\-:/\\]+$/.test(expanded)) {
+        throw new LocalError('LOCAL_BAD_PATH', 'That path contains invalid characters.');
+    }
     if (!path.isAbsolute(expanded)) throw new LocalError('LOCAL_BAD_PATH', 'Use a full path, for example ~/Music or /Users/you/Music.');
     let real;
     try {

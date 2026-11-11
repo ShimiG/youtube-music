@@ -143,41 +143,42 @@ jobs:
   desktop:
     # The Tauri v2 shell (src-tauri/) must keep compiling. A full app build
     # needs the server executable and a signing setup; `cargo clippy` checks
-    # the Rust code, the config, capabilities and plugin wiring in ~3 minutes.
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # the Rust code, the config, capabilities and plugin wiring.
+    #
+    # Runs on the two systems the app ships for, so their platform-specific
+    # code is what gets checked. Neither needs system packages installed
+    # (macOS has WebKit; Windows gets WebView2 through a crate). This job used
+    # to build on Linux, which the app does not ship for and which needs
+    # ~180 packages from Ubuntu's servers: when those were down, the step hung
+    # for an hour and a half.
+    name: desktop (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout Code
         uses: actions/checkout@v5
 
-      # Normally under a minute. GitHub's runners fetch Ubuntu packages from an
-      # Azure mirror first; when that mirror stops answering, apt waits 20 s
-      # on it for each of ~180 packages (this step once ran for an hour and a
-      # half). So: if the mirror does not answer a quick probe, take it out of
-      # the list and use archive.ubuntu.com; stalled connections are dropped
-      # and retried; nothing may wait for input; and the step gives up after
-      # 8 minutes whatever happens.
-      - name: Install Tauri system libraries
-        timeout-minutes: 8
-        run: |
-          MIRRORS=/etc/apt/apt-mirrors.txt
-          if [ -f "$MIRRORS" ] && ! curl -fsS --max-time 8 -o /dev/null "http://azure.archive.ubuntu.com/ubuntu/dists/$(lsb_release -cs)/InRelease"; then
-            echo "The Azure package mirror is not answering; using the other mirrors."
-            sudo sed -i '/azure\.archive\.ubuntu\.com/d' "$MIRRORS"
-            cat "$MIRRORS"
-          fi
-          APT="sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 -o DPkg::Lock::Timeout=120"
-          $APT update
-          $APT install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-
-      # tauri-build checks that the bundled binaries and the frontend exist;
-      # placeholders are enough for a compile check.
+      # tauri-build checks that the bundled binaries (named after the target
+      # triple) and the frontend exist; placeholders are enough for a compile
+      # check.
       - name: Placeholder sidecars and frontend
         run: |
+          triple=$(rustc -vV | sed -n 's/^host: //p')
+          ext=""
+          case "$triple" in *windows*) ext=".exe" ;; esac
           mkdir -p bin client/dist
           for b in music-server ffmpeg yt-dlp; do
-            printf '#!/bin/sh\n' > "bin/$b-x86_64-unknown-linux-gnu"; chmod +x "bin/$b-x86_64-unknown-linux-gnu"
+            printf '#!/bin/sh\n' > "bin/$b-$triple$ext"
+            chmod +x "bin/$b-$triple$ext"
           done
+          ls -l bin
           echo '<!doctype html><title>placeholder</title>' > client/dist/index.html
 
       - name: Clippy (warnings are errors)

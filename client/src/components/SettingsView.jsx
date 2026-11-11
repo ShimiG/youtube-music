@@ -1,13 +1,16 @@
 import { useState } from 'react';
-import { QUALITY_OPTIONS, getAudioQuality, setAudioQuality } from '../utils/settings';
+import { QUALITY_OPTIONS, getAudioQuality, setAudioQuality, setOnlineLyrics } from '../utils/settings';
+import useOnlineLyrics from '../hooks/useOnlineLyrics';
 import { toast } from '../utils/toast';
 
 const card = { background: '#181818', border: '1px solid #333', borderRadius: '10px', padding: '18px 20px', maxWidth: '640px' };
 
 // Settings for this device. Audio quality (issue #39) applies to the next
 // track that starts: streams are converted to MP3 at the chosen bitrate.
+// Online lyrics (issue #30) is the same choice the Lyrics tab asks about.
 export default function SettingsView() {
     const [quality, setQuality] = useState(getAudioQuality);
+    const onlineLyrics = useOnlineLyrics();
 
     const choose = (value) => {
         setQuality(value);
@@ -51,6 +54,31 @@ export default function SettingsView() {
                 <p style={{ color: '#888', fontSize: '12px', margin: '14px 0 0', lineHeight: 1.5 }}>
                     Streaming services send compressed audio, so High cannot add detail the source does not have.
                     Your own MP3, M4A, FLAC and WAV files (Local Files) always play in their original quality, whatever is chosen here.
+                </p>
+            </section>
+
+            <section style={{ ...card, marginTop: '20px' }} aria-labelledby="lyrics-heading">
+                <h2 id="lyrics-heading" style={{ margin: '0 0 4px', fontSize: '18px' }}>Lyrics</h2>
+                <p style={{ color: '#aaa', fontSize: '13px', margin: '0 0 14px' }}>
+                    Shown in the Now Playing view, next to the queue.
+                </p>
+                <label style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', padding: '10px 12px', borderRadius: '8px', cursor: 'pointer', border: `1px solid ${onlineLyrics === 'on' ? '#1db954' : '#333'}`, background: onlineLyrics === 'on' ? '#1db95415' : 'transparent' }}>
+                    <input
+                        type="checkbox"
+                        checked={onlineLyrics === 'on'}
+                        onChange={(e) => setOnlineLyrics(e.target.checked ? 'on' : 'off')}
+                        style={{ marginTop: '3px', accentColor: '#1db954' }}
+                    />
+                    <span>
+                        <span style={{ fontWeight: 'bold' }}>Look up lyrics online</span>
+                        <span style={{ display: 'block', color: '#aaa', fontSize: '13px', marginTop: '2px' }}>
+                            Sends the title, artist and length of the playing track to LRCLIB (lrclib.net), a free community lyrics database.
+                        </span>
+                    </span>
+                </label>
+                <p style={{ color: '#888', fontSize: '12px', margin: '14px 0 0', lineHeight: 1.5 }}>
+                    Lyrics stored with your own music (inside the file, or in a .lrc file with the same name next to it)
+                    are always shown, and nothing is sent anywhere for them.
                 </p>
             </section>
         </div>

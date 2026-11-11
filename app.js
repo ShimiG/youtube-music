@@ -20,6 +20,7 @@ const soundcloudController = require('./controllers/soundcloudController');
 const libraryController = require('./controllers/libraryController');
 const matchController = require('./controllers/matchController');
 const localController = require('./controllers/localController');
+const lyricsController = require('./controllers/lyricsController');
 
 const app = express();
 
@@ -62,6 +63,8 @@ const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
 // a page of a playlist needs one call, so this is generous for a person and
 // tight for a script.
 const matchResolveLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 120 });
+// One lyrics request per track played; a lookup may call the lyrics server.
+const lyricsLimiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
 
 // Apply the baseline limiter to every route (defined before the routes so it
 // sits in front of them all).
@@ -136,6 +139,10 @@ app.get('/api/local/folders', requireAuth, localController.listFolders);
 app.post('/api/local/folders', requireAuth, requireExistingUser, localController.addFolder);
 app.post('/api/local/folders/:id/rescan', requireAuth, localController.rescanFolder);
 app.delete('/api/local/folders/:id', requireAuth, localController.removeFolder);
+
+// --- Lyrics (issue #30): from the user's own files, or looked up online when
+// the client says the user agreed (services/lyrics.js). ---
+app.get('/api/lyrics', requireAuth, lyricsLimiter, lyricsController.getLyrics);
 
 // --- Match engine (Stage 2). Tracks of a match-mode source (Spotify) must be
 // matched to an official YouTube video before they can play; these routes read,

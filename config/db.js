@@ -187,6 +187,22 @@ async function initDB(filename = path.join(dataDir(), 'database.sqlite')) {
         CREATE INDEX IF NOT EXISTS idx_local_tracks_folder ON local_tracks(folder_id);
     `);
 
+    // Lyrics found online (issue #30), kept so a track is looked up once. The
+    // key is a hash of what was asked (title, artist, length), never a track
+    // id from the client, so one user's request cannot change what another
+    // sees. "Not found" is kept too, for a shorter time (services/lyrics.js).
+    await db.exec(`
+        CREATE TABLE IF NOT EXISTS lyrics_cache (
+            lookup_key TEXT PRIMARY KEY,
+            status TEXT NOT NULL,               -- found | instrumental | not_found
+            synced TEXT,                        -- JSON [{ t, text }], or NULL
+            plain TEXT,
+            provider TEXT NOT NULL,
+            fetched_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_lyrics_cache_fetched ON lyrics_cache(fetched_at);
+    `);
+
     // Tokens written before encryption at rest existed are rewritten encrypted.
     await migratePlaintextTokens(db);
 

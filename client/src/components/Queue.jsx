@@ -5,8 +5,8 @@ import { useMusic } from '../context/hook';
 // light card is the one beside Search and Recently Played. `heading={false}`
 // leaves the title out where a tab already names the list.
 const THEMES = {
-    light: { panel: '#f9f9f9', heading: 'black', rule: '#ddd', row: 'white', rowActive: '#1db95420', text: 'black', empty: '#888', shadow: '0 1px 3px rgba(0,0,0,0.1)' },
-    dark: { panel: 'transparent', heading: 'white', rule: '#333', row: '#ffffff0d', rowActive: '#1db95430', text: '#eee', empty: '#999', shadow: 'none' }
+    light: { panel: '#f9f9f9', heading: 'black', rule: '#ddd', row: 'white', rowActive: '#1db95420', text: 'black', empty: '#888', shadow: '0 1px 3px rgba(0,0,0,0.1)', marker: '#1db954' },
+    dark: { panel: 'transparent', heading: 'white', rule: '#333', row: '#ffffff0d', rowActive: '#ffffff24', text: '#eee', empty: '#999', shadow: 'none', marker: 'var(--theme-accent, #1db954)' }
 };
 
 export default function Queue({ theme = 'light', heading = true }) {
@@ -27,7 +27,7 @@ export default function Queue({ theme = 'light', heading = true }) {
                             <div key={index} style={{ 
                                 display: 'flex', alignItems: 'center', gap: '10px', padding: '8px', 
                                 background: isPlayingNode ? c.rowActive : c.row, 
-                                borderLeft: isPlayingNode ? '4px solid #1db954' : '4px solid transparent',
+                                borderLeft: isPlayingNode ? `4px solid ${c.marker}` : '4px solid transparent',
                                 borderRadius: '4px', boxShadow: c.shadow
                             }}>
                                 <div style={{ flex: 1, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} onClick={() => playQueueIndex(index)}>

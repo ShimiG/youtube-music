@@ -246,11 +246,16 @@ see [docs/packaging.md](docs/packaging.md).
 | `GET /stream?videoId=&source=&t=`, `GET /duration?videoId=&source=&t=` | media token (`t`), rate-limited | Audio stream / duration; `source=spotify` plays the matched YouTube video |
 | `GET/DELETE /api/match/:source/:id`, `POST /api/match/resolve`, `.../override`, `.../report` | JWT | Match engine (see "Matching engine") |
 | `GET /api/lyrics?source=&id=&title=&artist=&duration=&online=1` | JWT, rate-limited | Lyrics for the playing track (see below) |
+| `GET /api/artwork/colors?url=` | JWT, rate-limited | Theme colours from a cover image (see below) |
 | `GET /history`, `POST /history` | JWT | Play history |
 | `GET/POST /api/custom-playlists`, `.../:playlistId/tracks` | JWT | Local playlists |
 
 ## Notes & known limitations
 
+- **Colours from the cover art.** The player bar and the Now Playing view take their colours
+  from the playing track's cover (Settings → Appearance turns this off). The server reads
+  the image, since a web page may not read another site's pixels, and only fetches plain
+  `https` URLs on public addresses; see the header of `services/artworkColors.js`.
 - **Lyrics.** For your own files, lyrics come from a `.lrc` file with the same name next to
   the track, or from the file's tags, and nothing is sent anywhere. For everything else the
   app can look lyrics up on [LRCLIB](https://lrclib.net) (free, open, no API key). A lookup

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { QUALITY_OPTIONS, getAudioQuality, setAudioQuality, setOnlineLyrics } from '../utils/settings';
+import { QUALITY_OPTIONS, getAudioQuality, setAudioQuality, setOnlineLyrics, setDynamicTheme } from '../utils/settings';
+import { useDynamicTheme } from '../hooks/useArtworkTheme';
 import useOnlineLyrics from '../hooks/useOnlineLyrics';
 import { toast } from '../utils/toast';
 
@@ -8,9 +9,11 @@ const card = { background: '#181818', border: '1px solid #333', borderRadius: '1
 // Settings for this device. Audio quality (issue #39) applies to the next
 // track that starts: streams are converted to MP3 at the chosen bitrate.
 // Online lyrics (issue #30) is the same choice the Lyrics tab asks about.
+// Cover colours (issue #26) take effect at once.
 export default function SettingsView() {
     const [quality, setQuality] = useState(getAudioQuality);
     const onlineLyrics = useOnlineLyrics();
+    const dynamicTheme = useDynamicTheme();
 
     const choose = (value) => {
         setQuality(value);
@@ -79,6 +82,27 @@ export default function SettingsView() {
                 <p style={{ color: '#888', fontSize: '12px', margin: '14px 0 0', lineHeight: 1.5 }}>
                     Lyrics stored with your own music (inside the file, or in a .lrc file with the same name next to it)
                     are always shown, and nothing is sent anywhere for them.
+                </p>
+            </section>
+
+            <section style={{ ...card, marginTop: '20px' }} aria-labelledby="appearance-heading">
+                <h2 id="appearance-heading" style={{ margin: '0 0 14px', fontSize: '18px' }}>Appearance</h2>
+                <label style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', padding: '10px 12px', borderRadius: '8px', cursor: 'pointer', border: `1px solid ${dynamicTheme ? '#1db954' : '#333'}`, background: dynamicTheme ? '#1db95415' : 'transparent' }}>
+                    <input
+                        type="checkbox"
+                        checked={dynamicTheme}
+                        onChange={(e) => setDynamicTheme(e.target.checked)}
+                        style={{ marginTop: '3px', accentColor: '#1db954' }}
+                    />
+                    <span>
+                        <span style={{ fontWeight: 'bold' }}>Match colours to the cover art</span>
+                        <span style={{ display: 'block', color: '#aaa', fontSize: '13px', marginTop: '2px' }}>
+                            The player bar and the Now Playing view take their colours from the cover of the playing track.
+                        </span>
+                    </span>
+                </label>
+                <p style={{ color: '#888', fontSize: '12px', margin: '14px 0 0', lineHeight: 1.5 }}>
+                    Colours are always adjusted so text stays readable. Tracks without a cover (your own files, for now) use the standard colours.
                 </p>
             </section>
         </div>

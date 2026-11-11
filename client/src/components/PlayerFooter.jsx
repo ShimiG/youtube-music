@@ -48,7 +48,7 @@ export default function PlayerFooter({ expanded = false, onToggleExpanded }) {
     const seekColor = seekColorFor(currentTrack.source || DEFAULT_SOURCE);
 
     return (
-        <div ref={barRef} className="player-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', background: '#181818', color: 'white', position: 'fixed', bottom: 0, left: 0, right: 0 }}>
+        <div ref={barRef} className="player-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', color: 'white', position: 'fixed', bottom: 0, left: 0, right: 0 }}>
             {/* Track Info */}
             <div style={{ display: 'flex', alignItems: 'center', width: '30%', minWidth: 0 }}>
                 <button
@@ -100,7 +100,7 @@ export default function PlayerFooter({ expanded = false, onToggleExpanded }) {
                 <button className={`sound-btn ${volume === 0 ? 'sound-mute' : ''}`} onClick={toggleMute} title={volume === 0 ? "Unmute" : "Mute"}>
                     <div className="sound-icon"><svg viewBox="0 0 24 24" width="20" fill="white"><path d="M7 9v6h4l5 5V4l-5 5H7z" /></svg></div>
                 </button>
-                <input type="range" className="volume-slider" min="0" max="1" step="0.01" value={volume} onChange={(e) => updateVolume(parseFloat(e.target.value))} style={{ background: `linear-gradient(to right, ${volume > 0 ? '#1db954' : '#4d4d4d'} ${volume * 100}%, #4d4d4d ${volume * 100}%)`, width: '100px' }} />
+                <input type="range" className="volume-slider" min="0" max="1" step="0.01" value={volume} onChange={(e) => updateVolume(parseFloat(e.target.value))} style={{ background: `linear-gradient(to right, ${volume > 0 ? 'var(--theme-accent, #1db954)' : '#4d4d4d'} ${volume * 100}%, #4d4d4d ${volume * 100}%)`, width: '100px' }} />
             </div>
         </div>
     );

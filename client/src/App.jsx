@@ -9,6 +9,7 @@ import AuthScreen from './components/AuthScreen';
 import ConnectServices from './components/ConnectServices';
 import SettingsView from './components/SettingsView';
 import NowPlayingView from './components/NowPlayingView';
+import useArtworkTheme from './hooks/useArtworkTheme';
 import { useMusic } from './context/hook';
 import Toaster from './components/Toaster';
 import { toast } from './utils/toast';
@@ -45,6 +46,8 @@ function App() {
     const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
     const nowPlayingShown = nowPlayingOpen && Boolean(currentTrack);
     const closeNowPlaying = useCallback(() => setNowPlayingOpen(false), []);
+    // The player bar and the Now Playing view take the cover's colours (issue #26).
+    useArtworkTheme(currentTrack);
     
     // Simple Local Auth State
     const [localUser, setLocalUser] = useState(() => {

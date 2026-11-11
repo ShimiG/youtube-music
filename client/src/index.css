@@ -82,7 +82,7 @@ body {
 }
 
 .player-footer {
-    background-color: #181818;
+    background-color: var(--theme-surface, #181818);
     border-top: 1px solid #282828;
     padding: 15px;
     position: fixed;

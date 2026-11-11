@@ -200,7 +200,7 @@ Tests: PKCE challenge, token grants, single-use refresh handling, app-token cach
 | #39 Lossless audio (FLAC/WAV) | Stage 6 | **done** (local FLAC/WAV as-is; quality setting for streams) |
 | #29 Persistent controls in an expanded view | Stage 7 | **done** |
 | #30 Lyrics | Stage 7, after #29 | **done** (.lrc / tags for local files; LRCLIB, opt-in, for the rest) |
-| #26 Dynamic theming | Stage 7 | planned |
+| #26 Dynamic theming | Stage 7 | **done** (player bar and Now Playing view take the cover's colours) |
 | #40 Remote control from a phone | Stage 7 | planned, needs a security design |
 | #23 Spotify | Stage 2 | on hold |
 | #36 Apple Music | Stage 4 | on hold |
@@ -420,10 +420,23 @@ Everything around playback that is not a new source.
      day), and timed lyrics are only used when their length matches the
      track's, otherwise only the words.
   Not done: word-by-word highlighting, editing or contributing lyrics.
-- Dynamic theming (issue #26): take the dominant colours of the album art and
-  apply them to the player and the expanded view. Thumbnails come from other
-  sites, so read the colours on the server (or through a server proxy) rather
-  than from a cross-origin canvas. One day.
+- **Dynamic theming (issue #26): shipped.** The player bar and the Now
+  Playing view take their colours from the playing track's cover: a dark
+  shade behind the drawer, a darker one for the bar, a light accent for the
+  tab marker, volume and active controls (the seek bar keeps its per-source
+  colour, issue #28). Colours are moved along lightness until text on them
+  meets WCAG contrast, and a change fades in (not with reduced motion). On by
+  default, with a switch in Settings.
+  The browser may not read another site's image, so the server does
+  (`services/artworkColors.js`, `GET /api/artwork/colors?url=`): it downloads
+  the cover, reduces it to 32 x 32 pixels with the bundled ffmpeg and picks
+  the dominant hue; each cover is read once (`artwork_colors` table). Because
+  the URL comes from the client, the download is fenced in: https only,
+  default port, public addresses only (checked on the addresses the socket
+  connects to, so DNS cannot point it inwards), redirects re-checked, 5 MB /
+  8 s limits, JPEG / PNG / WebP only, and the caller only ever gets colours.
+  Not done: covers for local files (embedded art is not read yet, so they
+  keep the standard colours), theming of the rest of the app.
 - Remote control from a phone (issue #40): control the desktop app (play,
   pause, skip, volume) from a phone. Needs a security design first: the
   server only listens on this computer (127.0.0.1) by design, so a phone on

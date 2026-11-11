@@ -198,7 +198,7 @@ Tests: PKCE challenge, token grants, single-use refresh handling, app-token cach
 | #38 Deezer | Stage 6 | **done** (search; full track via match, else preview) |
 | #24 Local file scanning | Stage 6 | **done** (folders, tags, search, direct FLAC/WAV) |
 | #39 Lossless audio (FLAC/WAV) | Stage 6 | **done** (local FLAC/WAV as-is; quality setting for streams) |
-| #29 Persistent controls in an expanded view | Stage 7 | planned |
+| #29 Persistent controls in an expanded view | Stage 7 | **done** |
 | #30 Lyrics | Stage 7, after #29 | planned |
 | #26 Dynamic theming | Stage 7 | planned |
 | #40 Remote control from a phone | Stage 7 | planned, needs a security design |
@@ -394,10 +394,15 @@ Quick wins that reuse the provider interface unchanged. Any of these can be pull
 
 Everything around playback that is not a new source.
 
-- Expanded "Now Playing" view with persistent controls (issue #29). There is
-  no expanded view yet; build it as a drawer that slides up behind the player
-  bar (large art, queue), with the bar's controls fixed at the bottom. One to
-  two days.
+- **Expanded "Now Playing" view with persistent controls (issue #29):
+  shipped.** `components/NowPlayingView.jsx`: a drawer that slides up from
+  behind the player bar and fills the rest of the window with the cover art,
+  title, artist, source and the queue. The player bar does not move (it
+  publishes its height as `--player-height`; the drawer stops at its top
+  edge), so play / pause, seek and volume stay where they are. Opened from
+  the track area of the bar, closed with its button or Escape; focus moves in
+  and back; closed, it is `inert`. One column on narrow windows. Cover art
+  falls back to a locally drawn placeholder (no third-party image service).
 - Lyrics (issue #30), as a tab in that view next to the queue: synced lyrics
   where available (LRC, highlighted in time with playback), plain lyrics as a
   fallback, and a "No lyrics found" state. Needs a lyrics source whose terms

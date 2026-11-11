@@ -3,6 +3,7 @@ import { MusicContext } from './hook';
 import { toast } from '../utils/toast';
 import { DEFAULT_SOURCE } from '../utils/services';
 import { mediaUrl, mediaUrlSync, warmMediaToken } from '../utils/media';
+import { artOf } from '../utils/artwork';
 
 
 export const MusicProvider = ({ children }) => {
@@ -369,13 +370,8 @@ const seek = useCallback((time) => {
                 title: currentTrack.title,
                 artist: currentTrack.channelTitle || currentTrack.artist || 'Unknown Artist',
                 album: 'Music Manager', 
-                artwork: [
-                    { 
-                        src: currentTrack.thumbnail || currentTrack.image || 'https://via.placeholder.com/512', 
-                        sizes: '512x512', 
-                        type: 'image/jpeg' 
-                    }
-                ]
+                // Only when the track has cover art; no third-party placeholder.
+                artwork: artOf(currentTrack) ? [{ src: artOf(currentTrack), sizes: '512x512' }] : []
             });
 
             navigator.mediaSession.setActionHandler('play', () => {

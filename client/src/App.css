@@ -254,3 +254,105 @@
 }
 .toast-error { border-color: #b33; }
 .toast-warning { border-color: #c80; }
+
+/* Now Playing drawer (components/NowPlayingView.jsx, issue #29). It sits
+   behind the player bar (z-index 100) and stops at its top edge, so the
+   controls stay fixed while the drawer slides. */
+.now-playing {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: var(--player-height, 96px);
+  z-index: 90;
+  background: linear-gradient(to bottom, #2a2a2a, #121212 70%);
+  color: #fff;
+  overflow-y: auto;
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 0.3s ease, visibility 0s linear 0.3s;
+}
+.now-playing.is-open {
+  transform: translateY(0);
+  visibility: visible;
+  transition: transform 0.3s ease, visibility 0s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .now-playing, .now-playing.is-open { transition: none; }
+}
+.now-playing-close {
+  position: sticky;
+  top: 12px;
+  margin: 12px 0 0 16px;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: #00000055;
+  color: #fff;
+  cursor: pointer;
+  z-index: 1;
+}
+.now-playing-close:hover { background: #ffffff22; }
+.now-playing-close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.now-playing-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
+  gap: 48px;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 8px 32px 40px;
+  box-sizing: border-box;
+}
+.now-playing-track { text-align: center; min-width: 0; }
+.now-playing-art {
+  width: min(100%, 420px, 50vh);
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  background: #282828;
+}
+.now-playing-title { margin: 24px 0 6px; font-size: 26px; line-height: 1.2; overflow-wrap: anywhere; }
+.now-playing-artist { margin: 0; color: #b3b3b3; font-size: 16px; overflow-wrap: anywhere; }
+.now-playing-meta {
+  margin: 16px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  justify-content: center;
+  align-items: center;
+  color: #999;
+  font-size: 13px;
+}
+.now-playing-meta a { color: #ddd; }
+.now-playing-source { border: 1px solid; border-radius: 12px; padding: 2px 10px; font-weight: bold; font-size: 12px; }
+.now-playing-side { min-width: 0; }
+@media (max-width: 820px) {
+  .now-playing-body { grid-template-columns: 1fr; gap: 28px; padding: 8px 16px 32px; }
+}
+
+/* The part of the player bar that opens the drawer. */
+.player-track-button {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.player-track-button:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
+.player-track-button .chevron { color: #b3b3b3; flex-shrink: 0; transition: transform 0.3s ease; }
+.player-track-button[aria-expanded="true"] .chevron { transform: rotate(180deg); }
+.player-track-text { min-width: 0; }
+.player-track-text > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

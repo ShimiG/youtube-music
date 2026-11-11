@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import LibraryView from './components/LibraryView';
 import SearchView from './components/SearchView';
 import HistoryView from './components/HistoryView';
@@ -8,6 +8,8 @@ import Queue from './components/Queue';
 import AuthScreen from './components/AuthScreen';
 import ConnectServices from './components/ConnectServices';
 import SettingsView from './components/SettingsView';
+import NowPlayingView from './components/NowPlayingView';
+import { useMusic } from './context/hook';
 import Toaster from './components/Toaster';
 import { toast } from './utils/toast';
 import { isDesktopApp, onOAuthResult, openExternal } from './utils/desktop';
@@ -37,6 +39,12 @@ function reportConnectResult(fragment) {
 
 function App() {
     const [view, setView] = useState('search'); 
+
+    // The expanded Now Playing drawer; only meaningful while a track is loaded.
+    const { currentTrack } = useMusic();
+    const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
+    const nowPlayingShown = nowPlayingOpen && Boolean(currentTrack);
+    const closeNowPlaying = useCallback(() => setNowPlayingOpen(false), []);
     
     // Simple Local Auth State
     const [localUser, setLocalUser] = useState(() => {
@@ -153,7 +161,8 @@ function App() {
                         {view === 'settings' && <SettingsView />}
                     </main>
 
-                    <PlayerFooter />
+                    <NowPlayingView open={nowPlayingShown} onClose={closeNowPlaying} />
+                    <PlayerFooter expanded={nowPlayingShown} onToggleExpanded={() => setNowPlayingOpen(open => !open)} />
                 </>
             )}
         </div>

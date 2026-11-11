@@ -48,6 +48,16 @@ export const SERVICES = {
         // track on Audius.
         connect: null,
         attribution: { text: 'Audius', url: 'https://audius.co' }
+    },
+    deezer: {
+        name: 'deezer',
+        label: 'Deezer',
+        icon: '◉',
+        color: '#a238ff',
+        // No account: Deezer's public catalog. Tracks play in full through a
+        // YouTube match when one exists, otherwise as Deezer's 30 s preview.
+        connect: null,
+        attribution: { text: 'Deezer', url: 'https://www.deezer.com' }
     }
 };
 

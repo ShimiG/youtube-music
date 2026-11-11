@@ -71,17 +71,26 @@ export const MusicProvider = ({ children }) => {
         // Tracks carry their source; rows from before that default to DEFAULT_SOURCE.
         const source = track.source || DEFAULT_SOURCE;
         // Normalised tracks carry durationSec; older rows still carry duration.
-        const knownDuration = track.durationSec ?? track.duration;
+        const catalogDuration = track.durationSec ?? track.duration;
+        // Sources that decide what plays at play time (Deezer: the full track
+        // via a YouTube match, or a 30 s preview) set verifyDuration: show the
+        // catalog length meanwhile, but ask the server what will really play.
+        const knownDuration = track.verifyDuration ? null : catalogDuration;
         if (knownDuration) {
             setDuration(knownDuration);
         } else {
+            if (catalogDuration) setDuration(catalogDuration);
             mediaUrl('/duration', { videoId: safeId, source })
                 .then(url => fetch(url))
                 .then(res => res.json())
                 .then(data => {
+                    if (seq !== loadSeq.current) return; // another track started meanwhile
                     if (data.duration) {
                         setDuration(data.duration);
-                        track.duration = data.duration; 
+                        if (!track.verifyDuration) track.duration = data.duration;
+                    }
+                    if (data.preview) {
+                        toast(`Only a 30-second preview of "${track.title}" is available.`, { kind: 'warning' });
                     }
                 })
                 .catch(err => console.error("Failed to fetch true duration:", err));
@@ -289,10 +298,14 @@ const seek = useCallback((time) => {
                 const rawDuration = audio.duration;
                 if (Number.isFinite(rawDuration) && rawDuration > 0) {
                     setDuration((prevDuration) => prevDuration > 0 ? prevDuration : rawDuration);
-                } else if (currentTrack?.duration) {
-                    setDuration(currentTrack.duration);
                 } else {
-                    setDuration(0);
+                    // A streamed (transcoded) response has no length of its own
+                    // (Infinity). Keep what is already known (the track's
+                    // length, or /duration's answer) and never reset it to 0:
+                    // normalised tracks carry durationSec, not duration, and a
+                    // 0 here used to blank the total and disable the seek bar.
+                    const fromTrack = currentTrack?.durationSec ?? currentTrack?.duration ?? 0;
+                    setDuration((prevDuration) => prevDuration > 0 ? prevDuration : fromTrack);
                 }
             }
         };

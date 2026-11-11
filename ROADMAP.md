@@ -48,7 +48,7 @@ own and leaves the app working.
 | Tidal | OAuth PKCE | Own playlists | Favorite tracks endpoint | client-sdk (DRM) | match | 5 |
 | Audius | none (search, playback); a public handle or Log in with Audius for the library, later | Public playlists (later) | `users/{id}/favorites`, read-only (later) | server-stream, free | same | **shipped (search + playback)** |
 | Jamendo | app key | none | none without user OAuth | server-stream, free | same | 6 |
-| Deezer | none | none for new apps | none | none supported | match, plus 30 s previews | 6 |
+| Deezer | none | none for new apps | none | none supported | match on play, else 30 s preview | **shipped** |
 | Navidrome / Subsonic / Jellyfin | server URL + credentials | Own playlists | Starred (Subsonic) or favorites (Jellyfin) | server-stream | same | 6 |
 | Amazon Music, Qobuz | partner-only APIs | | | | | parked |
 | YouTube Music | covered by YouTube | | | | | n/a |
@@ -195,7 +195,7 @@ Tests: PKCE challenge, token grants, single-use refresh handling, app-token cach
 |---|---|---|
 | #28 Source-aware seek bar colour | Stage 0, catch-up | next |
 | #27 List virtualization | Stage 0, catch-up | next |
-| #38 Deezer | Stage 6 | planned (previews + match; see the stage) |
+| #38 Deezer | Stage 6 | **done** (search; full track via match, else preview) |
 | #24 Local file scanning | Stage 6 | planned |
 | #39 Lossless audio (FLAC/WAV) | Stage 6, after #24 | planned |
 | #29 Persistent controls in an expanded view | Stage 7 | planned |
@@ -351,11 +351,18 @@ Quick wins that reuse the provider interface unchanged. Any of these can be pull
   user's machine. Next for Audius: the library (favorites, playlists) via a
   public handle or Log in with Audius.
 - Jamendo: free app key, Creative Commons catalog, direct stream URLs. Half a day.
-- Deezer (issue #38): public search returns 30 s preview MP3s with no auth;
-  there is no user API for new apps. Treat as a catalog source with match;
-  ISRC is present. One day. The issue's OAuth login and full-track Web SDK
-  playback are not possible: Deezer no longer registers new apps, and its
-  full-track player is DRM-protected (Stage 3 decision).
+- **Deezer (issue #38): shipped.** Deezer's public catalog for search, no
+  account (`providers/deezer.js`: `GET /search` paged by `index`,
+  `GET /track/{id}` for the ISRC). Results show at once; nothing is matched
+  while searching. On play (`controllers/deezerController.js`) the match
+  engine looks the track up on YouTube, using Deezer's ISRC, and plays the full
+  video through the YouTube path; with no match (or YouTube Music unreachable)
+  it plays Deezer's 30 s preview and the player says so. `/duration` reports
+  what will really play (`preview: true` for 30 s), so the progress bar is
+  right. The issue's OAuth login and full-track Web SDK are not possible
+  (Deezer no longer registers new apps; its player is DRM-protected). Built
+  against real recorded Deezer responses and tested against a local stand-in;
+  the live API was not reachable from the build environment.
 - Navidrome, Subsonic, Jellyfin: user enters server URL and credentials as a connection; the server proxies their stream endpoints. One to two days.
 - Local files (issue #24): a `local` provider over folders the user picks.
   A scanner reads tags (title, artist, album, duration, embedded art) into

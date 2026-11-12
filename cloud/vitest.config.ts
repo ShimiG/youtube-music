@@ -16,7 +16,9 @@ export default defineConfig(async () => {
                         // Test values only; real ones are set with `wrangler secret put`.
                         JWT_SECRET: 'test-secret-test-secret-test-secret-1234',
                         REGISTRATION_CODE: 'let-me-in',
-                        AUTH_PEPPER: 'test-pepper'
+                        AUTH_PEPPER: 'test-pepper',
+                        GOOGLE_CLIENT_ID: 'test-client-id.apps.googleusercontent.com',
+                        GOOGLE_CLIENT_SECRET: 'test-google-client-secret'
                     }
                 }
             })

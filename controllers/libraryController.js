@@ -13,6 +13,7 @@
 // Track lists additionally carry `matching` (a summary) when they held tracks
 // of a match-mode source; see withMatching below.
 const { canRefresh } = require('../services/connections');
+const cloudGoogle = require('../services/cloud/google');
 const { listProviders } = require('../providers');
 const { SourceError } = require('../providers/errors');
 const { likedPlaylist, LIKED_PLAYLIST_ID } = require('../providers/normalize');
@@ -78,11 +79,16 @@ const getSources = async (req, res, next) => {
         );
         const byName = new Map((rows || []).map(r => [r.source_name, r]));
         const now = Date.now();
+        // YouTube connected through the cloud account: this computer holds at
+        // most a short-lived token, and asks the cloud for the next one.
+        const youtubeViaCloud = await cloudGoogle.connected(req.app.locals.db, req.userId);
 
         const sources = listProviders().map(p => {
             const row = byName.get(p.name);
             let connected;
             if (!p.connect.required) {
+                connected = true;
+            } else if (p.name === 'youtube' && youtubeViaCloud) {
                 connected = true;
             } else if (!row) {
                 connected = false;
@@ -108,7 +114,8 @@ const getSources = async (req, res, next) => {
                 // SoundCloud searches public tracks without one, so the Search
                 // tab must stay usable even when it cannot be connected here.
                 searchRequiresConnection: Boolean(p.connect.required && p.searchRequiresToken),
-                expiresAt: row && row.expires_at ? row.expires_at : null
+                // No expiry to act on when the cloud account renews it.
+                expiresAt: row && row.expires_at && !(p.name === 'youtube' && youtubeViaCloud) ? row.expires_at : null
             };
         });
         res.json({ sources });

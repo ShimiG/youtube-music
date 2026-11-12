@@ -71,10 +71,25 @@ mkdirSync(path.dirname(outFile), { recursive: true });
 
 // 1. Bundle. ffmpeg-static stays external: its binary lives in node_modules,
 //    which does not ship; services/paths.js never requires it when packaged.
+// The cloud service this copy talks to can be built in (docs/cloud-data.md):
+// set CLOUD_URL when building and the installed app knows it without anyone
+// typing it. It is an address, not a secret. Not set: nothing is built in, and
+// the address is entered in the app instead.
+let builtInCloudUrl = '';
+if (process.env.CLOUD_URL && process.env.CLOUD_URL.trim()) {
+    try {
+        builtInCloudUrl = require('../services/cloud/client').normalizeUrl(process.env.CLOUD_URL);
+    } catch (err) {
+        throw new Error(`CLOUD_URL is not usable as the built-in cloud address: ${err.message}`);
+    }
+}
+log(builtInCloudUrl ? `cloud address built in: ${builtInCloudUrl}` : 'no cloud address built in (CLOUD_URL not set)');
+
 log('bundling server.js');
 const esbuild = require('esbuild');
 const bundle = path.join(work, 'server.cjs');
 await esbuild.build({
+    define: { 'process.env.BUILT_IN_CLOUD_URL': JSON.stringify(builtInCloudUrl) },
     entryPoints: [path.join(root, 'server.js')],
     outfile: bundle,
     bundle: true,

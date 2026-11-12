@@ -196,7 +196,8 @@ Required environment variables (see `.env.example`):
 |---|---|
 | `PORT` | API port (default 3000) |
 | `JWT_SECRET` | Secret for signing login tokens. Optional: when it is not set, one is generated once and kept in the data folder |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth credentials. Can be entered in the app instead (Settings → Accounts); a value set here wins |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth credentials. Can be entered in the app instead (Settings → Accounts); a value set here wins. Not needed at all when YouTube is connected through the cloud account (`cloud/README.md`) |
+| `CLOUD_URL` | Address of your cloud service (optional). Set here, it cannot be changed in the app |
 | `REDIRECT_URI` | Google OAuth callback, e.g. `http://localhost:3000/auth/google/callback` |
 | `SOUNDCLOUD_CLIENT_ID` / `SOUNDCLOUD_CLIENT_SECRET` | SoundCloud app credentials (optional; adds the SoundCloud library). Also enterable under Settings → Accounts |
 | `LOG_FILE` | `off` stops the server writing `logs/server.log` (default: on) |
@@ -263,9 +264,14 @@ see [docs/packaging.md](docs/packaging.md).
   deployed to your own free Cloudflare account. Under Settings → Accounts → Cloud sync you
   point the app at it and sign in; your custom playlists and history are then the same on
   every computer signed in to that account. Reads stay local, so nothing gets slower and
-  the app works offline; sync runs in the background. Design:
-  [docs/cloud-data.md](docs/cloud-data.md). `CLOUD_URL` in the environment sets the
-  address for everyone on the installation.
+  the app works offline; sync runs in the background. The cloud account can also hold your
+  **YouTube login** (the Worker does the sign-in with Google, so no computer needs Google
+  credentials), and the login screen offers **"Sign in with your cloud account"**: on a
+  new computer that one sign-in creates your account there and brings your playlists,
+  history and YouTube connection. Design: [docs/cloud-data.md](docs/cloud-data.md).
+  `CLOUD_URL` in the environment sets the address for everyone on the installation, and
+  `CLOUD_URL` at build time (`npm run build:server`, or the repository variable the
+  release workflow reads) builds it into the app.
 - **Accounts and the owner.** Settings → Accounts connects and disconnects services and holds
   this installation's own service credentials (encrypted in the database, applied without
   a restart). The first account created on an installation is its owner: only it can change

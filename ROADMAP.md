@@ -480,7 +480,7 @@ own code is fast (local requests 1 to 6 ms, conversion's first byte in 50 to
 5. Low priority: keep the playback clock from re-rendering the whole app
    (measured at about 1% of a processor core).
 
-## Stage 9: Data that survives and follows the user (planned)
+## Stage 9: Data that survives and follows the user (built; real-account run open)
 
 Today the data is one SQLite file on one computer, and a fresh copy of the
 source even starts empty. Research, the options compared and the design are
@@ -503,12 +503,23 @@ stays as fast as it is and works offline. In order:
 4. **Done.** The sync engine (`services/cloud/`), Settings → Accounts → Cloud
    sync, and the first-run cases (upload, download, merge). Custom playlists
    and history sync; music from Local Files does not.
-5. A two-computer run on a real Cloudflare account (needs the owner).
+5. **Done.** YouTube sign-in through the Worker: the Google client secret
+   is a Worker secret, and the YouTube login is stored once, encrypted, with
+   the cloud account. A linked computer has no Google credentials and no
+   refresh token; it asks the cloud for a short-lived token. Connected on
+   one computer, connected on all.
+6. **Done.** Signing in to the app with the cloud account: on a computer
+   that has never seen the user, one sign-in creates the account there,
+   links it and brings the playlists, history and YouTube login. The
+   Worker's address can be built into a release (`CLOUD_URL` at build time;
+   a repository variable in the release workflow).
+7. A run on a real Cloudflare account and a real Google project (needs the
+   owner): deploy, set the two Google secrets, register the Worker's
+   `/google/callback` with Google, then two computers. Steps in
+   `cloud/README.md`.
 
-6. Google sign-in through the Worker, so the Google client secret is a
-   Worker secret and the YouTube login is stored once, encrypted, in the
-   cloud: nothing to paste in on a new computer, and YouTube stays
-   connected everywhere. The Worker's address can then be a build setting.
+Not built: SoundCloud's login through the cloud (same pattern as YouTube);
+changing the cloud password; deleting the cloud account from the app.
 
 ## Parked
 

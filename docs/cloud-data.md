@@ -148,10 +148,11 @@ What this adds to the design:
   creates (the first account, or an invite code). "For now it's just me"
   is the default, not an assumption.
 - **Google's side.** The redirect address registered with Google becomes
-  the Worker's. One thing to confirm in the Google Cloud console: while a
-  project's consent screen is in "Testing", Google expires logins after
-  seven days; it needs to be "In production" for a login to last. (From
-  memory of Google's rules; to be checked when this is built.)
+  the Worker's. And one setting in the Google Cloud console matters: while
+  the project's audience is "External" with publishing status "Testing",
+  Google expires a login after seven days (the app then shows YouTube as
+  disconnected). Set the status to "In production" for a login to last.
+  Checked against Google's documentation on 12 Nov 2026 (see Sources).
 - SoundCloud's optional credentials follow the same pattern.
 
 It is more to build than sync alone (accounts, sign-in broker, token
@@ -203,8 +204,50 @@ and worth doing first whatever is decided about the cloud.
     cannot use (from a newer version, say) is left alone in the cloud.
   - Checked with two copies of the app syncing through the Worker running
     locally (`wrangler dev`), both directions.
-- Not built yet: Google sign-in through the Worker (step 5), and signing in
-  to the app itself with the cloud account.
+- **Step 5, YouTube through the cloud account:** `cloud/src/google.ts` and
+  `services/cloud/google.js`.
+  - The Worker does the sign-in with Google (its client ID and secret are
+    Worker secrets) and keeps the refresh token in D1, encrypted with a key
+    derived from the Worker's `JWT_SECRET`. The desktop app asks it for an
+    access token (valid about an hour) and stores only that, encrypted.
+  - A linked user's "Connect YouTube" goes through the cloud when the
+    Worker has Google credentials; otherwise through this installation's
+    own credentials, as before. A login made with local credentials is
+    still renewed locally.
+  - After Google, the Worker sends the browser back only to the desktop
+    app's own link or to an address on the same computer
+    (`http://localhost:<port>`), chosen when the flow starts and signed.
+  - Each sync run also asks whether YouTube is connected, so a computer
+    learns within minutes that it was connected or disconnected elsewhere.
+    Disconnecting disconnects the account: the Worker revokes the login at
+    Google and every computer loses it.
+  - If the cloud cannot be reached when a token is needed, the app says
+    YouTube is unavailable for the moment; the login is not dropped.
+- **Step 6, signing in to the app with the cloud account:** the login
+  screen offers "Sign in with your cloud account" when the computer knows a
+  cloud address, or when nobody has used the computer yet (the address is
+  then asked for, checked, and kept only if the sign-in works).
+  - A first sign-in creates the account on that computer under the cloud
+    user name, links it, and syncs before the first screen is drawn. Later
+    sign-ins find the same account.
+  - A one-way hash of the password is kept with that local account (as for
+    any local account), so the same name and password still open it when
+    the cloud cannot be reached.
+  - A local account that merely has the same name is never handed over:
+    log in to it and link it under Settings instead.
+  - **The address can be built in.** `CLOUD_URL` at build time is compiled
+    into the server (`scripts/build-sea.mjs`); the release workflow reads
+    it from a repository variable. Order of precedence: `CLOUD_URL` in the
+    environment, the built-in address, the one saved in the app. The first
+    two cannot be changed from the app.
+  - Checked end to end with the Worker running locally (`wrangler dev`):
+    one computer creating the cloud account and starting the Google
+    sign-in, a second, empty one signing in with only the cloud account,
+    and a packaged server with a built-in address. Google itself could not
+    be reached from the build machine, so the exchange with Google is
+    covered by the Worker's tests against a stand-in, not by a real login.
+- Not built: SoundCloud's login through the cloud, changing the cloud
+  password, deleting the cloud account from the app.
 
 ## Proposed steps
 
@@ -236,6 +279,10 @@ and worth doing first whatever is decided about the cloud.
    encrypted rows), so nothing is pasted in per computer (see "Secrets").
 
 ## Sources
+
+- Google: logins of an "External" app in "Testing" expire after 7 days:
+  https://developers.google.com/identity/protocols/oauth2 ,
+  https://support.google.com/cloud/answer/15549945
 
 - Turso free plan figures (pricing trackers; confirm on turso.tech/pricing):
   https://costbench.com/software/database-as-service/turso/free-plan

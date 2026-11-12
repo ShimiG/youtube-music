@@ -226,8 +226,17 @@ export default function CloudPanel() {
                         : <button type="button" className="settings-link" onClick={() => setConfirmingOff(true)}>Turn off on this computer</button>}
                 </p>
             )}
+            {status.linked && !needsSignIn && status.youtube && status.youtube.available && (
+                <p className="accounts-detail">
+                    {status.youtube.connected
+                        ? 'Your YouTube login is kept with this account: it works on every computer signed in to it.'
+                        : 'YouTube can be connected through this account (above). Connect it once and it works on every computer signed in to it.'}
+                </p>
+            )}
             <p className="accounts-note">
-                Synced: custom playlists and recently played. Not synced: music from Local Files, and your YouTube and SoundCloud logins.
+                Synced: custom playlists and recently played
+                {status.youtube && status.youtube.available ? ', and your YouTube login' : ''}.
+                Not synced: music from Local Files{status.youtube && status.youtube.available ? ' and your SoundCloud login' : ', and your YouTube and SoundCloud logins'}.
             </p>
         </div>
     );

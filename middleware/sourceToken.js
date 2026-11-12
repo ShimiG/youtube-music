@@ -50,7 +50,20 @@ module.exports = function sourceToken(fixedName = null, { optional = false, lega
             next();
         } catch (err) {
             const isAuthProblem = err instanceof SourceError && (err.code === 'NOT_CONNECTED' || err.code === 'TOKEN_EXPIRED');
-            if (!isAuthProblem) return next(err);
+            if (!isAuthProblem) {
+                // The token could not be fetched for a reason that is not the
+                // user's connection (the cloud account that holds the login
+                // was unreachable): say so instead of a bare 500.
+                if (err instanceof SourceError && !optional) {
+                    console.warn(`${name}: no token: ${err.cause ? err.cause.message : err.message}`);
+                    return res.status(err.status).json({ error: err.message, code: `SOURCE_${err.code}`, source: name });
+                }
+                if (err instanceof SourceError) {
+                    req.sourceTokenError = err;
+                    return next();
+                }
+                return next(err);
+            }
             if (optional) {
                 req.sourceTokenError = err;
                 return next();

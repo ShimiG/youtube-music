@@ -57,7 +57,7 @@ export default function SettingsView({ section = null }) {
             <section id="settings-accounts" style={card} aria-labelledby="accounts-heading">
                 <h2 id="accounts-heading" style={{ margin: '0 0 4px', fontSize: '18px' }}>Accounts</h2>
                 <p style={{ color: '#aaa', fontSize: '13px', margin: '0 0 14px' }}>
-                    Connect your streaming accounts. The logins stay on this computer.
+                    Connect your streaming accounts. The logins stay on this computer, unless you turn on cloud sync below: your YouTube login is then kept with your cloud account.
                 </p>
                 <AccountsPanel />
                 <CloudPanel />

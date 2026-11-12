@@ -17,6 +17,7 @@ import { toast } from './utils/toast';
 import { isDesktopApp, onOAuthResult, openExternal } from './utils/desktop';
 import { SERVICE_LIST } from './utils/services';
 import { warmMediaToken } from './utils/media';
+import { apiFetch } from './utils/api';
 import './App.css';
 
 // Services whose OAuth callback reports back as #<callbackParam>=connected|error.
@@ -36,7 +37,14 @@ function reportConnectResult(fragment) {
             toast(`Connecting ${s.label} failed. Try again.`, { kind: 'error' });
         }
     }
-    window.dispatchEvent(new Event('connections-changed'));
+    const changed = () => window.dispatchEvent(new Event('connections-changed'));
+    // A YouTube login made through the cloud account is kept there, not on
+    // this computer: have the server ask the cloud before the lists reload.
+    if (params.get('google') === 'connected') {
+        apiFetch('/api/cloud/google/status').catch(() => {}).then(changed);
+    } else {
+        changed();
+    }
 }
 
 function App() {

@@ -16,71 +16,7 @@ let cloud;
 let A; // { db, userId, auth }
 let B;
 
-const WORKER = 'https://music-manager-cloud.example.workers.dev';
-
-// --- A stand-in cloud ---------------------------------------------------------
-function fakeCloud() {
-    const accounts = new Map(); // lower-case name -> { authKey, records: Map, seq }
-    const sessions = new Map(); // token -> account
-    const state = { calls: [], pushes: [], registrationCode: 'let-me-in', down: false, rejectSessions: false, nextToken: 1 };
-    const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-    const session = (account) => {
-        const token = `session-${state.nextToken++}`;
-        sessions.set(token, account);
-        return { token, expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 };
-    };
-    state.fetch = async (url, init = {}) => {
-        const u = new URL(url);
-        const body = init.body ? JSON.parse(init.body) : null;
-        state.calls.push(`${init.method || 'GET'} ${u.pathname}`);
-        if (state.down) throw new Error('getaddrinfo ENOTFOUND');
-        if (u.origin !== WORKER) return json(404, { code: 'NOT_FOUND', error: 'nothing here' });
-        if (u.pathname === '/health') return json(200, { ok: true, service: 'music-manager-cloud', registrationOpen: Boolean(state.registrationCode) });
-        if (u.pathname === '/auth/register') {
-            if (body.registrationCode !== state.registrationCode) return json(403, { code: 'BAD_REGISTRATION_CODE', error: 'That registration code is not right.' });
-            const key = body.username.toLowerCase();
-            if (accounts.has(key)) return json(409, { code: 'USERNAME_TAKEN', error: 'That user name is already in use.' });
-            accounts.set(key, { authKey: body.authKey, records: new Map(), seq: 0 });
-            return json(201, session(accounts.get(key)));
-        }
-        if (u.pathname === '/auth/login') {
-            const account = accounts.get(String(body.username).toLowerCase());
-            if (!account || account.authKey !== body.authKey) return json(401, { code: 'BAD_CREDENTIALS', error: 'Wrong user name or password.' });
-            return json(200, session(account));
-        }
-        const token = String((init.headers || {}).Authorization || '').replace('Bearer ', '');
-        const account = sessions.get(token);
-        if (!account || state.rejectSessions) return json(401, { code: 'NOT_SIGNED_IN', error: 'Sign in to the cloud account first.' });
-        if (u.pathname === '/auth/refresh') return json(200, session(account));
-        if (u.pathname === '/sync/push') {
-            state.pushes.push(body.changes);
-            body.changes.forEach((change, index) => {
-                const key = `${change.collection}\n${change.id}`;
-                const old = account.records.get(key);
-                const wins = !old || change.updatedAt > old.updatedAt || (change.updatedAt === old.updatedAt && body.deviceId > old.deviceId);
-                if (wins) {
-                    account.records.set(key, {
-                        collection: change.collection, id: change.id, updatedAt: change.updatedAt,
-                        deleted: change.deleted === true, data: change.deleted ? null : change.data,
-                        seq: account.seq + index + 1, deviceId: body.deviceId
-                    });
-                }
-            });
-            account.seq += body.changes.length;
-            return json(200, { received: body.changes.length, cursor: account.seq });
-        }
-        if (u.pathname === '/sync/pull') {
-            const since = Number(u.searchParams.get('since') || 0);
-            const limit = Number(u.searchParams.get('limit') || 200);
-            const after = [...account.records.values()].filter((r) => r.seq > since).sort((a, b) => a.seq - b.seq);
-            const page = after.slice(0, limit);
-            return json(200, { changes: page, cursor: page.length ? page[page.length - 1].seq : since, more: after.length > limit });
-        }
-        return json(404, { code: 'NOT_FOUND', error: 'nothing here' });
-    };
-    state.records = (name = 'shimi') => [...accounts.get(name).records.values()];
-    return state;
-}
+const { fakeCloud, WORKER } = require('./helpers/fakeCloud');
 
 // --- Two computers --------------------------------------------------------------
 async function computer(name, userId) {
@@ -179,7 +115,7 @@ describe('the cloud address', () => {
         expect((await on(later).get('/api/cloud/status')).body.canConfigure).toBe(false);
 
         // Not our service, unreachable, not https: refused, nothing saved.
-        expect((await on(C).put('/api/cloud/url', { url: 'https://example.com' })).body.code).toBe('CLOUD_NOT_FOUND');
+        expect((await on(C).put('/api/cloud/url', { url: 'https://example.com' })).body.code).toBe('CLOUD_BAD_URL');
         expect((await on(C).put('/api/cloud/url', { url: 'http://example.com' })).body.code).toBe('CLOUD_BAD_URL');
         cloud.down = true;
         expect((await on(C).put('/api/cloud/url', { url: WORKER })).statusCode).toBe(502);

@@ -52,11 +52,21 @@ async function deviceId(db) {
     return id;
 }
 
-/** { url, fromEnv }: CLOUD_URL (a build or .env setting) wins over the one saved in the app. */
+// The address a build was made with (scripts/build-sea.mjs replaces this
+// expression with the CLOUD_URL of the build, if there was one), so an
+// installed copy can know its cloud service without anyone typing it.
+const BUILT_IN_URL = process.env.BUILT_IN_CLOUD_URL || '';
+
+/**
+ * { url, fromEnv }: CLOUD_URL (the environment or .env), then the address
+ * built into this copy, then the one saved in the app. The first two cannot
+ * be changed from the app.
+ */
 async function cloudUrl(db) {
-    if (process.env.CLOUD_URL) {
+    const fixed = process.env.CLOUD_URL || BUILT_IN_URL;
+    if (fixed) {
         try {
-            return { url: client.normalizeUrl(process.env.CLOUD_URL), fromEnv: true };
+            return { url: client.normalizeUrl(fixed), fromEnv: true };
         } catch {
             return { url: null, fromEnv: true };
         }
@@ -64,20 +74,35 @@ async function cloudUrl(db) {
     return { url: await getMeta(db, 'cloud_url'), fromEnv: false };
 }
 
-/** Checks that the address answers like our cloud service, then saves it. */
-async function saveCloudUrl(db, raw) {
-    if (process.env.CLOUD_URL) throw new CloudError('URL_FROM_ENV', 'The cloud address is set by CLOUD_URL and cannot be changed here.', 409);
+const urlIsFixed = () => Boolean(process.env.CLOUD_URL || BUILT_IN_URL);
+
+/** Checks that an address answers like our cloud service: { url, registrationOpen }. Saves nothing. */
+async function checkCloudUrl(raw) {
     const url = client.normalizeUrl(raw);
-    const health = await client.request(url, '/health');
-    if (!health || health.service !== 'music-manager-cloud') {
-        throw new CloudError('BAD_URL', 'That address answered, but it is not a Music Manager cloud service.');
+    const notOurs = () => new CloudError('BAD_URL', 'That address answered, but it is not a Music Manager cloud service.', 400);
+    let health;
+    try {
+        health = await client.request(url, '/health');
+    } catch (err) {
+        // Some other site, answering "not found" or with a page: the same
+        // thing to the person typing. Not reachable at all stays as it is.
+        if (err instanceof CloudError && err.code !== 'UNREACHABLE') throw notOurs();
+        throw err;
     }
-    await setMeta(db, 'cloud_url', url);
+    if (!health || health.service !== 'music-manager-cloud') throw notOurs();
     return { url, registrationOpen: Boolean(health.registrationOpen) };
 }
 
+/** Checks that the address answers like our cloud service, then saves it. */
+async function saveCloudUrl(db, raw) {
+    if (urlIsFixed()) throw new CloudError('URL_FROM_ENV', 'The cloud address is fixed for this copy of the app and cannot be changed here.', 409);
+    const checked = await checkCloudUrl(raw);
+    await setMeta(db, 'cloud_url', checked.url);
+    return checked;
+}
+
 async function clearCloudUrl(db) {
-    if (process.env.CLOUD_URL) throw new CloudError('URL_FROM_ENV', 'The cloud address is set by CLOUD_URL and cannot be changed here.', 409);
+    if (urlIsFixed()) throw new CloudError('URL_FROM_ENV', 'The cloud address is fixed for this copy of the app and cannot be changed here.', 409);
     await db.run(`DELETE FROM app_meta WHERE key = 'cloud_url'`);
 }
 
@@ -105,17 +130,20 @@ async function status(db, userId, { canConfigure = false } = {}) {
         syncing: running.has(userId),
         lastSyncAt: link ? link.last_sync_at : null,
         lastError: link ? link.last_error : null,
-        pending: link ? await pendingCount(db, userId) : 0
+        pending: link ? await pendingCount(db, userId) : 0,
+        // YouTube by way of the cloud account (services/cloud/google.js).
+        youtube: {
+            available: Boolean(link) && require('./google').available(),
+            connected: Boolean(link && link.state === 'ok' && link.google_connected)
+        }
     };
 }
 
-/**
- * Signs this user in to the cloud (or creates the cloud account when a
- * registration code is given) and links this computer to it. The password is
- * turned into a key here and is neither sent nor stored.
- */
-async function link(db, userId, { username, password, registrationCode } = {}) {
-    const { url } = await cloudUrl(db);
+/** Signs in to the cloud (or creates the account, given a registration code): the session. */
+async function cloudSignIn(db, { username, password, registrationCode } = {}, { at = null } = {}) {
+    // `at`: an address that was checked but is not saved yet (the login
+    // screen of a new computer saves it only once the sign-in has worked).
+    const url = at || (await cloudUrl(db)).url;
     if (!url) throw new CloudError('NOT_CONFIGURED', 'The cloud address has not been set on this computer yet.', 409);
     if (typeof username !== 'string' || !username.trim() || typeof password !== 'string' || !password) {
         throw new CloudError('BAD_INPUT', 'Enter the cloud account\'s user name and password.', 400);
@@ -127,8 +155,12 @@ async function link(db, userId, { username, password, registrationCode } = {}) {
         ? await client.request(url, '/auth/register', { method: 'POST', body: { username: name, authKey, registrationCode: registrationCode.trim() } })
         : await client.request(url, '/auth/login', { method: 'POST', body: { username: name, authKey } });
     if (!session || typeof session.token !== 'string') throw new CloudError('BAD_RESPONSE', 'The cloud service did not return a session.');
+    return { name, session };
+}
 
-    // A link to another account (or a re-link) starts from nothing agreed:
+/** Records that a local user is linked to a cloud account, with its session. */
+async function storeLink(db, userId, name, session) {
+    // A link to another account (or a first link) starts from nothing agreed:
     // everything here is compared with everything there on the first run.
     const previous = await getLink(db, userId);
     const sameAccount = previous && previous.username.toLowerCase() === name.toLowerCase();
@@ -143,9 +175,48 @@ async function link(db, userId, { username, password, registrationCode } = {}) {
     linked.add(userId);
 }
 
+/**
+ * Signs this user in to the cloud (or creates the cloud account when a
+ * registration code is given) and links this computer to it. The password is
+ * turned into a key here and is neither sent nor stored.
+ */
+async function link(db, userId, credentials) {
+    const { name, session } = await cloudSignIn(db, credentials);
+    await storeLink(db, userId, name, session);
+}
+
+/**
+ * The address and session to call the cloud with for a linked user, or null
+ * when they are not linked (or have to sign in again).
+ */
+async function sessionFor(db, userId) {
+    const row = await getLink(db, userId);
+    if (!row || row.state !== 'ok') return null;
+    const { url } = await cloudUrl(db);
+    const token = decrypt(row.session);
+    return url && token ? { url, token } : null;
+}
+
+/** The local user linked to a cloud account name, if any. */
+async function localUserFor(db, cloudName) {
+    const row = await db.get('SELECT user_id FROM cloud_links WHERE lower(username) = lower(?)', [String(cloudName)]);
+    return row ? row.user_id : null;
+}
+
 /** Stops syncing this user. Their data stays here and in the cloud. */
 async function unlink(db, userId) {
     linked.delete(userId);
+    // A YouTube login that came from the cloud account goes with it (it is a
+    // short-lived token with nothing here to renew it). One connected on this
+    // computer with its own credentials stays.
+    const row = await getLink(db, userId);
+    if (row && row.google_connected) {
+        await db.run(
+            `DELETE FROM user_connections WHERE user_id = ? AND refresh_token IS NULL
+             AND source_id = (SELECT id FROM sources WHERE name = 'youtube')`,
+            [userId]
+        );
+    }
     await db.run('DELETE FROM cloud_links WHERE user_id = ?', [userId]);
     await db.run('DELETE FROM sync_records WHERE user_id = ?', [userId]);
 }
@@ -310,6 +381,11 @@ async function runSync(db, userId) {
             await settleHashes(db, userId, applied);
         }
         await db.run(`UPDATE cloud_links SET last_sync_at = ?, last_error = NULL, state = 'ok' WHERE user_id = ?`, [Date.now(), userId]);
+        // Also learn whether YouTube was connected (or disconnected) on
+        // another computer since the last run. Never a reason to fail the run.
+        try {
+            await require('./google').refreshStatus(db, userId);
+        } catch { /* asked again on the next run */ }
         return { ok: true, applied: applied.length };
     } catch (err) {
         if (!(err instanceof CloudError)) throw err;
@@ -357,6 +433,7 @@ function touch(userId) {
 /** Starts background syncing for every linked user (server.js). */
 async function start(db) {
     if (started) return;
+    await require('./google').load(db);
     const rows = await db.all(`SELECT user_id FROM cloud_links WHERE state = 'ok'`);
     for (const row of rows) linked.add(row.user_id);
     const all = () => { for (const userId of linked) syncNow(db, userId); };
@@ -378,6 +455,7 @@ function _reset() {
     running.clear();
     linked.clear();
     started = null;
+    require('./google')._reset();
 }
 
 module.exports = {
@@ -386,6 +464,15 @@ module.exports = {
     saveCloudUrl,
     clearCloudUrl,
     link,
+    checkCloudUrl,
+    cloudSignIn,
+    storeLink,
+    sessionFor,
+    localUserFor,
+    cloudUrl,
+    urlIsFixed,
+    getMeta,
+    setMeta,
     unlink,
     syncNow,
     touch,

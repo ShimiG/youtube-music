@@ -6,6 +6,7 @@
 const { getYouTubeClient } = require('../controllers/youtubeClient');
 const { SourceError, fromConnectionError } = require('./errors');
 const { getSourceToken } = require('../services/connections');
+const cloudGoogle = require('../services/cloud/google');
 const { makePlaylist, makeTrack, page } = require('./normalize');
 
 const SOURCE = 'youtube';
@@ -240,9 +241,10 @@ module.exports = {
     connect: { kind: 'oauth', required: true },
     capabilities: { search: true, playlists: true, liked: true, like: true, stream: true },
     searchRequiresToken: true,
-    // Connecting needs the server's Google OAuth client; without it the
-    // connect button would only lead to a Google error page.
-    isAvailable: () => Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
+    // Connecting needs a Google OAuth client: this installation's own, or the
+    // one the cloud service holds (services/cloud/google.js). Without either
+    // the connect button would only lead to a Google error page.
+    isAvailable: () => Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) || cloudGoogle.available(),
     getToken,
     getPlaylists,
     getPlaylistTracks,

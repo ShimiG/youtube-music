@@ -5,11 +5,14 @@
 // token for any OAuth source or throws a SourceError with a unified code:
 //   SOURCE_NOT_CONNECTED   no row, or the stored token cannot be decrypted
 //   SOURCE_TOKEN_EXPIRED   expired, and renewing with the refresh token failed
+//   SOURCE_UNAVAILABLE     the login is fine, but the cloud account that holds
+//                          it could not be reached just now (YouTube only)
 // Refresh happens server-side and single-flight per (source, user). The user is
 // only sent back through the connect flow when the refresh itself fails.
 const { SourceError } = require('./errors');
 const { encrypt, decrypt } = require('./tokenCrypto');
 const soundcloudTokens = require('../controllers/soundcloud/tokens');
+const cloudGoogle = require('./cloud/google');
 
 const SOURCE_IDS = { youtube: 1, spotify: 2, soundcloud: 3, audius: 4, deezer: 5, local: 6 }; // sources.id, see config/db.js
 
@@ -89,32 +92,69 @@ const inFlight = new Map(); // `${source}:${userId}` -> Promise<accessToken>
 
 async function getYouTubeToken(db, userId) {
     const conn = await getConnection(db, userId, 'youtube');
-    if (!conn || !conn.accessToken) throw new SourceError('SOURCE_NOT_CONNECTED', 'youtube');
-    if (isFresh(conn.expiresAt)) return conn.accessToken;
-    if (!conn.refreshToken) throw new SourceError('SOURCE_TOKEN_EXPIRED', 'youtube');
+    if (conn && conn.accessToken && isFresh(conn.expiresAt)) return conn.accessToken;
 
     const key = `youtube:${userId}`;
     if (inFlight.has(key)) return inFlight.get(key);
 
-    const pending = refreshGoogle(conn.refreshToken)
-        .then(async (tokens) => {
-            await storeConnection(db, userId, 'youtube', tokens);
-            return tokens.accessToken;
-        })
-        .catch(async (err) => {
-            // invalid_grant means the grant was revoked or expired: the refresh
-            // token is dead, so drop it and make the user reconnect. A network
-            // error or 5xx keeps it for the next attempt.
-            if (err.oauthError === 'invalid_grant' || err.status === 400 || err.status === 401) {
-                await clearRefreshToken(db, userId, 'youtube');
-            }
-            console.warn(`YouTube token refresh failed for user ${userId}: ${err.message}`);
-            throw new SourceError('SOURCE_TOKEN_EXPIRED', 'youtube', { cause: err });
-        })
-        .finally(() => inFlight.delete(key));
+    // Renewed here when this computer holds the refresh token (YouTube was
+    // connected with this installation's own Google credentials).
+    if (conn && conn.accessToken && conn.refreshToken) {
+        const pending = refreshGoogle(conn.refreshToken)
+            .then(async (tokens) => {
+                await storeConnection(db, userId, 'youtube', tokens);
+                return tokens.accessToken;
+            })
+            .catch(async (err) => {
+                // invalid_grant means the grant was revoked or expired: the refresh
+                // token is dead, so drop it and make the user reconnect. A network
+                // error or 5xx keeps it for the next attempt.
+                if (err.oauthError === 'invalid_grant' || err.status === 400 || err.status === 401) {
+                    await clearRefreshToken(db, userId, 'youtube');
+                }
+                console.warn(`YouTube token refresh failed for user ${userId}: ${err.message}`);
+                throw new SourceError('SOURCE_TOKEN_EXPIRED', 'youtube', { cause: err });
+            })
+            .finally(() => inFlight.delete(key));
+        inFlight.set(key, pending);
+        return pending;
+    }
 
+    // Otherwise the cloud account may hold the YouTube login: it keeps the
+    // refresh token and hands out a short-lived access token, which is all
+    // this computer stores.
+    const pending = fromCloudAccount(db, userId, conn)
+        .finally(() => inFlight.delete(key));
     inFlight.set(key, pending);
     return pending;
+}
+
+async function fromCloudAccount(db, userId, conn) {
+    const none = () => new SourceError(conn && conn.accessToken ? 'SOURCE_TOKEN_EXPIRED' : 'SOURCE_NOT_CONNECTED', 'youtube');
+    if (!(await cloudGoogle.connected(db, userId))) throw none();
+    let token;
+    try {
+        token = await cloudGoogle.accessToken(db, userId);
+    } catch (err) {
+        // The cloud (or Google behind it) could not be reached. The login is
+        // still good; say the service is unavailable, not that it is gone.
+        console.warn(`YouTube token from the cloud account failed for user ${userId}: ${err.message}`);
+        throw new SourceError('SOURCE_UNAVAILABLE', 'youtube', {
+            status: 502,
+            message: 'YouTube could not be reached through your cloud account. Try again in a moment.',
+            cause: err
+        });
+    }
+    if (!token) {
+        // Disconnected on another computer: the token kept here is of no use.
+        await db.run(
+            `DELETE FROM user_connections WHERE user_id = ? AND source_id = ? AND refresh_token IS NULL`,
+            [userId, SOURCE_IDS.youtube]
+        );
+        throw new SourceError('SOURCE_NOT_CONNECTED', 'youtube');
+    }
+    await storeConnection(db, userId, 'youtube', { accessToken: token.accessToken, refreshToken: null, expiresAt: token.expiresAt });
+    return token.accessToken;
 }
 
 // --- SoundCloud (renewal lives in controllers/soundcloud/tokens.js) ----------

@@ -48,6 +48,9 @@ function fromConnectionError(err, source, label) {
     if (err && err.code === 'SOURCE_TOKEN_EXPIRED') {
         return new SourceError('TOKEN_EXPIRED', `Your ${label} session has expired. Reconnect your account.`, { source, cause: err });
     }
+    if (err && err.code === 'SOURCE_UNAVAILABLE') {
+        return new SourceError('UPSTREAM', err.message, { source, cause: err.cause || err });
+    }
     return err;
 }
 

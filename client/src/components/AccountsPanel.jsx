@@ -143,7 +143,13 @@ function AccountRow({ source, service, onServices }) {
                 </p>
             )}
 
-            {available && service && (
+            {available && service && !service.configured && (
+                <p className="accounts-detail">
+                    Connects through your cloud account, so there is nothing to set up on this computer. Connected once, it is connected on every computer signed in to that account.
+                </p>
+            )}
+
+            {available && service && service.configured && (
                 <p className="accounts-detail">
                     {service.managedBy === 'env' ? 'Credentials come from the .env file.' : 'Credentials were entered in this app.'}
                     {service.canEdit && !editing && (

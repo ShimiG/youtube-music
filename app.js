@@ -179,6 +179,11 @@ app.delete('/api/cloud/url', requireAuth, settingsLimiter, settingsController.re
 app.post('/api/cloud/link', requireAuth, authLimiter, requireExistingUser, cloudController.link);
 app.delete('/api/cloud/link', requireAuth, cloudController.unlink);
 app.post('/api/cloud/sync', requireAuth, cloudSyncLimiter, cloudController.syncNow);
+app.get('/api/cloud/google/status', requireAuth, cloudSyncLimiter, cloudController.googleStatus);
+// Before anyone is logged in: signing in to the app with the cloud account,
+// which also sets this computer up for it (controllers/cloudController.js).
+app.get('/api/cloud/info', cloudController.getInfo);
+app.post('/api/cloud/login', authLimiter, cloudController.login);
 
 // --- Theme colours from the playing track's cover (issue #26). The server
 // reads the image because the browser may not read another site's pixels;

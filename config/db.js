@@ -272,6 +272,11 @@ async function initDB(filename = path.join(dataDir(), 'database.sqlite')) {
         await db.exec('ALTER TABLE playlists ADD COLUMN sync_id TEXT');
     }
     await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_sync_id ON playlists(sync_id) WHERE sync_id IS NOT NULL');
+    // Whether the linked cloud account holds a YouTube connection (the last
+    // answer from the cloud; services/cloud/google.js keeps it current).
+    if (!(await db.all('PRAGMA table_info(cloud_links)')).some((c) => c.name === 'google_connected')) {
+        await db.exec('ALTER TABLE cloud_links ADD COLUMN google_connected INTEGER NOT NULL DEFAULT 0');
+    }
 
     // Tokens written before encryption at rest existed are rewritten encrypted.
     await migratePlaintextTokens(db);

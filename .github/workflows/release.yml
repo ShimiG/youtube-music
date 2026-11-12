@@ -86,7 +86,13 @@ jobs:
       # Server as a single executable, with ffmpeg and yt-dlp staged next to it
       # under Tauri's externalBin names. All three must exist, or the app
       # would install fine and then play nothing.
+      # CLOUD_URL (a repository variable, Settings -> Secrets and variables ->
+      # Actions -> Variables) is the address of the cloud service; when set it
+      # is built into the app, so a new computer only needs a sign-in. It is
+      # an address, not a secret. Not set: the app asks for it instead.
       - name: Build server executable
+        env:
+          CLOUD_URL: ${{ vars.CLOUD_URL }}
         run: |
           npm run build:server
           ls -la bin/

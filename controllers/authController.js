@@ -5,7 +5,8 @@ const jwt = require('jsonwebtoken');
 
 const connections = require('../services/connections');
 const { SOURCE_IDS, storeConnection } = connections;
-const { parseReturnTarget, finishOAuth } = require('../services/oauthReturn');
+const { parseReturnTarget, finishOAuth, clientOrigin } = require('../services/oauthReturn');
+const cloudGoogle = require('../services/cloud/google');
 
 const DEFAULT_REDIRECT_URI = 'http://localhost:3000/auth/google/callback';
 const GOOGLE_REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
@@ -21,10 +22,45 @@ const oauthClient = () => new auth.OAuth2(
 );
 
 // Returns the Google consent URL for the logged-in user (requireAuth runs first).
-// The callback arrives as a bare browser redirect with no Authorization header,
-// so we carry the userId across in `state` — a short-lived signed token Google
-// echoes back to us untouched.
-const getGoogleAuthUrl = (req, res) => {
+//
+// Two ways to get there. A user linked to a cloud account connects through the
+// cloud service when it holds Google credentials: the login is then kept with
+// the cloud account and works on every computer linked to it. Otherwise this
+// installation's own credentials are used, as before, and the login stays here.
+//
+// In the second case the callback arrives as a bare browser redirect with no
+// Authorization header, so we carry the userId across in `state` — a
+// short-lived signed token Google echoes back to us untouched.
+const getGoogleAuthUrl = async (req, res, next) => {
+    try {
+        const target = parseReturnTarget(req.query.return);
+        const viaCloud = await cloudGoogle.startConnect(req.app.locals.db, req.userId, {
+            // The cloud sends the browser back to the desktop app's link, or
+            // to the web client on this computer; it accepts nothing else.
+            returnTo: target === 'app' ? 'app' : clientOrigin(),
+            scope: req.query.scope === 'write' ? 'write' : undefined
+        });
+        if (viaCloud) return res.json({ url: viaCloud, via: 'cloud' });
+    } catch (err) {
+        // The cloud could not be asked. Fall back to this installation's own
+        // credentials when it has them; otherwise say what is wrong.
+        console.warn(`Google connect: the cloud account could not start it: ${err.message}`);
+        if (!isConfigured()) {
+            return res.status(502).json({
+                error: 'Your cloud account could not be reached to connect YouTube. Try again in a moment.',
+                code: 'SOURCE_UPSTREAM',
+                source: 'youtube'
+            });
+        }
+    }
+    try {
+        return localAuthUrl(req, res);
+    } catch (err) {
+        return next(err);
+    }
+};
+
+const localAuthUrl = (req, res) => {
     if (!isConfigured()) {
         return res.status(503).json({
             error: 'YouTube is not set up on this computer yet. Add its Google credentials under Settings, Accounts.',
@@ -137,7 +173,8 @@ const googleCallback = async (req, res, next) => {
 // refresh token): their expiry passing does not mean the user has to reconnect.
 const getConnections = async (req, res, next) => {
     try {
-        const rows = await req.app.locals.db.all(
+        const db = req.app.locals.db;
+        const rows = await db.all(
             `SELECT s.name AS source_name, uc.expires_at,
                     CASE WHEN s.name IN ('youtube', 'soundcloud') AND uc.refresh_token IS NOT NULL THEN 1 ELSE 0 END AS refreshable
              FROM user_connections uc
@@ -145,6 +182,12 @@ const getConnections = async (req, res, next) => {
              WHERE uc.user_id = ?`,
             [req.userId]
         );
+        // A YouTube login kept with the cloud account is renewed from there.
+        if (await cloudGoogle.connected(db, req.userId)) {
+            const youtube = rows.find((row) => row.source_name === 'youtube');
+            if (youtube) youtube.refreshable = 1;
+            else rows.push({ source_name: 'youtube', expires_at: null, refreshable: 1 });
+        }
         res.json(rows);
     } catch (err) {
         next(err);
@@ -161,8 +204,24 @@ const disconnectGoogle = async (req, res, next) => {
         try {
             stored = await connections.getConnection(db, req.userId, 'youtube');
         } catch { /* undecryptable: nothing to revoke, the row is still removed */ }
+        // Kept with the cloud account: disconnect it there, which revokes it
+        // at Google and disconnects every computer linked to the account.
+        let cloudDone = false;
+        if (await cloudGoogle.connected(db, req.userId)) {
+            try {
+                cloudDone = await cloudGoogle.disconnect(db, req.userId);
+            } catch {
+                return res.status(502).json({
+                    error: 'Your cloud account could not be reached, so YouTube is still connected there. Try again in a moment.',
+                    code: 'SOURCE_UPSTREAM',
+                    source: 'youtube'
+                });
+            }
+        }
         await db.run(`DELETE FROM user_connections WHERE user_id = ? AND source_id = ?`, [req.userId, SOURCE_IDS.youtube]);
-        const token = stored && (stored.refreshToken || stored.accessToken);
+        // A token this computer got with its own credentials is revoked from
+        // here. (One handed out by the cloud was revoked with the grant above.)
+        const token = stored && (stored.refreshToken || (!cloudDone && stored.accessToken));
         if (token) {
             try {
                 await connections.http.fetch(GOOGLE_REVOKE_URL, {

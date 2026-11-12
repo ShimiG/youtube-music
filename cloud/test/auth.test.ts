@@ -131,6 +131,18 @@ describe('sessions', () => {
     });
 });
 
+describe('renewing a session', () => {
+    it('gives a valid session a new one, and nothing to anyone else', async () => {
+        const token = await account('shimi', '1');
+        const res = await call('/auth/refresh', { method: 'POST', token });
+        expect(res.status).toBe(200);
+        expect(res.json.expiresAt).toBeGreaterThan(Date.now() + 29 * 24 * 60 * 60 * 1000);
+        expect((await call('/sync/pull', { token: res.json.token })).status).toBe(200);
+        expect((await call('/auth/refresh', { method: 'POST' })).status).toBe(401);
+        expect((await call('/auth/refresh', { method: 'POST', token: 'not.a.token' })).status).toBe(401);
+    });
+});
+
 describe('the entry module', () => {
     it('exports the handler and nothing else: the runtime reads every export as an entrypoint', async () => {
         // An extra export (a constant, say) passes every other test and then

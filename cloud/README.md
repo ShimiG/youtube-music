@@ -25,6 +25,7 @@ holds the data.
 | `GET /health` | no | Is the service up; is sign-up open |
 | `POST /auth/register` | no | `{ username, authKey, registrationCode }` → session |
 | `POST /auth/login` | no | `{ username, authKey }` → session |
+| `POST /auth/refresh` | yes | A new session for a valid one (the app renews before expiry) |
 | `DELETE /auth/account` | yes | `{ authKey }` → deletes the account and its records |
 | `POST /sync/push` | yes | `{ deviceId, changes: [{ collection, id, updatedAt, data }] }` |
 | `GET /sync/pull?since=&limit=` | yes | The changes accepted after `since` |
@@ -130,6 +131,28 @@ closed again:
 
 ```bash
 npx wrangler secret delete REGISTRATION_CODE
+```
+
+Then, in Music Manager: Settings → Accounts → Cloud sync. Enter the address,
+choose "Create an account instead", and give a user name, a password and the
+registration code. On every other computer, enter the same address and sign
+in with that user name and password.
+
+## Update it
+
+After pulling a newer version of this folder, apply any new migrations and
+deploy again. Accounts and data are kept:
+
+```bash
+npm ci
+```
+
+```bash
+npm run migrate:remote
+```
+
+```bash
+npm run deploy
 ```
 
 ## Work on it

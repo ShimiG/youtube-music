@@ -71,6 +71,9 @@ initDB()
             // Pick up music added or removed in local folders while the app was closed.
             require('./services/localLibrary').rescanAll(db)
                 .catch((err) => console.warn('Local files: rescan at startup failed:', err.message));
+            // Keep linked users' playlists and history in step with the cloud.
+            require('./services/cloud/sync').start(db)
+                .catch((err) => console.warn('Cloud sync could not start:', err.message));
             // Best-effort, in the background: a stale yt-dlp is the usual reason
             // YouTube or SoundCloud playback stops working.
             updateYtDlp();

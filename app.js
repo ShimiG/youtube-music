@@ -23,6 +23,7 @@ const localController = require('./controllers/localController');
 const lyricsController = require('./controllers/lyricsController');
 const artworkController = require('./controllers/artworkController');
 const settingsController = require('./controllers/settingsController');
+const cloudController = require('./controllers/cloudController');
 const logFile = require('./services/logFile');
 
 const app = express();
@@ -68,6 +69,8 @@ const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
 const matchResolveLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 120 });
 // Changing the installation's service credentials is rare.
 const settingsLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30 });
+// "Sync now" is a button; background runs do not pass through here.
+const cloudSyncLimiter = rateLimit({ windowMs: 60 * 1000, max: 12 });
 // One lyrics request per track played; a lookup may call the lyrics server.
 const lyricsLimiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
 // One per track played; each new cover costs a download and an ffmpeg run.
@@ -165,6 +168,17 @@ app.delete('/api/local/folders/:id', requireAuth, localController.removeFolder);
 // --- Lyrics (issue #30): from the user's own files, or looked up online when
 // the client says the user agreed (services/lyrics.js). ---
 app.get('/api/lyrics', requireAuth, lyricsLimiter, lyricsController.getLyrics);
+
+// --- Cloud sync (docs/cloud-data.md): a user links this computer to their
+// cloud account; playlists and history are then kept the same on every linked
+// computer. Where the cloud service is, is the owner's to set. Signing in is
+// limited like any login. ---
+app.get('/api/cloud/status', requireAuth, cloudController.getStatus);
+app.put('/api/cloud/url', requireAuth, settingsLimiter, settingsController.requireOwner, cloudController.saveUrl);
+app.delete('/api/cloud/url', requireAuth, settingsLimiter, settingsController.requireOwner, cloudController.clearUrl);
+app.post('/api/cloud/link', requireAuth, authLimiter, requireExistingUser, cloudController.link);
+app.delete('/api/cloud/link', requireAuth, cloudController.unlink);
+app.post('/api/cloud/sync', requireAuth, cloudSyncLimiter, cloudController.syncNow);
 
 // --- Theme colours from the playing track's cover (issue #26). The server
 // reads the image because the browser may not read another site's pixels;

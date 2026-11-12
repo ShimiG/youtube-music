@@ -226,6 +226,53 @@ async function initDB(filename = path.join(dataDir(), 'database.sqlite')) {
         );
     `);
 
+    // Cloud sync (docs/cloud-data.md, services/cloud/). A user links this
+    // installation to a cloud account; from then on their custom playlists
+    // and history are kept the same on every linked computer.
+    //   app_meta      small installation-wide values (the cloud address, this
+    //                 installation's device id). Nothing secret.
+    //   cloud_links   one row per linked user: who they are in the cloud, the
+    //                 session (encrypted like the service tokens), how far
+    //                 this computer has read the cloud's changes.
+    //   sync_records  the last state of every synced record that this
+    //                 computer and the cloud agreed on, as a hash: what
+    //                 differs from it locally has changed here.
+    // playlists.sync_id is a playlist's id across computers (its row id is
+    // only unique on one).
+    await db.exec(`
+        CREATE TABLE IF NOT EXISTS app_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS cloud_links (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT NOT NULL,
+            session TEXT NOT NULL,
+            session_expires_at INTEGER NOT NULL,
+            cursor INTEGER NOT NULL DEFAULT 0,
+            state TEXT NOT NULL DEFAULT 'ok',   -- ok | signin_required
+            last_sync_at INTEGER,
+            last_error TEXT,
+            linked_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS sync_records (
+            user_id INTEGER NOT NULL,
+            collection TEXT NOT NULL,
+            record_id TEXT NOT NULL,
+            hash TEXT NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted INTEGER NOT NULL DEFAULT 0,
+            dirty INTEGER NOT NULL DEFAULT 0,   -- 1: changed here, not yet sent
+            PRIMARY KEY (user_id, collection, record_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+    `);
+    if (!(await db.all('PRAGMA table_info(playlists)')).some((c) => c.name === 'sync_id')) {
+        await db.exec('ALTER TABLE playlists ADD COLUMN sync_id TEXT');
+    }
+    await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_sync_id ON playlists(sync_id) WHERE sync_id IS NOT NULL');
+
     // Tokens written before encryption at rest existed are rewritten encrypted.
     await migratePlaintextTokens(db);
 

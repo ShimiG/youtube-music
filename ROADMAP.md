@@ -493,13 +493,16 @@ stays as fast as it is and works offline. In order:
    source too (an existing project-folder one is moved once), and no `.env`
    is needed to start. No cloud involved; fixes "every new copy starts
    empty".
-2. Sync groundwork in the local schema (changed-at / deleted-at, stable row
-   ids, an installation id).
+2. **Done.** Sync groundwork in the local schema (a cross-computer id for
+   playlists, the last agreed state of every synced record, an installation
+   id).
 3. **Done.** `cloud/`: D1 migration and the Worker (accounts with closed
-   sign-up, sessions, push / pull), with tests in the Workers runtime and a
-   CI job. Deploying it is a short list of commands in `cloud/README.md`.
-4. The sync module, its settings and status under Settings → Accounts, and
-   the first-run flows (upload, download, merge).
+   sign-up, sessions that renew, push / pull), with tests in the Workers
+   runtime and a CI job. Deploying it is a short list of commands in
+   `cloud/README.md`.
+4. **Done.** The sync engine (`services/cloud/`), Settings → Accounts → Cloud
+   sync, and the first-run cases (upload, download, merge). Custom playlists
+   and history sync; music from Local Files does not.
 5. A two-computer run on a real Cloudflare account (needs the owner).
 
 6. Google sign-in through the Worker, so the Google client secret is a

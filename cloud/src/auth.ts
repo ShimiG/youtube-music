@@ -125,6 +125,15 @@ export async function login(env: Env, body: unknown) {
     return newSession(env, user.id);
 }
 
+/**
+ * A fresh session for an account that already has a valid one. A device that
+ * syncs at least once every 30 days therefore never has to sign in again, and
+ * the password is not kept on it.
+ */
+export function refresh(env: Env, userId: number) {
+    return newSession(env, userId);
+}
+
 /** Deletes the caller's account and everything synced under it. */
 export async function deleteAccount(env: Env, userId: number, body: unknown) {
     const authKey = typeof (body as Record<string, unknown> | null)?.authKey === 'string' ? (body as Record<string, string>).authKey ?? '' : '';

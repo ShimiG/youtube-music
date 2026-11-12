@@ -248,6 +248,7 @@ see [docs/packaging.md](docs/packaging.md).
 | `GET /api/media/token` | JWT | Short-lived media token for the two routes below |
 | `GET /stream?videoId=&source=&t=`, `GET /duration?videoId=&source=&t=` | media token (`t`), rate-limited | Audio stream / duration; `source=spotify` plays the matched YouTube video. `&seek=N` starts at N seconds; `&prepare=1` gets the track ready in the disk cache without playing it |
 | `GET/DELETE /api/match/:source/:id`, `POST /api/match/resolve`, `.../override`, `.../report` | JWT | Match engine (see "Matching engine") |
+| `GET /api/cloud/status`, `PUT`/`DELETE /api/cloud/url`, `POST`/`DELETE /api/cloud/link`, `POST /api/cloud/sync` | JWT; address: owner only | Cloud sync: where the service is, linking this computer, syncing now |
 | `GET /api/settings/services`, `PUT`/`DELETE /api/settings/services/:source` | JWT; changes: owner only | Service credentials entered in the app (never returned) |
 | `DELETE /api/user/connections/youtube`, `.../soundcloud` | JWT | Disconnect a service account |
 | `GET /api/health`, `GET /api/system/log` | JWT; log: owner only | yt-dlp / ffmpeg versions and cache use; the end of the server log |
@@ -258,11 +259,13 @@ see [docs/packaging.md](docs/packaging.md).
 
 ## Notes & known limitations
 
-- **Cloud sync (in progress).** [`cloud/`](cloud/README.md) is a Cloudflare Worker with a D1
-  database, deployed to your own free Cloudflare account, that will keep playlists and
-  history the same on every computer. The Worker is built and tested; the desktop side is
-  next. Design: [docs/cloud-data.md](docs/cloud-data.md).
-
+- **Cloud sync.** [`cloud/`](cloud/README.md) is a Cloudflare Worker with a D1 database,
+  deployed to your own free Cloudflare account. Under Settings → Accounts → Cloud sync you
+  point the app at it and sign in; your custom playlists and history are then the same on
+  every computer signed in to that account. Reads stay local, so nothing gets slower and
+  the app works offline; sync runs in the background. Design:
+  [docs/cloud-data.md](docs/cloud-data.md). `CLOUD_URL` in the environment sets the
+  address for everyone on the installation.
 - **Accounts and the owner.** Settings → Accounts connects and disconnects services and holds
   this installation's own service credentials (encrypted in the database, applied without
   a restart). The first account created on an installation is its owner: only it can change

@@ -453,7 +453,7 @@ Everything around playback that is not a new source.
   code shown on the desktop) and an authenticated WebSocket, rather than
   "same Google account" as the issue suggests. Two to three days.
 
-## Stage 8: Performance (planned)
+## Stage 8: Performance (in progress)
 
 From a code review and measurements; the full plan, with the numbers and how
 each step is checked, is in
@@ -462,11 +462,15 @@ own code is fast (local requests 1 to 6 ms, conversion's first byte in 50 to
 110 ms), and the wait before a streamed track starts is almost entirely
 `yt-dlp`, which is run more often than needed. In order:
 
-0. Log real timings per play; fix "Load more" hidden behind the player bar.
-1. Time to first sound: one remembered `yt-dlp` lookup per track instead of
-   two or more; stop looking up lengths already known; make "load the next
-   track early" work for streamed tracks; seek inside cached tracks in the
-   player (also fixes seeking restarting the sound).
+0. **Done.** Real timings per play in the log; "Load more" no longer hidden
+   behind the player bar.
+1. Time to first sound. **Done:** one remembered `yt-dlp` lookup per track
+   instead of two or more (YouTube and the sources matched to it); the next
+   track is prepared while the current one plays (2.3 s became 0.17 s in the
+   test run); seeking inside cached tracks happens in the player (also fixes
+   seeking restarting the sound). **Open:** the same for SoundCloud without
+   API credentials; stop looking up lengths already known (1.2); how
+   `yt-dlp` is run (1.5).
 2. Convert to disk at full speed and play from the growing file, so the
    cache completes at once and long tracks are not cut off.
 3. Start-up: the window waits for the server; background jobs wait a

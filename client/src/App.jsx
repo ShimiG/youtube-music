@@ -158,7 +158,10 @@ function App() {
                 <>
                     <Sidebar view={view} setView={setView} handleLogout={handleLogout} />
 
-                    <main className="content" style={{ padding: '20px' }}>
+                    {/* Room at the bottom for the player bar, which lies over the
+                        page: without it the end of a list ("Load more") was
+                        hidden behind the bar. */}
+                    <main className="content" style={{ padding: '20px', paddingBottom: currentTrack ? 'calc(var(--player-height, 96px) + 20px)' : '20px' }}>
                         {view !== 'settings' && <ConnectServices />}
                         {(view === 'search' || view === 'history') && (
                             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', width: '100%', boxSizing: 'border-box' }}> 

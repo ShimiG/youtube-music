@@ -38,6 +38,8 @@ class StreamingController {
             return res.status(400).json({ error: 'Invalid quality (use low, standard or high)' });
         }
         const provider = resolveSource(req, res);
+        // For the per-play line in the log (controllers/transcode.js logPlay).
+        req.playStartedAt = Date.now();
         if (provider) return provider.stream(req, res);
     }
 

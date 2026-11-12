@@ -1,7 +1,7 @@
 # Performance plan
 
-Status: plan (12 Nov 2026), from a code review and measurements. Nothing in
-it is built yet.
+Status: plan from a code review and measurements (12 Nov 2026). **Built so
+far: steps 0, 1.1, 1.3 and 1.4** (see "Done so far"); the rest is open.
 
 ## What was measured
 
@@ -31,6 +31,43 @@ environment. Everything else on the way to the first sound was measured and
 is fast, so for a streamed track that has not been played before, the wait
 is almost entirely `yt-dlp`, and the review found it is run more often than
 needed. That is where this plan starts.
+
+## Done so far
+
+Steps 0, 1.1, 1.3 and 1.4, measured in a real browser against a stand-in
+`yt-dlp` that takes 2 seconds per lookup (the real one could not be reached
+from the build machine; the owner's log now records the real figures):
+
+| | Before | After |
+|---|---|---|
+| `yt-dlp` runs per play | 2 | 1 |
+| Next track in the queue, time to sound | 2.3 s | 0.17 s (prepared, from the disk cache) |
+| Next track when skipped to before it is ready | 2.3 s | 0.25 to 0.75 s (the lookup is shared or remembered) |
+| Seek in a previously played track | new stream, `yt-dlp` again | instant, in the player; sound and clock agree |
+| Seek in a track still being converted | `yt-dlp` again (2 s) | 50 ms, from the remembered address |
+
+Each play now leaves a line in `logs/server.log`, for example:
+
+```
+Play youtube dQw4w9WgXcQ: address 1998 ms (yt-dlp), first audio 68 ms after starting ffmpeg, 2067 ms after the request
+Play youtube_dQw4w9WgXcQ: from the disk cache, 0 ms after the request
+Prepared youtube dQw4w9WgXcQ in 2399 ms
+```
+
+"address" is the lookup: `yt-dlp` (a run was started), `shared` (joined a
+run another request had started) or `memory` (remembered, no run). Settings →
+System also shows how long `yt-dlp` itself takes to start.
+
+How the next track is prepared: 15 seconds into a track (or 25 seconds
+before its end, if it is shorter), the client asks the server to get the
+next one ready (`/stream?...&prepare=1`). The server looks the address up
+and converts the track straight into the disk cache, as one of at most two
+background conversions, and answers at once. If the listener skips ahead
+before that has finished, the remembered address still saves the lookup.
+
+Not covered yet: SoundCloud without API credentials still looks things up
+twice (same change as 1.1, in `controllers/soundcloud/ytdlp.js`), and step
+1.2.
 
 ## Where the time goes
 

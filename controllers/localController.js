@@ -12,7 +12,7 @@
 // quality); other formats, and any seek into a part not yet loaded, go
 // through ffmpeg.
 const library = require('../services/localLibrary');
-const { parseSeek, sendMediaFile, streamTranscoded } = require('./transcode');
+const { parseSeek, sendMediaFile, streamTranscoded, isPrepare, answerPrepare } = require('./transcode');
 const { sendSourceError } = require('../services/errors');
 
 function sendLocalError(res, err, next) {
@@ -69,6 +69,8 @@ const streamTrack = async (req, res, next) => {
         if (seekError) return res.status(400).json({ error: seekError });
         const file = await fileFor(req, res);
         if (!file) return;
+        // A file on this disk needs no preparing before it plays.
+        if (isPrepare(req)) return answerPrepare(res, 'skipped');
         if (file.directType && seekTime === 0) return sendMediaFile(res, file.filePath, file.directType);
         // `file:` so a path is never read as a URL or an option by ffmpeg.
         return streamTranscoded(req, res, {

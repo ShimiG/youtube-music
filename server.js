@@ -13,7 +13,10 @@ require('./services/dataFolder').moveProjectDataIfNeeded();
 
 const app = require('./app');
 const initDB = require('./config/db');
-const { updateYtDlp } = require('./services/ytdlp');
+const { updateYtDlpIfDue } = require('./services/ytdlp');
+
+// How long after start-up the housekeeping that can wait begins.
+const BACKGROUND_START_DELAY_MS = 45 * 1000;
 const { prepareCache } = require('./controllers/transcode');
 const { encrypt } = require('./services/tokenCrypto');
 
@@ -68,15 +71,20 @@ initDB()
             console.log(`Using ffmpeg: ${require('./services/paths').resolveFfmpeg()}`);
             // Remove stale .part files, migrate legacy cache names, apply the size cap.
             prepareCache().catch((err) => console.warn('Cache housekeeping failed:', err.message));
-            // Pick up music added or removed in local folders while the app was closed.
-            require('./services/localLibrary').rescanAll(db)
-                .catch((err) => console.warn('Local files: rescan at startup failed:', err.message));
             // Keep linked users' playlists and history in step with the cloud.
             require('./services/cloud/sync').start(db)
                 .catch((err) => console.warn('Cloud sync could not start:', err.message));
-            // Best-effort, in the background: a stale yt-dlp is the usual reason
-            // YouTube or SoundCloud playback stops working.
-            updateYtDlp();
+            // Not at once: these compete with the first clicks for the disk
+            // and the processor (docs/performance-plan.md, step 3.2).
+            const later = setTimeout(() => {
+                // Pick up music added or removed in local folders while the app was closed.
+                require('./services/localLibrary').rescanAll(db)
+                    .catch((err) => console.warn('Local files: rescan after startup failed:', err.message));
+                // Best-effort: a stale yt-dlp is the usual reason YouTube or
+                // SoundCloud playback stops working. Looked for once a day.
+                updateYtDlpIfDue();
+            }, BACKGROUND_START_DELAY_MS);
+            later.unref();
         });
     })
     .catch((err) => {

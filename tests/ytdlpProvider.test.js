@@ -26,6 +26,7 @@ let execMock;
 beforeEach(() => {
     execMock = jest.fn();
     ytdlp.runner.exec = execMock;
+    ytdlp._reset();
 });
 
 describe('normalizeEntry', () => {
@@ -133,8 +134,65 @@ describe('resolveStream', () => {
 
 describe('getDuration', () => {
     it('parses the printed duration into whole seconds', async () => {
-        execMock.mockResolvedValueOnce('213.513\n');
+        execMock.mockResolvedValueOnce('213.513\nhttps://cf-media.sndcdn.com/a.mp3\nhttp_mp3_1_0\n');
         expect(await ytdlp.getDuration('1')).toBe(214);
         expect(execMock.mock.calls[0][0]).toEqual(expect.arrayContaining(['--print', 'duration']));
+    });
+});
+
+// docs/performance-plan.md, step 1.1, for SoundCloud without API credentials.
+describe('one look-up per track', () => {
+    const answer = '213.5\nhttps://cf-media.sndcdn.com/a.128.mp3?x=1\nhttp_mp3_1_0\n';
+
+    it('address and length come from a single yt-dlp run, shared by requests that arrive together', async () => {
+        let release;
+        execMock.mockReturnValueOnce(new Promise((resolve) => { release = () => resolve(answer); }));
+        const stream = ytdlp.resolveStream('42');
+        const duration = ytdlp.getDuration('42');
+        release();
+        expect(await stream).toMatchObject({ url: 'https://cf-media.sndcdn.com/a.128.mp3?x=1', isPreview: false, format: 'http_mp3_1_0', from: 'yt-dlp' });
+        expect(await duration).toBe(214);
+        expect(execMock).toHaveBeenCalledTimes(1);
+        const args = execMock.mock.calls[0][0];
+        expect(args.filter((a) => a === '--print')).toHaveLength(3);
+    });
+
+    it('is remembered: a seek or a replay soon after starts nothing', async () => {
+        execMock.mockResolvedValueOnce(answer);
+        await ytdlp.resolveStream('42');
+        expect(await ytdlp.resolveStream('42')).toMatchObject({ from: 'memory' });
+        expect(await ytdlp.getDuration('42')).toBe(214);
+        expect(execMock).toHaveBeenCalledTimes(1);
+
+        // Another track is its own look-up; a dead address is forgotten.
+        execMock.mockResolvedValue(answer);
+        await ytdlp.resolveStream('43');
+        ytdlp.forget('42');
+        await ytdlp.resolveStream('42');
+        expect(execMock).toHaveBeenCalledTimes(3);
+    });
+
+    it('a failed look-up is not remembered, and everyone waiting hears about it', async () => {
+        execMock.mockRejectedValueOnce(Object.assign(new Error('yt-dlp failed: boom'), { code: 'YTDLP_FAILED' }));
+        const both = await Promise.allSettled([ytdlp.resolveStream('44'), ytdlp.getDuration('44')]);
+        expect(both.map((r) => r.status)).toEqual(['rejected', 'rejected']);
+        execMock.mockResolvedValueOnce(answer);
+        expect(await ytdlp.getDuration('44')).toBe(214);
+        expect(execMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps an address only as long as it says it is good for', () => {
+        const now = Date.parse('2026-11-12T12:00:00Z');
+        const minutes = (ms) => Math.round((ms - now) / 60000);
+        // Says nothing: five minutes.
+        expect(minutes(ytdlp.urlExpiry('https://cf-media.sndcdn.com/a.mp3', now))).toBe(5);
+        // A signed address good for 20 more minutes: used for 18.
+        const until = Math.floor(now / 1000) + 20 * 60;
+        const policy = Buffer.from(JSON.stringify({ Statement: [{ Condition: { DateLessThan: { 'AWS:EpochTime': until } } }] })).toString('base64').replace(/\+/g, '-').replace(/=/g, '_').replace(/\//g, '~');
+        expect(minutes(ytdlp.urlExpiry(`https://cf-media.sndcdn.com/a.mp3?Policy=${policy}&Signature=s`, now))).toBe(18);
+        expect(minutes(ytdlp.urlExpiry(`https://cf-media.sndcdn.com/a.mp3?expires=${until}`, now))).toBe(18);
+        // Never longer than half an hour, and an expired one is not kept at all.
+        expect(minutes(ytdlp.urlExpiry(`https://cf-media.sndcdn.com/a.mp3?expires=${until + 86400}`, now))).toBe(30);
+        expect(ytdlp.urlExpiry(`https://cf-media.sndcdn.com/a.mp3?expires=${until - 3600}`, now)).toBeLessThan(now);
     });
 });

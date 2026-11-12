@@ -136,6 +136,7 @@ describe('shared-track-metadata-poisoning: each user keeps their own metadata', 
                 .mockResolvedValueOnce({ id: 1 })   // sources
                 .mockResolvedValueOnce({ id: 77 }), // tracks
             run: jest.fn().mockResolvedValue({}),
+            transaction: (fn) => fn(),
             all: jest.fn().mockResolvedValue([])
         };
     });

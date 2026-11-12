@@ -30,6 +30,7 @@ const MAX_FOLDERS_PER_USER = 20;
 const MAX_DEPTH = 20;
 const MAX_FILES = 50000;
 const PARSE_CONCURRENCY = 4;
+const WRITE_BATCH = 500; // rows per transaction while scanning
 const MAX_PATH_LENGTH = 1024;
 
 class LocalError extends Error {
@@ -314,6 +315,17 @@ async function scanFolder(db, folderId, state = { progress: { done: 0, total: 0 
     state.progress.total = files.length;
     let added = 0;
     let updated = 0;
+    // Rows are written WRITE_BATCH at a time, each batch as one transaction:
+    // row by row, a first scan of a large library spent most of its database
+    // time waiting for the disk.
+    const pending = [];
+    const flush = async () => {
+        const batch = pending.splice(0);
+        if (!batch.length) return;
+        await db.transaction(async () => {
+            for (const [sql, params] of batch) await db.run(sql, params);
+        });
+    };
     await mapLimit(files, PARSE_CONCURRENCY, async (rel) => {
         if (state.cancelled) return;
         const full = path.join(folder.path, rel);
@@ -338,28 +350,33 @@ async function scanFolder(db, folderId, state = { progress: { done: 0, total: 0 
             tags.format || path.extname(rel).slice(1).toLowerCase()
         ];
         if (row) {
-            await db.run(
+            pending.push([
                 `UPDATE local_tracks SET size = ?, mtime_ms = ?, title = ?, artist = ?, album = ?, track_no = ?, duration_sec = ?, format = ? WHERE id = ?`,
                 [...values, row.id]
-            );
+            ]);
             updated++;
         } else {
-            await db.run(
+            pending.push([
                 `INSERT OR IGNORE INTO local_tracks (size, mtime_ms, title, artist, album, track_no, duration_sec, format, folder_id, rel_path)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [...values, folderId, rel]
-            );
+            ]);
             added++;
         }
+        if (pending.length >= WRITE_BATCH) await flush();
     });
+    // What was read before a cancel is kept: it is correct, and saves the next scan the work.
+    await flush();
     if (state.cancelled) return null;
 
     // Whatever is still in `known` was not found on disk this time.
     let removed = 0;
-    for (const row of known.values()) {
-        await db.run(`DELETE FROM local_tracks WHERE id = ?`, [row.id]);
-        removed++;
-    }
+    await db.transaction(async () => {
+        for (const row of known.values()) {
+            await db.run(`DELETE FROM local_tracks WHERE id = ?`, [row.id]);
+            removed++;
+        }
+    });
     const total = await db.get(`SELECT COUNT(*) AS n FROM local_tracks WHERE folder_id = ?`, [folderId]);
     await db.run(
         `UPDATE local_folders SET last_scan_at = ?, file_count = ?, scan_error = NULL, truncated = ? WHERE id = ?`,

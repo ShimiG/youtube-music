@@ -42,6 +42,7 @@ class Database {
     constructor(filename) {
         this.raw = new DatabaseSync(filename);
         this.statements = new Map(); // small prepared-statement cache
+        this.inTransaction = false;
     }
 
     prepare(sql) {
@@ -69,6 +70,32 @@ class Database {
 
     async exec(sql) {
         this.raw.exec(sql);
+    }
+
+    /**
+     * Runs `fn` as one transaction: all of its writes are committed together
+     * (one sync to disk instead of one per statement, which is what makes
+     * bulk writes fast), or none of them if it throws.
+     *
+     * There is one connection, so `fn` must await nothing but database calls:
+     * a statement that another request runs while `fn` waits on the network
+     * or the disk would become part of this transaction. Called inside a
+     * transaction, it simply joins it.
+     */
+    async transaction(fn) {
+        if (this.inTransaction) return fn();
+        this.raw.exec('BEGIN');
+        this.inTransaction = true;
+        try {
+            const result = await fn();
+            this.raw.exec('COMMIT');
+            return result;
+        } catch (err) {
+            try { this.raw.exec('ROLLBACK'); } catch { /* already rolled back by SQLite */ }
+            throw err;
+        } finally {
+            this.inTransaction = false;
+        }
     }
 
     async close() {

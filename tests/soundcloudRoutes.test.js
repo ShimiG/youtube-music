@@ -28,12 +28,13 @@ beforeEach(() => {
     process.env.SOUNDCLOUD_PROVIDER = 'auto';
     ytdlpExec = jest.fn();
     ytdlp.runner.exec = ytdlpExec;
+    ytdlp._reset();
     fetchMock = jest.fn();
     client.http.fetch = fetchMock;
     client.http.sleep = jest.fn().mockResolvedValue(undefined);
     tokens._resetCaches();
     soundcloudController._pendingFlows.clear();
-    app.locals.db = { get: jest.fn(), run: jest.fn().mockResolvedValue({}), all: jest.fn() };
+    app.locals.db = { get: jest.fn(), run: jest.fn().mockResolvedValue({}), all: jest.fn(), transaction: (fn) => fn() };
 });
 
 describe('Auth is enforced', () => {
@@ -377,7 +378,8 @@ describe('yt-dlp fallback (no credentials or API trouble)', () => {
 
     it('answers /duration through yt-dlp when unconfigured', async () => {
         delete process.env.SOUNDCLOUD_CLIENT_ID;
-        ytdlpExec.mockResolvedValueOnce('183.4\n');
+        // One run answers length, address and rendition (controllers/soundcloud/ytdlp.js).
+        ytdlpExec.mockResolvedValueOnce('183.4\nhttps://cf-media.sndcdn.com/a.128.mp3\nhttp_mp3_1_0\n');
 
         const res = await request(app).get(withMedia('/duration?videoId=4242&source=soundcloud'));
 

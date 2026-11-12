@@ -1,0 +1,22 @@
+// Cloudflare Worker + D1 for Music Manager's cloud sync (docs/cloud-data.md).
+// Deploy steps are in cloud/README.md.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "music-manager-cloud",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "observability": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "music-manager",
+      // Not a secret. Replace with the id printed by `npx wrangler d1 create music-manager`.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ]
+  // Secrets are never written here. They are set with `npx wrangler secret put <NAME>`:
+  //   JWT_SECRET         signs the session tokens (required)
+  //   REGISTRATION_CODE  whoever knows it may create an account; unset = sign-up closed
+  //   AUTH_PEPPER        optional extra secret mixed into stored login hashes
+}

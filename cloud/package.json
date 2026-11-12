@@ -1,0 +1,25 @@
+{
+  "name": "music-manager-cloud",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker + D1 that keeps Music Manager's data in sync between computers",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "migrate:local": "wrangler d1 migrations apply music-manager --local",
+    "migrate:remote": "wrangler d1 migrations apply music-manager --remote"
+  },
+  "dependencies": {
+    "hono": "^4.13.18"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.8.0",
+    "@cloudflare/workers-types": "^5.20261112.1",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0",
+    "wrangler": "^4.160.1"
+  }
+}

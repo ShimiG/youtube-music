@@ -59,9 +59,10 @@ function fakeRes({ stuck = false } = {}) {
     return res;
 }
 
+jest.setTimeout(30000);
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const until = async (check, what) => {
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < 1000; i++) { // up to 10 s: the Windows build machine is slow
         if (check()) return;
         await wait(10);
     }
@@ -123,7 +124,7 @@ describe('a play is a conversion into the cache, with the response reading behin
         expect(res.body().equals(whole)).toBe(true);
         await until(() => fs.existsSync(cacheFile('youtube_followaaaaa')), 'the cache file');
         expect(fs.readFileSync(cacheFile('youtube_followaaaaa')).equals(whole)).toBe(true);
-        expect(partFiles()).toEqual([]);
+        await until(() => partFiles().length === 0, 'the .part file to go');
         expect(transcode._jobs.size).toBe(0);
         expect(logSpy.mock.calls.filter(([line]) => /^Play .*first audio \d+ ms after starting ffmpeg/.test(line))).toHaveLength(1);
     });
@@ -133,9 +134,14 @@ describe('a play is a conversion into the cache, with the response reading behin
         const child = lastChild();
         const whole = audio(400000);
         await convert(child, whole);
-        // The player took the first bytes and no more; the track is in the cache regardless.
-        await until(() => fs.existsSync(cacheFile('youtube_stuckaaaaaa')), 'the cache file');
-        expect(fs.statSync(cacheFile('youtube_stuckaaaaaa')).size).toBe(whole.length);
+        // The player took the first bytes and no more; the whole track is on
+        // disk regardless. (Under its final name at once, except on Windows,
+        // which renames a file only when nobody is reading it any more.)
+        const complete = () => (fs.existsSync(cacheFile('youtube_stuckaaaaaa'))
+            ? cacheFile('youtube_stuckaaaaaa')
+            : [...transcode._jobs.values()].filter((job) => job.done && job.ok).map((job) => job.partPath)[0]);
+        await until(() => Boolean(complete()), 'the conversion to complete');
+        expect(fs.statSync(complete()).size).toBe(whole.length);
         expect(res.body().length).toBeLessThan(whole.length);
         expect(child.stdout.isPaused()).toBe(false);
         expect(transcode._activeTranscodes()).toBe(0);
@@ -145,6 +151,7 @@ describe('a play is a conversion into the cache, with the response reading behin
         await until(() => res.writableEnded, 'the end of the response');
         clearInterval(pump);
         expect(res.body().equals(whole)).toBe(true);
+        await until(() => fs.existsSync(cacheFile('youtube_stuckaaaaaa')) && partFiles().length === 0, 'the cache file');
     });
 
     it('a second request for the track follows the same conversion instead of starting ffmpeg again', async () => {
@@ -211,7 +218,7 @@ describe('a play is a conversion into the cache, with the response reading behin
         expect(failed).toHaveBeenCalledTimes(1);
         expect(res.body().length).toBe(0);
         expect(transcode._jobs.size).toBe(0);
-        expect(partFiles()).toEqual([]);
+        await until(() => partFiles().length === 0, 'the empty file to go');
         expect(fs.existsSync(cacheFile('youtube_brokenaaaaa'))).toBe(false);
 
         // Cut short after some audio: not cached either (and not the address's fault).
@@ -234,7 +241,7 @@ describe('a play is a conversion into the cache, with the response reading behin
         expect(res.status).toHaveBeenCalledWith(500);
         expect(transcode._activeTranscodes()).toBe(0);
         expect(transcode._jobs.size).toBe(0);
-        expect(partFiles()).toEqual([]);
+        await until(() => partFiles().length === 0, 'the empty file to go');
     });
 });
 

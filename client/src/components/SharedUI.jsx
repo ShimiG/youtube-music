@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { serviceOf } from '../utils/services';
 import AddToPlaylist from './AddToPlaylist';
-import { PLACEHOLDER_ART, artOf } from '../utils/artwork';
+import { PLACEHOLDER_ART, listArtOf } from '../utils/artwork';
 
 // Rows and cards render the normalised Track / Playlist shapes from the
 // library API. Where older rows (history, custom playlists written before
@@ -89,7 +89,11 @@ export const TrackRow = ({ track, onPlay, onQueue, onLike, onUnlike, canAddToPla
     return (
         <div style={{ display: 'flex', gap: '15px', padding: '10px', borderBottom: '1px solid #333', alignItems: 'center', opacity: blocked ? 0.5 : 1 }}>
             <img
-                src={artOf(track) || PLACEHOLDER_50}
+                src={listArtOf(track) || PLACEHOLDER_50}
+                loading="lazy"
+                decoding="async"
+                width={imageSize}
+                height={imageSize}
                 style={{ width: imageSize, height: imageSize, objectFit: 'cover', borderRadius: '4px', cursor: blocked ? 'not-allowed' : 'pointer' }}
                 onClick={play}
                 alt="thumbnail"
@@ -129,7 +133,9 @@ export const TrackCard = ({ track, onClick }) => {
             onMouseLeave={(e) => e.currentTarget.style.background = '#181818'}
         >
             <img
-                src={artOf(track) || PLACEHOLDER_150}
+                src={listArtOf(track) || PLACEHOLDER_150}
+                loading="lazy"
+                decoding="async"
                 alt={track.title}
                 style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '4px', marginBottom: '10px' }}
                 onError={(e) => { e.target.src = PLACEHOLDER_150; }}
@@ -167,7 +173,7 @@ export const PlaylistCard = ({ playlist, onClick }) => {
             onMouseLeave={(e) => e.currentTarget.style.background = isLiked ? '#2a1f2f' : '#282828'}
         >
             {playlist.thumbnail ? (
-                <img src={playlist.thumbnail} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '4px', marginBottom: '10px' }} alt="playlist cover" />
+                <img src={listArtOf(playlist)} loading="lazy" decoding="async" style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '4px', marginBottom: '10px' }} alt="playlist cover" />
             ) : (
                 <div aria-hidden="true" style={{ width: '100%', aspectRatio: '1', borderRadius: '4px', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '56px', background: isLiked ? `linear-gradient(135deg, ${service.color}66, #111)` : '#1a1a1a', color: isLiked ? 'white' : '#555' }}>
                     {isLiked ? '♥' : service.icon}

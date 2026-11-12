@@ -3,6 +3,7 @@ import { useMusic } from '../context/hook';
 import { DEFAULT_SOURCE, SERVICES } from '../utils/services';
 import { artOf } from '../utils/artwork';
 import Artwork from './Artwork';
+import { usePlaybackTime } from '../utils/playbackClock';
 
 // Seek bar fill per source (issue #28). Unknown sources (and local ones) use
 // the app colour rather than the registry's neutral grey.
@@ -12,8 +13,9 @@ const seekColorFor = (source) => (SERVICES[source] && SERVICES[source].color) ||
 export default function PlayerFooter({ expanded = false, onToggleExpanded }) {
     const { 
         currentTrack, isPlaying, isLoading, togglePlay, playNext, playPrev, 
-        currentTime, duration, volume, updateVolume, toggleMute, seek, isShuffle, toggleShuffle 
+        duration, volume, updateVolume, toggleMute, seek, isShuffle, toggleShuffle 
     } = useMusic();
+    const currentTime = usePlaybackTime();
     
     const [sliderValue, setSliderValue] = useState(0);
     const [isDragging, setIsDragging] = useState(false);

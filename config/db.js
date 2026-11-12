@@ -189,7 +189,16 @@ async function initDB(filename = path.join(dataDir(), 'database.sqlite')) {
             FOREIGN KEY (folder_id) REFERENCES local_folders(id) ON DELETE CASCADE,
             UNIQUE(folder_id, rel_path)
         );
-        CREATE INDEX IF NOT EXISTS idx_local_tracks_folder ON local_tracks(folder_id);
+        -- The order a folder is listed in (providers/local.js, TRACK_ORDER): lets
+        -- a page be found by "the rows after this one" without reading the rows
+        -- before it. Its expressions must stay the same as there.
+        CREATE INDEX IF NOT EXISTS idx_local_tracks_order ON local_tracks(
+            folder_id, COALESCE(artist, '') COLLATE NOCASE, COALESCE(album, '') COLLATE NOCASE,
+            COALESCE(track_no, 0), title COLLATE NOCASE, id
+        );
+        -- Was a plain index on folder_id: the UNIQUE(folder_id, rel_path) index and
+        -- the one above both start with folder_id, so it only cost writes.
+        DROP INDEX IF EXISTS idx_local_tracks_folder;
     `);
 
     // Lyrics found online (issue #30), kept so a track is looked up once. The

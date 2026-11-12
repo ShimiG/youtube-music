@@ -1,8 +1,8 @@
 # Performance plan
 
 Status: plan from a code review and measurements (12 Nov 2026). **Built so
-far: steps 0, 1.1, 1.3, 1.4, 2.1, 3.1, 3.2 and 4.1** (see "Done so far").
-Open: 1.2, 1.5, 2.2, 3.3, 4.2, 4.3 and 5.
+far: steps 0, 1.1, 1.3, 1.4, 2.1, 3.1 to 3.3, 4.1 to 4.3 and 5.1 to 5.3**
+(see "Done so far"). Open: 1.2, 1.5 and 2.2.
 
 ## What was measured
 
@@ -102,6 +102,42 @@ Limits on a job: ten minutes when nobody is listening (a prepared track, or
 one whose listener left; at most two such at a time, as before); stopped
 when its source sends nothing for a minute; three hours as a backstop. A
 straight-to-the-response conversion is stopped when its listener leaves.
+
+### Third round: steps 3.3, 4.2, 4.3 and 5.1 to 5.3
+
+Measured in a real browser against the real server, old and new client side
+by side, with a local folder of 3,004 tracks.
+
+| | Before | After |
+|---|---|---|
+| Requests for the list of sources at start-up | 2 | 1 |
+| Search, go to the Library, come back | results and the typed text gone; 3 requests | still there; 1 request (the Library's first load), none on the way back |
+| Library with a playlist open and scrolled, go to Search, come back | playlist closed, back at the top; 3 requests | still open, same scroll position; no request |
+| Script work while a track plays, list on screen | 4.2 to 4.3 ms per second | 1.6 to 1.8 ms per second |
+| Last page of a 50,000-track folder | 79 ms | 0.6 ms |
+| All 250 pages of that folder | 15.1 s | 0.2 s |
+| First page of that folder | 9 ms | 3 ms (no sorting step) |
+
+How:
+
+- **3.3** Search, Library and Recently Played stay alive once opened and are
+  only hidden while another view shows (`client/src/App.jsx`), each with its
+  own scroll position. The list of sources is one shared copy, asked for
+  once (`client/src/hooks/useSources.js`). Recently Played asks the server
+  only when something was played since it last asked. The Library refreshes
+  on its own when a track is added to a playlist or liked elsewhere in the
+  app, and when it is opened after more than five minutes.
+- **4.2** A folder is paged by "the rows after this one" with an index in
+  the listing order (`providers/local.js`, `idx_local_tracks_order`).
+- **4.3** The index on `local_tracks(folder_id)` is dropped: two others
+  start with the same column. (Creating the data folder on every log line
+  was already fixed with the data-folder change.)
+- **5.1** The playback position is kept outside the music context
+  (`client/src/utils/playbackClock.js`); only the seek bar and the timed
+  lyrics follow it.
+- **5.2** Timed lyrics render when the line changes, not on every tick.
+- **5.3** Row and card images load lazily, and lists ask YouTube for the
+  320-pixel cover instead of the 480-pixel one.
 
 Not covered yet: step 1.2.
 
@@ -244,10 +280,10 @@ calls in the match engine, lyrics and cover colours (cached, de-duplicated).
 
 ## Order
 
-0 → 1.1 → 1.4 → 1.3 → 2.1 → 3.1 → 4.1 (all done), then the rest by what
-the numbers from step 0 show on the owner's computer: 1.2 and 1.5 if the
-`yt-dlp` time in the log is the larger part of the wait, 3.3 for moving
-around the app.
+0 → 1.1 → 1.4 → 1.3 → 2.1 → 3.1 → 4.1, then 3.3, 4.2 and 5 (all done).
+What is left (1.2, 1.5, 2.2) is about `yt-dlp` and the audio itself, and
+should be decided by the numbers from step 0 on the owner's computer: 1.2
+and 1.5 if the `yt-dlp` time in the log is the larger part of the wait.
 
 ## With cloud sync (Stage 9)
 

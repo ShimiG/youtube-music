@@ -455,7 +455,7 @@ Everything around playback that is not a new source.
   code shown on the desktop) and an authenticated WebSocket, rather than
   "same Google account" as the issue suggests. Two to three days.
 
-## Stage 8: Performance (in progress)
+## Stage 8: Performance (mostly done)
 
 From a code review and measurements; the full plan, with the numbers and how
 each step is checked, is in
@@ -479,15 +479,20 @@ own code is fast (local requests 1 to 6 ms, conversion's first byte in 50 to
    after ten minutes); a second request for a track being converted follows
    the same conversion. **Open:** MP3 sources copied instead of re-encoded
    (2.2).
-3. Start-up. **Done:** the window waits for the server (3.1); the rescan of
-   local folders and the `yt-dlp` update wait 45 s, and the update is looked
-   for once a day (3.2). **Open:** the interface re-asking for the same
-   data (3.3).
-4. Database. **Done:** batched writes (4.1): transactions for the scan, a
-   play and cloud sync, and no disk sync per write. **Open:** deep paging of
-   large folders (4.2), small things (4.3).
-5. Low priority: keep the playback clock from re-rendering the whole app
-   (measured at about 1% of a processor core).
+3. Start-up and moving around. **Done:** the window waits for the server
+   (3.1); the rescan of local folders and the `yt-dlp` update wait 45 s, and
+   the update is looked for once a day (3.2); Search, Library and Recently
+   Played keep what they show when you switch between them, and the list of
+   sources is asked for once (3.3).
+4. Database. **Done:** batched writes (4.1); a large local folder is paged
+   through an index (4.2: all 250 pages of a 50,000-track folder in 0.2 s
+   instead of 15 s); a redundant index dropped (4.3).
+5. **Done.** The playback clock no longer re-renders the whole app (script
+   work while playing 4.2 ms → 1.7 ms per second); timed lyrics render per
+   line; list images load lazily and smaller.
+
+Open: 1.2, 1.5 and 2.2, all about `yt-dlp` and the audio itself; to be
+decided by the real timings in the owner's log.
 
 ## Stage 9: Data that survives and follows the user (built; real-account run open)
 

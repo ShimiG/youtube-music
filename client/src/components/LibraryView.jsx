@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { PlaylistCard, TrackRow } from './SharedUI';
 import SourcePicker from './SourcePicker';
 import VirtualList from './VirtualList';
@@ -57,10 +57,12 @@ function renderAttribution(service, what) {
     );
 }
 
+const REFRESH_AFTER_MS = 5 * 60 * 1000;
+
 // One fetch path for every source. Which sources exist, what they can do and
 // whether they are connected come from useSources(); playlists and tracks come
 // from the generic library API. No service is named in this file.
-export default function LibraryView() {
+export default function LibraryView({ active = true }) {
     const { playTrack, addToQueue } = useMusic();
     const { sources, loading: sourcesLoading, reload: reloadSources } = useSources();
 
@@ -103,14 +105,40 @@ export default function LibraryView() {
 
     // A track added from a row's "+ Playlist" menu changes the song counts
     // (and may have created a playlist): refresh the local source's list.
+    // The view stays alive while Search is on screen, so it also has to
+    // bring an open custom playlist up to date, and the liked list after a like.
     const reloadPlaylists = playlists.reload;
+    const reloadTracks = tracks.reload;
     const isLocal = Boolean(service && service.local);
+    const openSource = selectedPlaylist ? selectedPlaylist.source : null;
+    const openKind = selectedPlaylist ? selectedPlaylist.kind : null;
+    const openIsCustom = openKind === 'custom';
     useEffect(() => {
         if (!isLocal) return;
-        const onChange = () => reloadPlaylists();
+        const onChange = () => {
+            reloadPlaylists();
+            if (openIsCustom) reloadTracks();
+        };
         window.addEventListener('custom-playlists-changed', onChange);
         return () => window.removeEventListener('custom-playlists-changed', onChange);
-    }, [isLocal, reloadPlaylists]);
+    }, [isLocal, openIsCustom, reloadPlaylists, reloadTracks]);
+    useEffect(() => {
+        if (openKind !== 'liked') return undefined;
+        const onLiked = (event) => { if (event.detail && event.detail.source === openSource) reloadTracks(); };
+        window.addEventListener('liked-changed', onLiked);
+        return () => window.removeEventListener('liked-changed', onLiked);
+    }, [openKind, openSource, reloadTracks]);
+
+    // Coming back to the Library asks for nothing, unless it has been a while:
+    // playlists can change elsewhere (another computer through cloud sync, the
+    // service's own app).
+    const lastLookAt = useRef(0);
+    useEffect(() => {
+        if (!active) return;
+        const now = Date.now();
+        if (lastLookAt.current && now - lastLookAt.current > REFRESH_AFTER_MS) reloadPlaylists();
+        if (!lastLookAt.current || now - lastLookAt.current > REFRESH_AFTER_MS) lastLookAt.current = now;
+    }, [active, reloadPlaylists]);
 
     const selectSource = (name) => {
         if (name === activeSource) return;

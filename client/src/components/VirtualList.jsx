@@ -21,6 +21,9 @@ export default function VirtualList({ items, renderRow, rowHeight, threshold = 1
     const update = useCallback(() => {
         const container = containerRef.current;
         if (!container) return;
+        // Hidden (its view is not the one showing): nothing to measure. The
+        // app announces a view change as a resize, which brings it up to date.
+        if (container.offsetParent === null) return;
         // Use the real row height once a row is on screen (children[0] and the
         // last child are the spacers).
         const firstRow = container.children.length > 2 ? container.children[1] : null;

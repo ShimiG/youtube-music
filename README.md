@@ -258,6 +258,11 @@ see [docs/packaging.md](docs/packaging.md).
 
 ## Notes & known limitations
 
+- **Cloud sync (in progress).** [`cloud/`](cloud/README.md) is a Cloudflare Worker with a D1
+  database, deployed to your own free Cloudflare account, that will keep playlists and
+  history the same on every computer. The Worker is built and tested; the desktop side is
+  next. Design: [docs/cloud-data.md](docs/cloud-data.md).
+
 - **Accounts and the owner.** Settings → Accounts connects and disconnects services and holds
   this installation's own service credentials (encrypted in the database, applied without
   a restart). The first account created on an installation is its owner: only it can change

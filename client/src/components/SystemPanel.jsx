@@ -65,7 +65,7 @@ export default function SystemPanel() {
                         <li key={helper.key}>
                             <span>{helper.name}<small>{helper.role}</small></span>
                             {found.available
-                                ? <span className="accounts-status is-ok">{found.version || 'Found'}</span>
+                                ? <span className="accounts-status is-ok">{found.version || 'Found'}{typeof found.startMs === 'number' ? ` · starts in ${(found.startMs / 1000).toFixed(1)} s` : ''}</span>
                                 : <span className="accounts-status is-warn">Not found</span>}
                         </li>
                     );

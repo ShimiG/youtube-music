@@ -287,7 +287,7 @@ const streamTrack = async (req, res) => {
 
     // Both providers use the same numeric id, so one cache entry serves both.
     const cacheKey = qualityCacheKey(req, `soundcloud_${id}`);
-    if (serveFromCache(res, cacheKey)) return;
+    if (serveFromCache(res, cacheKey, { req, seekTime })) return;
 
     const viaApi = async () => {
         const token = await tokens.getAppToken(req.app.locals.db);
@@ -305,6 +305,7 @@ const streamTrack = async (req, res) => {
 
     let usedYtdlp = false;
     let picked;
+    const resolveStartedAt = Date.now();
     try {
         picked = await withFallback('stream', viaApi, () => { usedYtdlp = true; return viaYtdlp(); });
     } catch (err) {
@@ -320,7 +321,13 @@ const streamTrack = async (req, res) => {
 
     // Preview snippets are short and cheap; do not let them occupy the cache
     // under the full track's key.
-    streamTranscoded(req, res, { sourceUrl: picked.url, cacheKey, seekTime, allowCache: !picked.isPreview });
+    streamTranscoded(req, res, {
+        sourceUrl: picked.url,
+        cacheKey,
+        seekTime,
+        allowCache: !picked.isPreview,
+        timing: { label: `soundcloud ${id}`, resolveMs: Date.now() - resolveStartedAt, resolvedBy: usedYtdlp ? 'yt-dlp' : 'api' }
+    });
 };
 
 const getDuration = async (req, res) => {

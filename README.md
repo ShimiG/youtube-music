@@ -244,7 +244,7 @@ see [docs/packaging.md](docs/packaging.md).
 | `GET /search?q=` | Google token | Search YouTube |
 | `GET /playlists`, `GET /playlists/:id/tracks` | Google token | The user's YouTube playlists |
 | `GET /api/media/token` | JWT | Short-lived media token for the two routes below |
-| `GET /stream?videoId=&source=&t=`, `GET /duration?videoId=&source=&t=` | media token (`t`), rate-limited | Audio stream / duration; `source=spotify` plays the matched YouTube video |
+| `GET /stream?videoId=&source=&t=`, `GET /duration?videoId=&source=&t=` | media token (`t`), rate-limited | Audio stream / duration; `source=spotify` plays the matched YouTube video. `&seek=N` starts at N seconds; `&prepare=1` gets the track ready in the disk cache without playing it |
 | `GET/DELETE /api/match/:source/:id`, `POST /api/match/resolve`, `.../override`, `.../report` | JWT | Match engine (see "Matching engine") |
 | `GET /api/settings/services`, `PUT`/`DELETE /api/settings/services/:source` | JWT; changes: owner only | Service credentials entered in the app (never returned) |
 | `DELETE /api/user/connections/youtube`, `.../soundcloud` | JWT | Disconnect a service account |

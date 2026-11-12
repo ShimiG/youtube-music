@@ -183,15 +183,51 @@ async function prepareCache(dir = cacheDir) {
     await enforceCacheLimit(cacheMaxBytes(), dir);
 }
 
+// "Prepare" requests (?prepare=1) get a track ready without playing it: the
+// client sends one shortly before the current track ends, so the next one
+// starts from the disk cache instead of waiting for yt-dlp and ffmpeg
+// (docs/performance-plan.md, step 1.3). They are answered at once with what
+// was done; the conversion, if one was started, runs on its own into the cache.
+const isPrepare = (req) => Boolean(req && req.query && req.query.prepare === '1');
+const answerPrepare = (res, prepared) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ prepared });
+};
+
+// One line per play in the log (step 0 of the performance plan): what the
+// wait before the first sound was made of. `req.playStartedAt` is set when the
+// request arrives (controllers/streamingController.js).
+function logPlay(req, timing, detail) {
+    if (!timing || !timing.label) return;
+    const total = req && req.playStartedAt ? `, ${Date.now() - req.playStartedAt} ms after the request` : '';
+    const resolve = timing.resolvedBy ? `address ${timing.resolveMs} ms (${timing.resolvedBy}), ` : '';
+    console.log(`Play ${timing.label}: ${resolve}${detail}${total}`);
+}
+
 /**
- * Serves the cached MP3 for `cacheKey` if one exists (with HTTP Range support
- * via sendFile, so the browser can seek). Returns true when it did.
+ * Serves the cached MP3 for `cacheKey` if one exists. Returns true when it
+ * answered the request.
+ *   - a normal play: the file itself, with HTTP Range support via sendFile, so
+ *     the browser can seek;
+ *   - a seek (`seekTime` > 0): converted from the cached file starting there.
+ *     Sending the whole file used to restart the sound from 0:00 while the
+ *     player's clock had moved on;
+ *   - a prepare request: nothing to do, it is already there.
  */
-function serveFromCache(res, cacheKey) {
+function serveFromCache(res, cacheKey, { req, seekTime = 0, timing } = {}) {
     const finalFilePath = cachePathFor(cacheKey);
     if (!finalFilePath || !fs.existsSync(finalFilePath)) return false;
     const now = new Date();
     fs.utimes(finalFilePath, now, now, () => {});
+    if (isPrepare(req)) {
+        answerPrepare(res, 'cached');
+        return true;
+    }
+    if (seekTime > 0 && req) {
+        streamTranscoded(req, res, { sourceUrl: finalFilePath, cacheKey, seekTime, allowCache: false, timing: { label: `${cacheKey} (seek in cached file)` } });
+        return true;
+    }
+    logPlay(req, timing || { label: cacheKey }, 'from the disk cache');
     setMediaHeaders(res);
     res.sendFile(finalFilePath);
     return true;
@@ -201,9 +237,29 @@ function serveFromCache(res, cacheKey) {
  * Transcodes `sourceUrl` to MP3 and streams it into `res`. When `seekTime` is 0
  * and `allowCache` is true, a copy is written to the disk cache under
  * `cacheKey` once the transcode completes successfully.
+ *
+ * For a prepare request nothing is streamed: the conversion only fills the
+ * cache, at full speed, as a background transcode (bounded like the ones a
+ * departed client leaves behind).
+ *
+ * `timing` ({ label, resolveMs, resolvedBy }) adds a line to the log when the
+ * first audio is ready. `onSourceFailed` is called when ffmpeg could not get
+ * any audio out of `sourceUrl`.
  */
-function streamTranscoded(req, res, { sourceUrl, cacheKey, seekTime = 0, allowCache = true }) {
+function streamTranscoded(req, res, { sourceUrl, cacheKey, seekTime = 0, allowCache = true, timing, onSourceFailed }) {
     const finalFilePath = cachePathFor(cacheKey);
+    const prepare = isPrepare(req);
+    const cacheable = allowCache && finalFilePath && seekTime === 0 && !inFlightCaching.has(cacheKey);
+
+    if (prepare) {
+        // Only worth a process when the result lands in the cache, and only
+        // within the same bounds as any other background conversion.
+        if (!allowCache || !finalFilePath || seekTime !== 0) return answerPrepare(res, 'skipped');
+        if (inFlightCaching.has(cacheKey)) return answerPrepare(res, 'in_progress');
+        if (backgroundTranscodes >= MAX_BACKGROUND_TRANSCODES || activeTranscodes >= MAX_CONCURRENT_TRANSCODES) {
+            return answerPrepare(res, 'busy');
+        }
+    }
 
     // The reconnect options only exist for network inputs; ffmpeg refuses to
     // open a local file (`file:` input, local files) when they are given.
@@ -226,8 +282,10 @@ function streamTranscoded(req, res, { sourceUrl, cacheKey, seekTime = 0, allowCa
 
     // windowsHide: the desktop app has no console; without it every transcode
     // would flash a console window on Windows.
+    const spawnedAt = Date.now();
     const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs, { windowsHide: true });
     let finished = false;
+    let producedAudio = false;
 
     // Count this process until it is gone. A failed spawn emits 'error' and
     // may not emit 'close', so both release the slot, once.
@@ -239,6 +297,10 @@ function streamTranscoded(req, res, { sourceUrl, cacheKey, seekTime = 0, allowCa
         activeTranscodes--;
     };
 
+    // A prepare conversion has no client from the start.
+    let inBackground = prepare;
+    if (prepare) backgroundTranscodes++;
+
     // One place that guarantees the child process is gone. Called on error,
     // on completion, on client disconnect, and by the safety timeout.
     const cleanupTimer = setTimeout(() => {
@@ -248,20 +310,28 @@ function streamTranscoded(req, res, { sourceUrl, cacheKey, seekTime = 0, allowCa
     ffmpegProcess.on('error', (err) => {
         releaseSlot();
         console.error('Failed to start FFmpeg:', err.message);
-        if (!res.headersSent) res.status(500).json({ error: 'Audio processor unavailable' });
+        if (!prepare && !res.headersSent) res.status(500).json({ error: 'Audio processor unavailable' });
     });
 
-    setMediaHeaders(res);
-    res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Transfer-Encoding', 'chunked');
-    ffmpegProcess.stdout.pipe(res);
+    ffmpegProcess.stdout.once('data', () => {
+        producedAudio = true;
+        if (!prepare) logPlay(req, timing, `first audio ${Date.now() - spawnedAt} ms after starting ffmpeg${seekTime ? ` (seek to ${seekTime} s)` : ''}`);
+    });
+
+    if (prepare) {
+        answerPrepare(res, 'started');
+    } else {
+        setMediaHeaders(res);
+        res.setHeader('Content-Type', 'audio/mpeg');
+        res.setHeader('Transfer-Encoding', 'chunked');
+        ffmpegProcess.stdout.pipe(res);
+    }
 
     // Only write a disk-cache copy for a full (seek==0) play, and only if no
     // other request is already caching this track.
     let fileStream = null;
     let safePartFilePath = null;
-    const shouldCache = allowCache && finalFilePath && seekTime === 0 && !inFlightCaching.has(cacheKey);
-    if (shouldCache) {
+    if (cacheable) {
         const candidatePartPath = path.resolve(cacheDir, `${cacheKey}_${Date.now()}.part`);
         if (candidatePartPath.startsWith(resolvedCacheDir + path.sep)) {
             safePartFilePath = candidatePartPath;
@@ -270,6 +340,8 @@ function streamTranscoded(req, res, { sourceUrl, cacheKey, seekTime = 0, allowCa
             ffmpegProcess.stdout.pipe(fileStream);
         }
     }
+    // Nothing reads a prepare conversion that cannot be cached: stop it.
+    if (prepare && !fileStream) ffmpegProcess.kill('SIGKILL');
 
     ffmpegProcess.stderr.on('data', (data) => {
         const msg = data.toString();
@@ -284,25 +356,29 @@ function streamTranscoded(req, res, { sourceUrl, cacheKey, seekTime = 0, allowCa
     // safety timer still bounds it).
     // res 'close' with writableFinished=false means the connection dropped
     // before we finished (req 'close' is not a reliable disconnect signal).
-    let inBackground = false;
-    res.on('close', () => {
-        if (res.writableFinished || finished) return;
-        ffmpegProcess.stdout.unpipe(res);
-        if (fileStream && backgroundTranscodes < MAX_BACKGROUND_TRANSCODES) {
-            inBackground = true;
-            backgroundTranscodes++;
-            return;
-        }
-        // Killed runs exit non-zero, so the close handler drops the .part file.
-        ffmpegProcess.kill('SIGKILL');
-    });
+    if (!prepare) {
+        res.on('close', () => {
+            if (res.writableFinished || finished) return;
+            ffmpegProcess.stdout.unpipe(res);
+            if (fileStream && backgroundTranscodes < MAX_BACKGROUND_TRANSCODES) {
+                inBackground = true;
+                backgroundTranscodes++;
+                return;
+            }
+            // Killed runs exit non-zero, so the close handler drops the .part file.
+            ffmpegProcess.kill('SIGKILL');
+        });
+    }
 
-    ffmpegProcess.on('close', (code) => {
+    // once: the counters below must move exactly one step per process.
+    ffmpegProcess.once('close', (code) => {
         releaseSlot();
         finished = true;
         if (inBackground) backgroundTranscodes--;
         clearTimeout(cleanupTimer);
-        inFlightCaching.delete(cacheKey);
+        if (fileStream) inFlightCaching.delete(cacheKey);
+        if (code !== 0 && !producedAudio && typeof onSourceFailed === 'function') onSourceFailed();
+        if (prepare && code === 0) console.log(`Prepared ${timing && timing.label ? timing.label : cacheKey} in ${Date.now() - spawnedAt} ms`);
         if (!fileStream) return;
 
         fileStream.end();
@@ -322,6 +398,7 @@ function streamTranscoded(req, res, { sourceUrl, cacheKey, seekTime = 0, allowCa
             }
         }, 250);
     });
+    return undefined;
 }
 
 module.exports = {
@@ -333,6 +410,8 @@ module.exports = {
     qualityOf,
     qualityCacheKey,
     serveFromCache,
+    isPrepare,
+    answerPrepare,
     sendMediaFile,
     streamTranscoded,
     enforceCacheLimit,

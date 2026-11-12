@@ -45,12 +45,17 @@ function parseFfmpegVersion(line) {
 async function probeBinaries(fresh = false) {
     const maxAge = fresh ? FRESH_PROBE_MIN_MS : PROBE_TTL_MS;
     if (memo && Date.now() - memo.at < maxAge) return memo.binaries;
+    // yt-dlp's own start time is part of every wait before a streamed track
+    // plays (the one-file builds unpack themselves on each start), so it is
+    // reported: Settings -> System shows it.
+    const ytDlpStartedAt = Date.now();
+    let ytDlpStartMs = null;
     const [ytDlp, ffmpegLine] = await Promise.all([
-        runner.version(ytDlpPath, ['--version']),
+        runner.version(ytDlpPath, ['--version']).then((v) => { ytDlpStartMs = Date.now() - ytDlpStartedAt; return v; }),
         runner.version(ffmpegPath, ['-version'])
     ]);
     const binaries = {
-        ytDlp: { available: Boolean(ytDlp), version: ytDlp },
+        ytDlp: { available: Boolean(ytDlp), version: ytDlp, ...(ytDlp ? { startMs: ytDlpStartMs } : {}) },
         ffmpeg: { available: Boolean(ffmpegLine), version: parseFfmpegVersion(ffmpegLine) }
     };
     memo = { at: Date.now(), binaries };

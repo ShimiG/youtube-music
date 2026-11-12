@@ -7,6 +7,9 @@ import { mediaUrl, mediaUrlSync, warmMediaToken } from '../utils/media';
 import { artOf } from '../utils/artwork';
 
 
+const PREPARE_AFTER_SEC = 15;
+const PREPARE_BEFORE_END_SEC = 25;
+
 export const MusicProvider = ({ children }) => {
     const [currentTrack, setCurrentTrack] = useState(null);
     const [isPlaying, setIsPlaying] = useState(false);
@@ -21,8 +24,8 @@ export const MusicProvider = ({ children }) => {
     const [volume, setVolume] = useState(1);
     const prevVolumeRef = useRef(1);
     const audioRef = useRef(new Audio());
-    const preloadAudioRef = useRef(new Audio());
-    const hasPreloadedNext = useRef(false);
+    // Which next track the server has already been asked to get ready.
+    const preparedNext = useRef(null);
     const playStartTime = useRef(0);
     
     
@@ -67,7 +70,6 @@ export const MusicProvider = ({ children }) => {
         setIsLoading(true); 
         setOffset.current = 0; 
         setCurrentTime(0);
-        hasPreloadedNext.current = false;
         setDuration(0);
         const safeId = track.id || track.videoId;
         // Tracks carry their source; rows from before that default to DEFAULT_SOURCE.
@@ -253,7 +255,13 @@ const seek = useCallback((time) => {
             }
         }
 
-        if (isBuffered) {
+        // A file with a known length (a cached track, a local file) can be
+        // positioned by the player itself: the browser fetches the part it
+        // needs. Only a live conversion, which has no length, needs the
+        // server to start again from the new position.
+        const isFile = targetInternalTime >= 0 && Number.isFinite(audio.duration) && audio.duration > 0;
+
+        if (isBuffered || isFile) {
             audio.currentTime = targetInternalTime; 
             setCurrentTime(cleanTime);
         } else {
@@ -311,22 +319,6 @@ const seek = useCallback((time) => {
                 }
             }
         };
-        const handleProgress = () => {
-            if (!audio.duration || audio.buffered.length === 0) return;
-            const bufferedEnd = audio.buffered.end(audio.buffered.length - 1);
-            if (bufferedEnd >= audio.duration - 2) {
-                if (!hasPreloadedNext.current && queueIndex < queue.length - 1) {
-                    const nextTrack = queue[queueIndex + 1];
-                    hasPreloadedNext.current = true;
-                    mediaUrl('/stream', { videoId: nextTrack.id, source: nextTrack.source || DEFAULT_SOURCE, seek: 0 })
-                        .then(preloadUrl => {
-                            preloadAudioRef.current.src = preloadUrl;
-                            preloadAudioRef.current.load();
-                        })
-                        .catch(() => { hasPreloadedNext.current = false; });
-                }
-            }
-        };
         // The stream endpoint answers a failed resolve with TRACK_UNAVAILABLE;
         // the <audio> element only sees an error. Tell the user and move on
         // instead of silently stopping the queue.
@@ -363,7 +355,6 @@ const seek = useCallback((time) => {
         audio.addEventListener('timeupdate', handleTimeUpdate);
         audio.addEventListener('loadedmetadata', handleLoadedMetadata);
         audio.addEventListener('durationchange', handleLoadedMetadata);
-        audio.addEventListener('progress', handleProgress);
         audio.addEventListener('error', handleError);
         return () => {
             audio.removeEventListener('ended', handleEnded);
@@ -373,10 +364,29 @@ const seek = useCallback((time) => {
             audio.removeEventListener('timeupdate', handleTimeUpdate);
             audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
             audio.removeEventListener('durationchange', handleLoadedMetadata);
-            audio.removeEventListener('progress', handleProgress);
             audio.removeEventListener('error', handleError);
         };
     }, [playNext, setOffset, seek, queue, queueIndex, duration, currentTrack]);
+
+    // Get the next track ready while this one plays, so a track change does
+    // not wait for the server to find and convert the audio. The server is
+    // asked once the current track has clearly been settled on (15 seconds
+    // in), or 25 seconds before its end if it is shorter than that: early
+    // enough for the conversion to land in the disk cache, late enough not to
+    // do it for tracks that are skipped straight away.
+    const nextTrack = queueIndex < queue.length - 1 ? queue[queueIndex + 1] : null;
+    const nextKey = nextTrack && nextTrack.playable !== false
+        ? `${nextTrack.source || DEFAULT_SOURCE}:${nextTrack.id || nextTrack.videoId}` : null;
+    const prepareFrom = duration > 0 ? Math.min(PREPARE_AFTER_SEC, Math.max(0, duration - PREPARE_BEFORE_END_SEC)) : PREPARE_AFTER_SEC;
+    const timeToPrepare = Boolean(currentTrack) && isPlaying && currentTime >= prepareFrom;
+    useEffect(() => {
+        if (!timeToPrepare || !nextKey || preparedNext.current === nextKey) return;
+        preparedNext.current = nextKey;
+        const [source, ...idParts] = nextKey.split(':');
+        mediaUrl('/stream', { videoId: idParts.join(':'), source, prepare: 1 })
+            .then(url => fetch(url))
+            .catch(() => { preparedNext.current = null; }); // asked again on the next tick
+    }, [timeToPrepare, nextKey]);
 
     useEffect(() => {
         if ('mediaSession' in navigator && currentTrack) {

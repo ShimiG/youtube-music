@@ -22,7 +22,8 @@ describe('GET /api/health', () => {
         expect(res.body.status).toBe('ok');
         expect(res.body.version).toBe(require('../package.json').version);
         expect(res.body.binaries).toEqual({
-            ytDlp: { available: true, version: '2026.10.01' },
+            // startMs: how long yt-dlp itself takes to start (shown in Settings -> System).
+            ytDlp: { available: true, version: '2026.10.01', startMs: expect.any(Number) },
             ffmpeg: { available: true, version: '6.1.1-static' }
         });
         expect(res.body.cache).toHaveProperty('maxBytes');

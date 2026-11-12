@@ -29,18 +29,111 @@ function describeYtDlpFailure(error, stderr) {
     return last.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 300);
 }
 
-function runYtDlp(res, args, onDone) {
-    let clientGone = false;
-    const child = runner.execFile(ytDlpPath, args, { timeout: YTDLP_TIMEOUT_MS, windowsHide: true }, (error, stdout, stderr) => {
-        if (clientGone) return; // nobody to answer; never start ffmpeg for a dead request
-        onDone(error, stdout, stderr);
+// --- One yt-dlp run per video ---------------------------------------------------
+//
+// Starting yt-dlp is the slow part of playing a track (seconds), and one play
+// used to start it twice: /stream asked for the audio address and /duration,
+// at the same moment, for the length; every seek and the next-track preload
+// asked again. Now one run answers both questions, concurrent callers share
+// it, and the answer is remembered for as long as the address is valid
+// (docs/performance-plan.md, step 1.1).
+//
+// The rule from the 2026-11-08 security review still holds: yt-dlp never
+// outlives the requests that asked for it. Each caller that passes its `res`
+// is a waiter; when the last waiter's connection drops before the run is
+// done, the process is killed. The timeout bounds it in every case.
+const RESOLVED_MAX = 300;
+const DEFAULT_URL_TTL_MS = 30 * 60 * 1000;
+const MAX_URL_TTL_MS = 5 * 60 * 60 * 1000;
+const EXPIRY_MARGIN_MS = 10 * 60 * 1000; // a track must be able to finish playing
+const resolved = new Map(); // videoId -> { url, duration, expiresAt }
+const resolving = new Map(); // videoId -> { promise, child, waiters, done }
+
+// YouTube's media addresses say when they stop working ("expire=<unix time>",
+// or "/expire/<unix time>/" in a manifest address).
+function urlExpiry(url, now = Date.now()) {
+    const m = /[?&/]expire[=/](\d{10})(?:\D|$)/.exec(url);
+    const stated = m ? Number(m[1]) * 1000 - EXPIRY_MARGIN_MS : now + DEFAULT_URL_TTL_MS;
+    return Math.min(stated, now + MAX_URL_TTL_MS);
+}
+
+function rememberDuration(videoId, seconds) {
+    if (durationCache.size >= DURATION_CACHE_MAX) durationCache.delete(durationCache.keys().next().value);
+    durationCache.set(videoId, seconds);
+}
+
+function startResolving(videoId) {
+    // --print implies "do not download". bestaudio/best always yields a single
+    // address; a bare default would print two (video and audio).
+    const args = ['-f', 'bestaudio/best', '--no-playlist', '--print', 'duration', '--print', 'urls', `https://www.youtube.com/watch?v=${videoId}`];
+    const job = { waiters: 0, done: false, child: null, promise: null };
+    job.promise = new Promise((resolve, reject) => {
+        job.child = runner.execFile(ytDlpPath, args, { timeout: YTDLP_TIMEOUT_MS, windowsHide: true }, (error, stdout, stderr) => {
+            job.done = true;
+            if (resolving.get(videoId) === job) resolving.delete(videoId);
+            if (error) {
+                error.detail = describeYtDlpFailure(error, stderr);
+                return reject(error);
+            }
+            const lines = String(stdout).split('\n').map((l) => l.trim()).filter(Boolean);
+            // First address only, defensively: never pass two lines to ffmpeg.
+            const url = lines.find((l) => /^https?:\/\//.test(l)) || null;
+            const numeric = lines.find((l) => /^\d+(\.\d+)?$/.test(l));
+            const duration = numeric ? Math.round(Number(numeric)) : 0;
+            if (duration > 0) rememberDuration(videoId, duration);
+            if (url) {
+                const expiresAt = urlExpiry(url);
+                if (expiresAt > Date.now()) {
+                    if (resolved.size >= RESOLVED_MAX) resolved.delete(resolved.keys().next().value);
+                    resolved.set(videoId, { url, duration, expiresAt });
+                }
+            }
+            return resolve({ url, duration });
+        });
     });
-    res.on('close', () => {
-        if (res.writableFinished) return; // normal completion
-        clientGone = true;
-        if (child && child.exitCode === null) child.kill('SIGKILL');
-    });
-    return child;
+    // A run whose waiters all left is killed and rejects with nobody listening.
+    job.promise.catch(() => {});
+    resolving.set(videoId, job);
+    return job;
+}
+
+/**
+ * The audio address and length of a video: { url, duration, from, ms }.
+ * `from` says what it cost: "memory" (nothing), "shared" (joined a run that
+ * another request started) or "yt-dlp" (started one). Rejects when yt-dlp
+ * fails; `error.detail` is the one-line reason.
+ */
+function resolveVideo(videoId, { res } = {}) {
+    const startedAt = Date.now();
+    const known = resolved.get(videoId);
+    if (known && known.expiresAt > startedAt) {
+        return Promise.resolve({ url: known.url, duration: known.duration, from: 'memory', ms: 0 });
+    }
+    resolved.delete(videoId);
+
+    const running = resolving.get(videoId);
+    const job = running || startResolving(videoId);
+    job.waiters++;
+    if (res) {
+        let left = false;
+        res.on('close', () => {
+            if (left || res.writableFinished) return; // normal completion
+            left = true;
+            job.waiters--;
+            if (job.waiters <= 0 && !job.done && job.child && job.child.exitCode === null) {
+                // Nobody is waiting any more. A later request starts afresh
+                // instead of joining a run that is being killed.
+                if (resolving.get(videoId) === job) resolving.delete(videoId);
+                job.child.kill('SIGKILL');
+            }
+        });
+    }
+    return job.promise.then((found) => ({ ...found, from: running ? 'shared' : 'yt-dlp', ms: Date.now() - startedAt }));
+}
+
+/** Forgets a remembered address (it stopped working before its stated time). */
+function forgetVideo(videoId) {
+    resolved.delete(videoId);
 }
 
 // YouTube video ids are always exactly 11 URL-safe characters. Being strict
@@ -65,30 +158,32 @@ function streamVideo(req, res, videoId) {
 
     // Cache hit: sendFile supports HTTP Range natively, so the browser can seek.
     const cacheKey = qualityCacheKey(req, `youtube_${videoId}`);
-    if (serveFromCache(res, cacheKey)) return;
+    if (serveFromCache(res, cacheKey, { req, seekTime })) return undefined;
 
-    // Ask for the audio stream explicitly. A bare `-g` lets yt-dlp choose its
-    // default "best video + best audio", which prints TWO URLs (one per line);
-    // both used to reach ffmpeg as one invalid address. bestaudio/best always
-    // yields a single URL; `best` covers videos with only combined formats.
-    const args = ['-f', 'bestaudio/best', '--no-playlist', '-g', `https://www.youtube.com/watch?v=${videoId}`];
+    // The client may leave while yt-dlp runs: never answer a dead response,
+    // and never start ffmpeg for one.
+    let clientGone = false;
+    res.on('close', () => { if (!res.writableFinished) clientGone = true; });
 
-    runYtDlp(res, args, (error, stdout, stderr) => {
-        if (error) {
-            console.error(`YouTube ${videoId}: could not resolve audio: ${describeYtDlpFailure(error, stderr)}`);
-            if (!res.headersSent) sendSourceError(res, 'TRACK_UNAVAILABLE', 'youtube', { reason: 'resolve_failed' });
-            return;
-        }
-
-        // First URL only, defensively: never pass a multi-line string to ffmpeg.
-        const audioUrl = String(stdout).split('\n').map((l) => l.trim()).find((l) => /^https?:\/\//.test(l));
-        if (!audioUrl) {
+    return resolveVideo(videoId, { res }).then((found) => {
+        if (clientGone) return;
+        if (!found.url) {
             console.error(`YouTube ${videoId}: yt-dlp returned no audio URL.`);
             if (!res.headersSent) sendSourceError(res, 'TRACK_UNAVAILABLE', 'youtube', { reason: 'no_audio_url' });
             return;
         }
-
-        streamTranscoded(req, res, { sourceUrl: audioUrl, cacheKey, seekTime });
+        streamTranscoded(req, res, {
+            sourceUrl: found.url,
+            cacheKey,
+            seekTime,
+            timing: { label: `youtube ${videoId}`, resolveMs: found.ms, resolvedBy: found.from },
+            // ffmpeg could not open the address: do not hand it out again.
+            onSourceFailed: () => forgetVideo(videoId)
+        });
+    }).catch((error) => {
+        if (clientGone) return;
+        console.error(`YouTube ${videoId}: could not resolve audio: ${error.detail || describeYtDlpFailure(error, '')}`);
+        if (!res.headersSent) sendSourceError(res, 'TRACK_UNAVAILABLE', 'youtube', { reason: 'resolve_failed' });
     });
 }
 
@@ -103,33 +198,16 @@ const streamTrack = async (req, res) => {
 // Resolves the duration of a YouTube video in whole seconds, through the
 // bounded in-memory cache above. Rejects when yt-dlp fails; the HTTP handlers
 // (ours below and the match-mode one) decide how to report that. yt-dlp is
-// bounded by YTDLP_TIMEOUT_MS, and when `res` is given it is killed as soon as
-// that client disconnects (security review 2026-11-08: orphaned processes).
+// bounded by YTDLP_TIMEOUT_MS, and when `res` is given it is killed once every
+// client waiting for it has disconnected (security review 2026-11-08).
 function durationOf(videoId, { res } = {}) {
     if (!isValidVideoId(videoId)) return Promise.reject(new Error('Invalid videoId'));
     if (durationCache.has(videoId)) return Promise.resolve(durationCache.get(videoId));
-
-    const args = ['--print', 'duration', `https://www.youtube.com/watch?v=${videoId}`];
-
-    return new Promise((resolve, reject) => {
-        const child = runner.execFile(ytDlpPath, args, { timeout: YTDLP_TIMEOUT_MS, windowsHide: true }, (error, stdout, stderr) => {
-            if (error) {
-                console.error(`YouTube ${videoId}: could not read duration: ${describeYtDlpFailure(error, stderr)}`);
-                return reject(error);
-            }
-            const durationInSeconds = parseInt(stdout.trim(), 10) || 0;
-            if (durationCache.size >= DURATION_CACHE_MAX) {
-                durationCache.delete(durationCache.keys().next().value);
-            }
-            durationCache.set(videoId, durationInSeconds);
-            resolve(durationInSeconds);
-        });
-        if (res) {
-            res.on('close', () => {
-                if (res.writableFinished) return;
-                if (child && child.exitCode === null) child.kill('SIGKILL');
-            });
-        }
+    // The same run that finds the audio address: a play that asks for both
+    // at once starts yt-dlp once.
+    return resolveVideo(videoId, { res }).then((found) => found.duration).catch((error) => {
+        console.error(`YouTube ${videoId}: could not read duration: ${error.detail || describeYtDlpFailure(error, '')}`);
+        throw error;
     });
 }
 
@@ -143,4 +221,11 @@ const getDuration = (req, res) => {
         .catch(() => { if (!res.headersSent) res.status(502).json({ duration: 0 }); });
 };
 
-module.exports = { streamTrack, getDuration, streamVideo, durationOf, isValidVideoId, describeYtDlpFailure, runner, YTDLP_TIMEOUT_MS };
+// Tests only.
+function _resetResolver() {
+    resolved.clear();
+    resolving.clear();
+    durationCache.clear();
+}
+
+module.exports = { streamTrack, getDuration, streamVideo, durationOf, resolveVideo, urlExpiry, isValidVideoId, describeYtDlpFailure, runner, YTDLP_TIMEOUT_MS, _resetResolver };

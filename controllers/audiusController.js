@@ -28,7 +28,7 @@ const streamTrack = async (req, res) => {
     if (seekError) return res.status(400).json({ error: seekError });
 
     const cacheKey = qualityCacheKey(req, `audius_${id}`);
-    if (serveFromCache(res, cacheKey)) return;
+    if (serveFromCache(res, cacheKey, { req, seekTime })) return;
 
     // Resolving is two API calls; if the listener leaves meanwhile, do not
     // start ffmpeg for a dead request.
@@ -44,7 +44,7 @@ const streamTrack = async (req, res) => {
     if (clientGone) return;
 
     // A preview must not occupy the full track's cache entry.
-    streamTranscoded(req, res, { sourceUrl: resolved.url, cacheKey, seekTime, allowCache: !resolved.isPreview });
+    streamTranscoded(req, res, { sourceUrl: resolved.url, cacheKey, seekTime, allowCache: !resolved.isPreview, timing: { label: `audius ${id}` } });
 };
 
 const getDuration = async (req, res) => {

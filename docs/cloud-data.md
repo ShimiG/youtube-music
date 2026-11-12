@@ -1,6 +1,7 @@
 # Keeping the app's data in the cloud: options and a proposal
 
-Status: research and proposal (12 Nov 2026). Nothing here is built yet.
+Status: researched 12 Nov 2026; **provider decided: Cloudflare D1** (see
+"Decision"). Nothing here is built yet.
 
 ## What this is for
 
@@ -50,8 +51,8 @@ at the provider's pricing page before building.
 
 | Option | Kind | Free allowance | Goes to sleep when unused? | Fit for this app |
 |---|---|---|---|---|
-| **Turso** | SQLite in the cloud (libSQL) | 5 GB, 500 M rows read and 10 M written per month, 100 databases | No | **Best fit.** Same SQL as today, plain HTTPS API with a token, can also keep a local copy in sync itself. Caveat: Supabase agreed to buy Turso on 2 Oct 2026; "nothing changes for existing users", but the free tier's future is not promised. |
-| **Cloudflare D1** | SQLite in the cloud | 5 GB, 5 M rows read and 100,000 written per day | No | Good second choice. Same SQL. Reached from a desktop app through Cloudflare's REST API with an account token, or through a small Worker the user deploys: more setup. |
+| **Turso** | SQLite in the cloud (libSQL) | 5 GB, 500 M rows read and 10 M written per month, 100 databases | No | Closest technical fit: same SQL as today, plain HTTPS API with a token, can also keep a local copy in sync itself. Caveat: Supabase agreed to buy Turso on 2 Oct 2026; "nothing changes for existing users", but the free tier's future is not promised. |
+| **Cloudflare D1** | SQLite in the cloud | 5 GB, 5 M rows read and 100,000 written per day | No | **Chosen.** Same SQL. Reached through a small Worker the user deploys (Cloudflare's recommended way): a little more setup, on the most widely used platform of the list. |
 | **Neon** | Postgres | About 0.5 to 1 GB per project, 100 compute-hours per month | Pauses compute after 5 idle minutes and wakes by itself (first query slower); data is kept | Workable. The synced tables' SQL must be ported to Postgres. |
 | **Google Drive app-data folder** | File storage | Counts against the user's own Drive space (15 GB free) | No | Zero new accounts: uses the Google login the app already has, plus one extra, non-sensitive permission. Snapshot sync only (way 3). |
 | Supabase | Postgres | 500 MB, 2 projects | **Yes: paused after 1 week unused, resumed by hand** | Not recommended: a week away from the app and sync is down until someone logs in to their dashboard. |
@@ -59,30 +60,47 @@ at the provider's pricing page before building.
 | Firebase Firestore | Document database | 1 GiB, 50,000 reads and 20,000 writes per day | No | Possible but a rewrite of the data model, plus Firebase sign-in or a key file to manage. |
 | CockroachDB Basic | Postgres-compatible | $15 of use per month (about 10 GiB and 50 M request units) | No | Free in practice, but it is a billing account with a credit, not a free plan. |
 
-## Recommendation
+## Decision
 
-**Way 2 with Turso, built so the provider can be swapped.**
+**Cloudflare D1, reached through a small Cloudflare Worker, with the local
+database kept in sync (way 2).**
 
-- The local SQLite file stays the database the app reads. Nothing gets
+Turso is the closer technical fit (see the table), and that was the first
+recommendation. Cloudflare was chosen by the project owner because this is a
+portfolio project and Cloudflare's platform (Workers, D1, Wrangler) is what
+is widely used and asked for. It is also the provider least likely to
+withdraw its free tier, and it has no acquisition in progress.
+
+How it is put together:
+
+- **The local SQLite file stays the database the app reads.** Nothing gets
   slower and the app still works offline.
-- A sync module sends changed rows to the cloud and fetches other computers'
-  changes: on start, after changes (a few seconds later, batched), and every
-  few minutes. Rows carry "changed at" and "deleted at" times; the newer
-  change wins. For one person using two computers this is enough.
-- It talks to the cloud over plain HTTPS with a pure-JavaScript client, so
-  the single-file build of the server (`scripts/build-sea.mjs`) keeps
-  working. Turso's own "keep a local copy in sync" feature needs a native
-  add-on, which is what the move to `node:sqlite` got rid of; it stays an
-  option for later, not the starting point.
-- The cloud side is one small interface (`push(changes)`, `pull(since)`), so
-  moving to Cloudflare D1 or Neon later is a second adapter, not a rewrite.
-  That is the answer to the Turso acquisition risk.
-- Each installation uses the user's own free database: its address and token
-  are entered under Settings → Accounts, like the Google credentials, stored
-  encrypted, owner only. No shared server, no data held by anyone else.
-
-If creating one more account is unwanted, the alternative is **way 3 with
-Google Drive**: less machinery, no new account, coarser merging.
+- **A Worker in front of D1, not D1's REST API.** Cloudflare's own guidance
+  is that the REST API is for administration (it shares the account-wide
+  limit of 1,200 API calls per five minutes, and its token can do far more
+  than read one database) and that applications should go through a Worker.
+  The Worker exposes two narrow operations, `POST /sync/push` and
+  `GET /sync/pull?since=`, checks a bearer token kept as a Worker secret,
+  validates what it is sent, and is the only thing that touches D1.
+- **A sync module in the desktop server** sends changed rows and fetches
+  other computers' changes: on start, a few seconds after a change
+  (batched), and every few minutes. Rows carry "changed at" and "deleted at"
+  times; the newer change wins. For one person on several computers that is
+  enough.
+- **Free-plan limits shape the batches.** A Worker on the free plan may run
+  50 D1 queries per request, and since 1 Sep 2026 D1 refuses queries once
+  the day's 5 million row reads or 100,000 row writes are used up. Pushes
+  are therefore sent as a few multi-row statements per request, pulls are
+  paged by an indexed "changed at" column (D1 counts rows scanned, not rows
+  returned), and the app treats "limit reached" as "try again tomorrow",
+  never as data loss: the local copy is complete.
+- **In the repository:** a `cloud/` folder with the Worker, its Wrangler
+  configuration and the D1 migrations, deployed with `wrangler deploy` to
+  the user's own free Cloudflare account. The Worker's address and the sync
+  token are entered under Settings → Accounts, stored encrypted, owner only.
+  No shared server; nobody else holds the data.
+- The cloud side stays behind one small interface (`push`, `pull`), so
+  another provider would be a second adapter, not a rewrite.
 
 ### Secrets
 
@@ -112,19 +130,24 @@ and worth doing first whatever is decided about the cloud.
 2. Sync groundwork in the local database: "changed at" / "deleted at" on the
    synced tables, a stable id per row that is the same on every computer,
    and a per-installation id.
-3. The sync module and the Turso adapter; settings and status under
+3. `cloud/`: the D1 schema as migrations, the Worker (push, pull, token
+   check, input validation, tests that run in the Workers runtime), and the
+   deploy instructions.
+4. The sync module in the desktop server, with settings and status under
    Settings → Accounts ("Cloud sync: on, last synced 2 minutes ago").
-4. First-run flows: "this computer has data, the cloud is empty" (upload),
+5. First-run flows: "this computer has data, the cloud is empty" (upload),
    "the cloud has data, this computer is empty" (download), both (merge).
-5. Tests against a local stand-in for the cloud, and a two-computer run.
+6. A two-computer run against a real Cloudflare account. This cannot be done
+   from the build environment and needs the owner's account.
 
-## Decisions needed
+## Still to decide
 
-1. Way 2 (local + sync, recommended) or way 1 (cloud only)?
-2. Turso (recommended), Cloudflare D1, or the Google Drive snapshot?
-3. Secrets: reconnect per computer (recommended) or passphrase sync?
-4. Is one person on several computers the case to build for, or several
-   people sharing one cloud database?
+These follow the recommendations unless the owner says otherwise:
+
+1. Local database plus sync (assumed), not cloud-only.
+2. Secrets: reconnect per computer (assumed), not passphrase sync.
+3. One person on several computers (assumed), not several people sharing
+   one cloud database.
 
 ## Sources
 
@@ -135,7 +158,12 @@ and worth doing first whatever is decided about the cloud.
   https://turso.tech/blog/turso-offline-sync-public-beta
 - Supabase to acquire Turso (2 Oct 2026):
   https://www.prnewswire.com/news-releases/supabase-announces-150m-in-new-funding-and-turso-acquisition-302896752.html
-- Cloudflare D1 pricing and limits: https://developers.cloudflare.com/d1/platform/pricing/
+- Cloudflare D1 pricing and limits: https://developers.cloudflare.com/d1/platform/pricing/ ,
+  https://developers.cloudflare.com/d1/platform/limits/
+- Cloudflare: use a Worker in front of D1, the REST API is for administration:
+  https://developers.cloudflare.com/d1/tutorials/build-an-api-to-access-d1/
+- Cloudflare D1 changelog (daily limits enforced from 1 Sep 2026):
+  https://developers.cloudflare.com/changelog/product/d1/
 - Neon free plan: https://neon.com/faqs/free-plan-limits-and-quotas
 - Supabase pricing (pausing after 1 week): https://supabase.com/pricing
 - MongoDB Atlas free cluster limits and pausing:

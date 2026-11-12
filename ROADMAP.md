@@ -201,7 +201,7 @@ Tests: PKCE challenge, token grants, single-use refresh handling, app-token cach
 | #29 Persistent controls in an expanded view | Stage 7 | **done** |
 | #30 Lyrics | Stage 7, after #29 | **done** (.lrc / tags for local files; LRCLIB, opt-in, for the rest) |
 | #26 Dynamic theming | Stage 7 | **done** (player bar and Now Playing view take the cover's colours) |
-| #40 Remote control from a phone | Stage 7 | planned, needs a security design |
+| #40 Remote control from a phone | Stage 7 | shelved (owner's decision, Nov 2026) |
 | #23 Spotify | Stage 2 | on hold |
 | #36 Apple Music | Stage 4 | on hold |
 
@@ -444,12 +444,35 @@ Everything around playback that is not a new source.
   8 s limits, JPEG / PNG / WebP only, and the caller only ever gets colours.
   Not done: covers for local files (embedded art is not read yet, so they
   keep the standard colours), theming of the rest of the app.
-- Remote control from a phone (issue #40): control the desktop app (play,
-  pause, skip, volume) from a phone. Needs a security design first: the
+- Remote control from a phone (issue #40): **shelved** (owner's decision,
+  Nov 2026). For whoever picks it up: it needs a security design first. The
   server only listens on this computer (127.0.0.1) by design, so a phone on
   the network requires an opt-in setting, pairing (for example a one-time
   code shown on the desktop) and an authenticated WebSocket, rather than
   "same Google account" as the issue suggests. Two to three days.
+
+## Stage 9: Data that survives and follows the user (planned)
+
+Today the data is one SQLite file on one computer, and a fresh copy of the
+source even starts empty. Research, the options compared and the design are
+in [docs/cloud-data.md](docs/cloud-data.md). Decided: **Cloudflare D1**,
+reached through a small Worker deployed to the user's own free account, with
+the local database kept in charge and synced in the background, so the app
+stays as fast as it is and works offline. In order:
+
+1. Keep the database in the per-user data folder when run from source too
+   (one-time move of an existing one). No cloud needed; fixes "every new
+   copy starts empty".
+2. Sync groundwork in the local schema (changed-at / deleted-at, stable row
+   ids, an installation id).
+3. `cloud/`: D1 migrations and the Worker (push / pull, token check), with
+   tests in the Workers runtime.
+4. The sync module, its settings and status under Settings → Accounts, and
+   the first-run flows (upload, download, merge).
+5. A two-computer run on a real Cloudflare account (needs the owner).
+
+Service logins and credentials are not synced by default: each computer
+connects once.
 
 ## Parked
 

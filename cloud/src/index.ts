@@ -3,6 +3,7 @@
 //   GET    /health                 is the service up, and is sign-up open
 //   POST   /auth/register          { username, authKey, registrationCode } -> session
 //   POST   /auth/login             { username, authKey }                   -> session
+//   POST   /auth/refresh           a new session for a valid one (signed in)
 //   DELETE /auth/account           { authKey }                (signed in)
 //   POST   /sync/push              { deviceId, changes: [...] } (signed in)
 //   GET    /sync/pull?since=&limit=                             (signed in)
@@ -12,13 +13,13 @@
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { secureHeaders } from 'hono/secure-headers';
-import { deleteAccount, login, register, requireSession } from './auth';
+import { deleteAccount, login, refresh, register, requireSession } from './auth';
 import { pull, push } from './sync';
 import { ApiError, type AppEnv } from './types';
 
 // Nothing but the handler may be exported from this file: the Workers runtime
 // treats every export of the entry module as an entrypoint.
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 const MAX_BODY_BYTES = 1024 * 1024;
 
 const app = new Hono<AppEnv>();
@@ -52,6 +53,9 @@ app.get('/health', (c) => c.json({
 
 app.post('/auth/register', async (c) => c.json(await register(c.env, await jsonBody(c.req.raw)), 201));
 app.post('/auth/login', async (c) => c.json(await login(c.env, await jsonBody(c.req.raw))));
+
+app.use('/auth/refresh', requireSession);
+app.post('/auth/refresh', async (c) => c.json(await refresh(c.env, c.get('userId'))));
 
 app.use('/auth/account', requireSession);
 app.delete('/auth/account', async (c) => {

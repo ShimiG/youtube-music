@@ -291,6 +291,9 @@
 .accounts-list, .system-list { list-style: none; margin: 0; padding: 0; }
 .accounts-row { padding: 14px 0; border-top: 1px solid #2c2c2c; }
 .accounts-row:first-child { border-top: none; padding-top: 0; }
+/* Cloud sync sits under the service accounts, set apart by a rule. */
+.cloud-panel { margin-top: 14px; border-top: 1px solid #2c2c2c; padding-top: 14px; }
+.accounts-detail strong { color: #eee; }
 .accounts-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .accounts-icon {
   width: 34px;

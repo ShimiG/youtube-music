@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import AccountsPanel from './AccountsPanel';
+import CloudPanel from './CloudPanel';
 import SystemPanel from './SystemPanel';
 import { QUALITY_OPTIONS, getAudioQuality, setAudioQuality, setOnlineLyrics, setDynamicTheme } from '../utils/settings';
 import { useDynamicTheme } from '../hooks/useArtworkTheme';
@@ -59,6 +60,7 @@ export default function SettingsView({ section = null }) {
                     Connect your streaming accounts. The logins stay on this computer.
                 </p>
                 <AccountsPanel />
+                <CloudPanel />
             </section>
 
             <section id="settings-quality" style={{ ...card, marginTop: '20px' }} aria-labelledby="quality-heading">

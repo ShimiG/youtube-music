@@ -1,6 +1,7 @@
 const { getYouTubeClient } = require('./youtubeClient');
 const { sendSourceError } = require('../services/errors');
 const { cleanTrackMeta } = require('../services/trackMeta');
+const cloudSync = require('../services/cloud/sync');
 
 // --- YouTube-backed endpoints (auth via sourceToken('youtube') -> req.sourceToken) ---
 
@@ -111,6 +112,7 @@ const createCustomPlaylist = async (req, res, next) => {
             `INSERT INTO playlists (user_id, name, thumbnail) VALUES (?, ?, ?)`,
             [req.userId, name.trim(), (typeof thumbnail === 'string' ? thumbnail : null)]
         );
+        cloudSync.touch(req.userId);
         res.status(201).json({ id: result.lastID, name: name.trim(), thumbnail });
     } catch (error) {
         next(error);
@@ -185,10 +187,13 @@ const addTrackToPlaylist = async (req, res, next) => {
             return res.status(200).json({ success: true, alreadyInPlaylist: true, message: 'Track is already in the playlist' });
         }
 
+        // sort_order is when the track was added: new tracks go to the end,
+        // and the order is the same on every computer the playlist syncs to.
         await db.run(
-            `INSERT INTO playlist_tracks (playlist_id, track_id, title, artist, thumbnail) VALUES (?, ?, ?, ?, ?)`,
-            [playlistId, track.id, meta.title, meta.artist, meta.thumbnail]
+            `INSERT INTO playlist_tracks (playlist_id, track_id, title, artist, thumbnail, sort_order) VALUES (?, ?, ?, ?, ?, ?)`,
+            [playlistId, track.id, meta.title, meta.artist, meta.thumbnail, Date.now()]
         );
+        cloudSync.touch(req.userId);
         res.status(201).json({ success: true, message: 'Track added to playlist' });
     } catch (error) {
         next(error);
@@ -215,7 +220,7 @@ const getCustomPlaylistTracks = async (req, res, next) => {
             JOIN tracks t ON pt.track_id = t.id
             JOIN sources s ON t.source_id = s.id
             WHERE pt.playlist_id = ?
-            ORDER BY pt.sort_order ASC
+            ORDER BY pt.sort_order ASC, pt.id ASC
         `, [playlistId]);
         res.json(tracks);
     } catch (error) {

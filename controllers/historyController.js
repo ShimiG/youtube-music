@@ -1,4 +1,5 @@
 const { cleanTrackMeta } = require('../services/trackMeta');
+const cloudSync = require('../services/cloud/sync');
 
 // Identity comes from requireAuth (req.userId), not from a client-supplied
 // header. The user row already exists because they logged in, so we only need
@@ -42,10 +43,11 @@ const logHistory = async (req, res, next) => {
         await db.run(`
             DELETE FROM history
             WHERE user_id = ? AND id NOT IN (
-                SELECT id FROM history WHERE user_id = ? ORDER BY played_at DESC LIMIT 50
+                SELECT id FROM history WHERE user_id = ? ORDER BY played_at DESC, id DESC LIMIT 50
             )
         `, [userId, userId]);
 
+        cloudSync.touch(userId); // synced shortly, when this user is linked to the cloud
         res.status(200).json({ success: true });
     } catch (error) {
         next(error);
@@ -68,7 +70,7 @@ const getHistory = async (req, res, next) => {
             JOIN tracks t ON h.track_id = t.id
             JOIN sources s ON t.source_id = s.id
             WHERE h.user_id = ?
-            ORDER BY h.played_at DESC
+            ORDER BY h.played_at DESC, h.id DESC
             LIMIT 50
         `, [userId]);
 

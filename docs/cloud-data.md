@@ -185,8 +185,26 @@ and worth doing first whatever is decided about the cloud.
   - **A push is one transaction of two statements** whatever its size (the
     records travel as one JSON parameter), which fits the limits of 50
     queries per request and 100 parameters per query.
-  - Not built yet: the desktop side of sync (steps 2 and 4) and Google
-    sign-in through the Worker (step 5).
+- **Steps 2 and 4, the desktop side:** `services/cloud/` and Settings →
+  Accounts → Cloud sync. A user links a computer to their cloud account;
+  their custom playlists (with the order of their tracks) and their play
+  history are then the same on every linked computer. How it works:
+  - Nothing in the app reports changes. A sync run reads the user's records
+    as they are, compares them with what this computer and the cloud last
+    agreed on (`sync_records`, a hash per record), pushes what differs and
+    pulls what the cloud accepted since. A place that edits data cannot be
+    forgotten, because no place has to do anything.
+  - Runs happen a few seconds after a change, every five minutes, and on
+    "Sync now". A failure is shown, retried, and loses nothing.
+  - Each computer keeps its own local account; the cloud account is linked
+    to it. The cloud session is stored encrypted and renews itself, so the
+    password is asked for once per computer.
+  - Tracks from Local Files stay on their computer. A record a computer
+    cannot use (from a newer version, say) is left alone in the cloud.
+  - Checked with two copies of the app syncing through the Worker running
+    locally (`wrangler dev`), both directions.
+- Not built yet: Google sign-in through the Worker (step 5), and signing in
+  to the app itself with the cloud account.
 
 ## Proposed steps
 

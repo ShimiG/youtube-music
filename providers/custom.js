@@ -70,19 +70,31 @@ async function assertOwnership(db, playlistId, userId) {
     if (!row) throw new SourceError('NOT_FOUND', 'Playlist not found.', { source: SOURCE });
 }
 
+// Where a track sits in its playlist: when it was added (sort_order, a time in
+// milliseconds, set on insert and carried along by cloud sync). Rows from
+// before that was recorded have 0 and fall back to their row id, which keeps
+// them in the order they were added and ahead of anything added since.
+const POSITION = 'CASE WHEN pt.sort_order > 0 THEN pt.sort_order ELSE pt.id END';
+
+// A page continues after a (position, row id) pair: "<position>-<row id>".
+function parseTrackCursor(cursor) {
+    if (cursor === undefined || cursor === null || cursor === '') return null;
+    const m = /^(\d{1,16})-(\d{1,16})$/.exec(String(cursor));
+    if (!m) throw new SourceError('BAD_CURSOR', 'Invalid cursor.', { source: SOURCE });
+    return { position: Number(m[1]), rowId: Number(m[2]) };
+}
+
 async function getPlaylistTracks({ db, userId }, playlistId, { cursor } = {}) {
     if (!isRowId(playlistId)) throw new SourceError('NOT_FOUND', 'Playlist not found.', { source: SOURCE });
-    const after = parseCursor(cursor);
+    const after = parseTrackCursor(cursor);
     await assertOwnership(db, playlistId, userId);
 
-    // playlist_tracks.sort_order is not populated yet, so insertion order (row
-    // id) is the playlist order; that also makes the id a stable cursor.
     const rows = await db.all(`
         -- Per-user display metadata (playlist_tracks.title/artist/thumbnail,
         -- security review 2026-11-08): the shared tracks row is only a fallback
         -- for rows added before those columns existed, so one user can't change
         -- what another user's playlists show.
-        SELECT pt.id AS rowId, t.external_id AS id,
+        SELECT pt.id AS rowId, ${POSITION} AS position, t.external_id AS id,
                COALESCE(pt.title, t.title) AS title,
                COALESCE(pt.artist, t.artist) AS artist,
                CASE WHEN pt.title IS NOT NULL THEN pt.thumbnail ELSE t.thumbnail END AS thumbnail,
@@ -90,14 +102,16 @@ async function getPlaylistTracks({ db, userId }, playlistId, { cursor } = {}) {
         FROM playlist_tracks pt
         JOIN tracks t ON pt.track_id = t.id
         JOIN sources s ON t.source_id = s.id
-        WHERE pt.playlist_id = ? AND (? IS NULL OR pt.id > ?)
-        ORDER BY pt.id ASC
+        WHERE pt.playlist_id = ?
+          AND (? IS NULL OR ${POSITION} > ? OR (${POSITION} = ? AND pt.id > ?))
+        ORDER BY ${POSITION} ASC, pt.id ASC
         LIMIT ?
-    `, [playlistId, after, after, PAGE_SIZE + 1]);
+    `, [playlistId, after ? after.position : null, after ? after.position : null, after ? after.position : null, after ? after.rowId : null, PAGE_SIZE + 1]);
 
     const hasMore = rows.length > PAGE_SIZE;
     const slice = hasMore ? rows.slice(0, PAGE_SIZE) : rows;
-    return page(slice.map(normalizeTrack), hasMore ? String(slice[slice.length - 1].rowId) : null);
+    const last = slice[slice.length - 1];
+    return page(slice.map(normalizeTrack), hasMore ? `${last.position}-${last.rowId}` : null);
 }
 
 module.exports = {

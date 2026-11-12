@@ -195,7 +195,7 @@ Required environment variables (see `.env.example`):
 | Variable | Purpose |
 |---|---|
 | `PORT` | API port (default 3000) |
-| `JWT_SECRET` | Secret for signing login tokens — use a long random string |
+| `JWT_SECRET` | Secret for signing login tokens. Optional: when it is not set, one is generated once and kept in the data folder |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth credentials. Can be entered in the app instead (Settings → Accounts); a value set here wins |
 | `REDIRECT_URI` | Google OAuth callback, e.g. `http://localhost:3000/auth/google/callback` |
 | `SOUNDCLOUD_CLIENT_ID` / `SOUNDCLOUD_CLIENT_SECRET` | SoundCloud app credentials (optional; adds the SoundCloud library). Also enterable under Settings → Accounts |
@@ -212,7 +212,9 @@ Required environment variables (see `.env.example`):
 | `MATCH_YTDLP_FALLBACK` | `on` (default) runs yt-dlp `ytsearch` when the YouTube Music search fails; `off` disables it |
 | `MATCH_YTDLP_RECALL` | `true` also runs yt-dlp when YouTube Music found no acceptable candidate (default `false`; slow) |
 
-The server refuses to start if `JWT_SECRET` is missing. The `MATCH_*` variables all have
+No `.env` is needed to start: every value has a default or can be set in the app. Data
+(database, cache, log, generated secrets) lives in the per-user data folder, not in the
+project folder; see [docs/packaging.md](docs/packaging.md). The `MATCH_*` variables all have
 defaults; see "Matching engine".
 
 ## Running

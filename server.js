@@ -6,6 +6,10 @@ require('./services/runtimeConfig').loadRuntimeConfig();
 if (require('./services/logFile').install()) {
     console.log(`---- Music Manager ${require('./package.json').version} starting (Node ${process.version}, ${process.platform} ${process.arch}) ----`);
 }
+// Data created in the project folder by an earlier version moves to the
+// per-user data folder once (services/dataFolder.js). Before anything opens
+// the database.
+require('./services/dataFolder').moveProjectDataIfNeeded();
 
 const app = require('./app');
 const initDB = require('./config/db');
@@ -27,9 +31,7 @@ function validateEnv() {
         console.warn('Warning: JWT_SECRET is short; use at least 32 random characters.');
     }
     if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-        const where = require('./services/paths').isPackaged()
-            ? require('path').join(require('./services/paths').dataDir(), '.env')
-            : '.env';
+        const where = require('path').join(require('./services/paths').dataDir(), '.env');
         console.warn(`YouTube: no Google OAuth credentials in the environment. Enter them in the app (Settings, Accounts) or set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in ${where}.`);
     }
     if (!process.env.SOUNDCLOUD_CLIENT_ID || !process.env.SOUNDCLOUD_CLIENT_SECRET) {
@@ -59,6 +61,7 @@ initDB()
         await require('./services/appSettings').applyStored(db);
         app.listen(PORT, HOST, () => {
             console.log(`Server running on http://${HOST}:${PORT}`);
+            console.log(`Data folder: ${require('./services/paths').dataDir()}`);
             // Which helper binaries this run uses: the first thing to check when
             // nothing plays (also in GET /api/health, with their versions).
             console.log(`Using yt-dlp: ${require('./services/ytdlp').ytDlpPath}`);

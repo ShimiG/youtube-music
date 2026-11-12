@@ -1,11 +1,12 @@
 // Loads configuration for both ways the server runs.
 //
-// Development: `.env` in the working directory, as before.
-// Packaged desktop app: there is no project folder, so `.env` is also read
-// from the data folder (services/paths.js; e.g. ~/Library/Application
-// Support/Music Manager/.env), and a JWT_SECRET is generated on first run and
-// kept in `.jwt-secret` there (owner-only), so the app starts without any
-// manual setup. Google / SoundCloud credentials still go in that `.env`.
+// Run from source: `.env` in the working directory first, as before.
+// Always: `.env` in the data folder (services/paths.js; e.g. ~/Library/
+// Application Support/Music Manager/.env), and when no JWT_SECRET is set
+// anywhere, one is generated on first run and kept in `.jwt-secret` there
+// (owner-only). So the app starts without any manual setup, installed or
+// from a fresh copy of the source. Google / SoundCloud credentials can go in
+// that `.env`, or be entered in the app (Settings -> Accounts).
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -58,10 +59,14 @@ function ensureEnvTemplate(dir) {
 }
 
 function loadRuntimeConfig() {
-    dotenv.config({ quiet: true }); // ./.env (development); never overrides real env vars
-    if (!isPackaged()) return;
+    dotenv.config({ quiet: true }); // ./.env (run from source); never overrides real env vars
+    // A test run configures itself (tests/setup.js) and stays out of real data.
+    if (!isPackaged() && process.env.NODE_ENV === 'test') return;
+    // The data folder's .env and generated JWT secret apply however the server
+    // is started, so a fresh copy of the source runs with the same settings
+    // and the same logins as the last one. Values already set win.
     const dir = dataDir();
-    ensureEnvTemplate(dir);
+    if (isPackaged()) ensureEnvTemplate(dir);
     dotenv.config({ path: path.join(dir, '.env'), quiet: true });
     if (!process.env.JWT_SECRET) process.env.JWT_SECRET = loadOrCreateJwtSecret(dir);
 }

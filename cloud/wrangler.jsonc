@@ -9,9 +9,11 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "music-manager",
-      // Not a secret. Replace with the id printed by `npx wrangler d1 create music-manager`.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      // The owner's database. Neither value is a secret. Someone running
+      // their own copy replaces both with what `npx wrangler d1 create` prints
+      // (or what the D1 page in the Cloudflare dashboard shows).
+      "database_name": "music-manager-db",
+      "database_id": "62150c2f-ce3d-4db1-8d1a-be8ad4a94036",
       "migrations_dir": "migrations"
     }
   ]

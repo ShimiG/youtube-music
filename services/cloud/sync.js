@@ -244,6 +244,9 @@ async function detectLocalChanges(db, userId, local) {
          ON CONFLICT(user_id, collection, record_id) DO UPDATE SET hash = excluded.hash, updated_at = excluded.updated_at, deleted = excluded.deleted, dirty = 1`,
         [userId, collection, id, hash, updatedAt, deleted ? 1 : 0]
     );
+    // One transaction: linking a computer with a full library marks every
+    // record at once.
+    await db.transaction(async () => {
     for (const [key, record] of local) {
         const hash = records.hashOf(record.data);
         const row = known.get(key);
@@ -262,6 +265,7 @@ async function detectLocalChanges(db, userId, local) {
         if (row.deleted || local.has(key)) continue;
         await upsert(row.collection, row.record_id, row.hash, Math.max(now, row.updated_at + 1), true); // deleted here
     }
+    });
 }
 
 async function pushChanges(db, userId, url, token, device, local) {
@@ -299,7 +303,9 @@ async function pullChanges(db, userId, url, token, device, cursor) {
         const changes = Array.isArray(answer && answer.changes) ? answer.changes : [];
         // Playlists before their tracks within a page.
         changes.sort((a, b) => records.COLLECTIONS.indexOf(a.collection) - records.COLLECTIONS.indexOf(b.collection) || a.seq - b.seq);
-        for (const change of changes) {
+        // A page is applied as one transaction (only database calls inside):
+        // the first sync on a new computer writes hundreds of rows.
+        await db.transaction(async () => { for (const change of changes) {
             if (!change || typeof change.collection !== 'string' || typeof change.id !== 'string' || !Number.isSafeInteger(change.updatedAt)) continue;
             const known = await db.get(
                 'SELECT hash, updated_at, deleted, dirty FROM sync_records WHERE user_id = ? AND collection = ? AND record_id = ?',
@@ -320,6 +326,7 @@ async function pullChanges(db, userId, url, token, device, cursor) {
         }
         since = Number.isSafeInteger(answer && answer.cursor) ? answer.cursor : since;
         await db.run('UPDATE cloud_links SET cursor = ? WHERE user_id = ?', [since, userId]);
+        }); // the cursor moves with the page it belongs to
         if (!answer || !answer.more) break;
     }
     return applied;

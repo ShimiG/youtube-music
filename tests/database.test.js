@@ -23,6 +23,46 @@ afterEach(() => {
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
+// docs/performance-plan.md, step 4.1.
+describe('transactions', () => {
+    it('commits the writes of a transaction together, and none of them when it throws', async () => {
+        const db = await open(':memory:');
+        await db.exec('CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT UNIQUE)');
+        const result = await db.transaction(async () => {
+            await db.run('INSERT INTO t (a) VALUES (?)', ['one']);
+            await db.run('INSERT INTO t (a) VALUES (?)', ['two']);
+            return 'done';
+        });
+        expect(result).toBe('done');
+        expect((await db.get('SELECT COUNT(*) AS n FROM t')).n).toBe(2);
+
+        await expect(db.transaction(async () => {
+            await db.run('INSERT INTO t (a) VALUES (?)', ['three']);
+            await db.run('INSERT INTO t (a) VALUES (?)', ['one']); // UNIQUE: fails
+        })).rejects.toThrow(/UNIQUE/);
+        expect((await db.all('SELECT a FROM t ORDER BY id')).map((r) => r.a)).toEqual(['one', 'two']);
+
+        // The connection is usable afterwards, and a transaction inside another joins it.
+        await db.transaction(async () => {
+            await db.run('INSERT INTO t (a) VALUES (?)', ['four']);
+            await db.transaction(async () => { await db.run('INSERT INTO t (a) VALUES (?)', ['five']); });
+        });
+        await expect(db.transaction(async () => {
+            await db.transaction(async () => { await db.run('INSERT INTO t (a) VALUES (?)', ['six']); });
+            throw new Error('outer fails');
+        })).rejects.toThrow('outer fails');
+        expect((await db.all('SELECT a FROM t ORDER BY id')).map((r) => r.a)).toEqual(['one', 'two', 'four', 'five']);
+        await db.close();
+    });
+
+    it('the app database does not sync the disk on every write', async () => {
+        const db = await require('../config/db')(path.join(dir, 'database.sqlite'));
+        expect((await db.get('PRAGMA synchronous')).synchronous).toBe(1); // NORMAL
+        expect((await db.get('PRAGMA journal_mode')).journal_mode).toBe('wal');
+        await db.close();
+    });
+});
+
 describe('node:sqlite adapter', () => {
     it('keeps the sqlite/sqlite3 API: get, all, run -> { lastID, changes }, exec', async () => {
         const db = await open(':memory:');

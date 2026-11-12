@@ -35,3 +35,23 @@ export async function apiFetch(path, { method = 'GET', body, signal } = {}) {
     }
     return data;
 }
+
+/**
+ * Resolves true as soon as the local server answers anything at all, false
+ * if it has not within `timeoutMs` (or the wait was aborted). Used once, at
+ * start-up (components/ServerGate.jsx).
+ */
+export async function waitForServer(signal, { timeoutMs = 20000, everyMs = 300 } = {}) {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+        try {
+            await fetch(`${API_BASE}/api/cloud/info`, { signal, cache: 'no-store' });
+            return true;
+        } catch {
+            if (signal && signal.aborted) return false;
+        }
+        if (Date.now() + everyMs > deadline) return false;
+        await new Promise((resolve) => setTimeout(resolve, everyMs));
+        if (signal && signal.aborted) return false;
+    }
+}

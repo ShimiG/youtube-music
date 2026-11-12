@@ -23,29 +23,33 @@ const logHistory = async (req, res, next) => {
         const source = await db.get(`SELECT id FROM sources WHERE name = ?`, [sourceName]);
         if (!source) return res.status(400).json({ error: 'Unknown source' });
 
-        await db.run(
-            `INSERT OR IGNORE INTO tracks (source_id, external_id, title, artist, thumbnail) VALUES (?, ?, ?, ?, ?)`,
-            [source.id, trackId, meta.title, meta.artist, meta.thumbnail]
-        );
-        const track = await db.get(
-            `SELECT id FROM tracks WHERE source_id = ? AND external_id = ?`,
-            [source.id, trackId]
-        );
+        // One transaction: the play is recorded whole or not at all, and the
+        // disk is synced once instead of four times.
+        await db.transaction(async () => {
+            await db.run(
+                `INSERT OR IGNORE INTO tracks (source_id, external_id, title, artist, thumbnail) VALUES (?, ?, ?, ?, ?)`,
+                [source.id, trackId, meta.title, meta.artist, meta.thumbnail]
+            );
+            const track = await db.get(
+                `SELECT id FROM tracks WHERE source_id = ? AND external_id = ?`,
+                [source.id, trackId]
+            );
 
-        // De-dupe: drop any previous play of this track, then record it as newest.
-        await db.run(`DELETE FROM history WHERE user_id = ? AND track_id = ?`, [userId, track.id]);
-        await db.run(
-            `INSERT INTO history (user_id, track_id, title, artist, thumbnail) VALUES (?, ?, ?, ?, ?)`,
-            [userId, track.id, meta.title, meta.artist, meta.thumbnail]
-        );
+            // De-dupe: drop any previous play of this track, then record it as newest.
+            await db.run(`DELETE FROM history WHERE user_id = ? AND track_id = ?`, [userId, track.id]);
+            await db.run(
+                `INSERT INTO history (user_id, track_id, title, artist, thumbnail) VALUES (?, ?, ?, ?, ?)`,
+                [userId, track.id, meta.title, meta.artist, meta.thumbnail]
+            );
 
-        // Keep only the 50 most recent plays per user.
-        await db.run(`
-            DELETE FROM history
-            WHERE user_id = ? AND id NOT IN (
-                SELECT id FROM history WHERE user_id = ? ORDER BY played_at DESC, id DESC LIMIT 50
-            )
-        `, [userId, userId]);
+            // Keep only the 50 most recent plays per user.
+            await db.run(`
+                DELETE FROM history
+                WHERE user_id = ? AND id NOT IN (
+                    SELECT id FROM history WHERE user_id = ? ORDER BY played_at DESC, id DESC LIMIT 50
+                )
+            `, [userId, userId]);
+        });
 
         cloudSync.touch(userId); // synced shortly, when this user is linked to the cloud
         res.status(200).json({ success: true });

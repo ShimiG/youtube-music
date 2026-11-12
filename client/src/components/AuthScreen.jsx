@@ -13,20 +13,14 @@ const TITLES = { login: 'Welcome Back', register: 'Create Account', cloud: 'Clou
 const BUTTONS = { login: 'Log In', register: 'Sign Up', cloud: 'Sign In' };
 const ENDPOINTS = { login: '/api/login', register: '/api/register', cloud: '/api/cloud/login' };
 
-// Whether this computer can sign in with a cloud account. The server may still
-// be starting when the window opens, so ask a few times before giving up.
+// Whether this computer can sign in with a cloud account.
 async function cloudInfo(signal) {
-    for (let attempt = 0; attempt < 6; attempt++) {
-        try {
-            const res = await fetch(`${API_BASE}/api/cloud/info`, { signal });
-            if (res.ok) return await res.json();
-        } catch (err) {
-            if (err.name === 'AbortError') return null;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        if (signal.aborted) return null;
+    try {
+        const res = await fetch(`${API_BASE}/api/cloud/info`, { signal });
+        return res.ok ? await res.json() : null;
+    } catch {
+        return null;
     }
-    return null;
 }
 
 export default function AuthScreen({ onLoginSuccess }) {

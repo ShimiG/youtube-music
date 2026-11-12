@@ -112,27 +112,101 @@ async function search(query, limit = SEARCH_LIMIT) {
 // preview rendition. This mirrors the official API path, which also prefers MP3.
 const STREAM_FORMAT = 'bestaudio[ext=mp3]/bestaudio/best';
 
+// One yt-dlp run per track gives both the audio address and the length, and
+// its answer is remembered for a while (docs/performance-plan.md, step 1.1).
+// A play asks for both at once (/stream and /duration), and a seek or a replay
+// asks again: before this, each of those started yt-dlp anew.
+const REMEMBER_MAX = 300;
+const DEFAULT_URL_TTL_MS = 5 * 60 * 1000;   // when the address does not say how long it lasts
+const MAX_URL_TTL_MS = 30 * 60 * 1000;
+const EXPIRY_MARGIN_MS = 2 * 60 * 1000;
+const remembered = new Map(); // id -> { url, isPreview, format, duration, expiresAt }
+const looking = new Map();    // id -> Promise of the same
+
+/**
+ * When a SoundCloud media address stops working, as far as it says: a signed
+ * address carries `Policy` (base64 JSON with an AWS:EpochTime) or `expires`.
+ * Unknown: a short default. Never longer than MAX_URL_TTL_MS.
+ */
+function urlExpiry(url, now = Date.now()) {
+    let stated = null;
+    try {
+        const params = new URL(url).searchParams;
+        const policy = params.get('Policy');
+        if (policy) {
+            const json = Buffer.from(policy.replace(/-/g, '+').replace(/_/g, '=').replace(/~/g, '/'), 'base64').toString('utf8');
+            const m = /"AWS:EpochTime"\s*:\s*(\d{10})/.exec(json);
+            if (m) stated = Number(m[1]) * 1000;
+        }
+        const expires = params.get('expires') || params.get('Expires');
+        if (stated === null && /^\d{10}$/.test(expires || '')) stated = Number(expires) * 1000;
+    } catch { /* not an address we can read: the default */ }
+    const until = stated === null ? now + DEFAULT_URL_TTL_MS : stated - EXPIRY_MARGIN_MS;
+    return Math.min(until, now + MAX_URL_TTL_MS);
+}
+
+/**
+ * Address, length and rendition of a track: { url, isPreview, format,
+ * duration, from }. `from` says what it cost: "memory", "shared" (joined a
+ * run another request had started) or "yt-dlp" (started one).
+ */
+async function lookup(id) {
+    if (!isValidId(id)) throw new Error('Invalid SoundCloud id');
+    const known = remembered.get(id);
+    if (known && known.expiresAt > Date.now()) return { ...known, from: 'memory' };
+    if (known) remembered.delete(id);
+    if (looking.has(id)) return { ...(await looking.get(id)), from: 'shared' };
+
+    const run = runner.exec([...COMMON_ARGS, '-f', STREAM_FORMAT, '--print', 'duration', '--print', 'urls', '--print', 'format_id', trackUrl(id)])
+        .then((stdout) => {
+            const lines = stdout.split('\n').map(l => l.trim()).filter(Boolean);
+            const url = lines.find(l => /^https?:\/\//i.test(l));
+            if (!url) {
+                const err = new Error('yt-dlp returned no stream URL');
+                err.code = 'YTDLP_NO_URL';
+                throw err;
+            }
+            const numeric = lines.find(l => /^\d+(\.\d+)?$/.test(l));
+            // The format id tells whether this is a snippet.
+            const formatId = lines.find(l => l !== numeric && !/^https?:\/\//i.test(l)) || '';
+            const found = {
+                url,
+                isPreview: PREVIEW_FORMAT.test(formatId),
+                format: formatId,
+                duration: numeric ? Math.round(Number(numeric)) : 0,
+                expiresAt: urlExpiry(url)
+            };
+            if (found.expiresAt > Date.now()) {
+                if (remembered.size >= REMEMBER_MAX) remembered.delete(remembered.keys().next().value);
+                remembered.set(id, found);
+            }
+            return found;
+        })
+        .finally(() => looking.delete(id));
+    looking.set(id, run);
+    return { ...(await run), from: 'yt-dlp' };
+}
+
 /** Resolves a direct audio URL (progressive HTTP or HLS) that ffmpeg can read. */
 async function resolveStream(id) {
-    if (!isValidId(id)) throw new Error('Invalid SoundCloud id');
-    // Ask for the format id too, so the caller learns whether this is a snippet.
-    const stdout = await runner.exec([...COMMON_ARGS, '-f', STREAM_FORMAT, '--print', 'urls', '--print', 'format_id', trackUrl(id)]);
-    const lines = stdout.split('\n').map(l => l.trim()).filter(Boolean);
-    const url = lines.find(l => /^https?:\/\//i.test(l));
-    if (!url) {
-        const err = new Error('yt-dlp returned no stream URL');
-        err.code = 'YTDLP_NO_URL';
-        throw err;
-    }
-    const formatId = lines.find(l => !/^https?:\/\//i.test(l)) || '';
-    return { url, isPreview: PREVIEW_FORMAT.test(formatId), format: formatId };
+    const { url, isPreview, format, from } = await lookup(id);
+    return { url, isPreview, format, from };
 }
 
 /** Track length in whole seconds (a snippet's length for Go+ tracks). */
 async function getDuration(id) {
-    if (!isValidId(id)) throw new Error('Invalid SoundCloud id');
-    const stdout = await runner.exec([...COMMON_ARGS, '--print', 'duration', trackUrl(id)]);
-    return Math.round(Number(stdout.trim()) || 0);
+    return (await lookup(id)).duration;
+}
+
+/** Drops what is remembered about a track (its address turned out to be dead). */
+function forget(id) {
+    remembered.delete(id);
+}
+
+// Tests only.
+function _reset() {
+    remembered.clear();
+    looking.clear();
 }
 
 module.exports = {
@@ -141,6 +215,10 @@ module.exports = {
     search,
     resolveStream,
     getDuration,
+    lookup,
+    forget,
+    urlExpiry,
+    _reset,
     normalizeEntry,
     parseJsonLines
 };

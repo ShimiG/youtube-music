@@ -187,9 +187,11 @@ Tests: PKCE challenge, token grants, single-use refresh handling, app-token cach
 - Done since: the catch-up (issues #27, #28), **Stage 6** (Audius, Deezer,
   local files, audio quality) and **Stage 7** (Now Playing view, lyrics,
   colours from the cover). The phone remote (#40) is shelved.
-- Next: **Stage 8** (performance; plan in `docs/performance-plan.md`), then
-  **Stage 9** (data in the cloud on Cloudflare D1; design in
-  `docs/cloud-data.md`).
+- **Stage 8** (performance; plan in `docs/performance-plan.md`): the steps
+  that decide how fast a track starts and how reliably it is cached are
+  done; smaller ones are open. **Stage 9** (data in the cloud on Cloudflare
+  D1; design in `docs/cloud-data.md`) is built; the run on a real account
+  is the owner's.
 
 ### Open GitHub issues in this plan
 
@@ -465,18 +467,25 @@ own code is fast (local requests 1 to 6 ms, conversion's first byte in 50 to
 0. **Done.** Real timings per play in the log; "Load more" no longer hidden
    behind the player bar.
 1. Time to first sound. **Done:** one remembered `yt-dlp` lookup per track
-   instead of two or more (YouTube and the sources matched to it); the next
-   track is prepared while the current one plays (2.3 s became 0.17 s in the
-   test run); seeking inside cached tracks happens in the player (also fixes
-   seeking restarting the sound). **Open:** the same for SoundCloud without
-   API credentials; stop looking up lengths already known (1.2); how
+   instead of two or more (YouTube, the sources matched to it, and
+   SoundCloud without API credentials); the next track is prepared while the
+   current one plays (2.3 s became 0.17 s in the test run); seeking inside
+   cached tracks happens in the player (also fixes seeking restarting the
+   sound). **Open:** stop looking up lengths already known (1.2); how
    `yt-dlp` is run (1.5).
-2. Convert to disk at full speed and play from the growing file, so the
-   cache completes at once and long tracks are not cut off.
-3. Start-up: the window waits for the server; background jobs wait a
-   minute; the interface stops re-asking for the same data.
-4. Database: batched writes (33 times faster per row), deep paging of large
-   folders.
+2. **Done (2.1).** ffmpeg converts to disk at full speed and the response
+   reads from the growing file: a 30-minute track is fully cached about 20 s
+   after it starts (before: only as fast as the player read, and cut off
+   after ten minutes); a second request for a track being converted follows
+   the same conversion. **Open:** MP3 sources copied instead of re-encoded
+   (2.2).
+3. Start-up. **Done:** the window waits for the server (3.1); the rescan of
+   local folders and the `yt-dlp` update wait 45 s, and the update is looked
+   for once a day (3.2). **Open:** the interface re-asking for the same
+   data (3.3).
+4. Database. **Done:** batched writes (4.1): transactions for the scan, a
+   play and cloud sync, and no disk sync per write. **Open:** deep paging of
+   large folders (4.2), small things (4.3).
 5. Low priority: keep the playback clock from re-rendering the whole app
    (measured at about 1% of a processor core).
 

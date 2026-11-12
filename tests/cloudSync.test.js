@@ -291,15 +291,13 @@ describe('play history', () => {
         const at = (minutes) => Math.floor(Date.now() / 1000) - 7200 + minutes * 60;
         // In one transaction per computer: 80 plays written one by one take
         // several seconds on a slow disk (the Windows build machine).
-        const seed = async (c, prefix, offset) => {
-            await c.db.exec('BEGIN');
+        const seed = (c, prefix, offset) => c.db.transaction(async () => {
             for (let i = 0; i < 40; i++) {
                 const id = (i < 10 ? `shared${i}` : `${prefix}${i}`).padEnd(11, 'x');
                 await play(c, id, i < 10 ? `Shared ${i}` : `${prefix.toUpperCase()} ${i}`);
                 await c.db.run(`UPDATE history SET played_at = datetime(?, 'unixepoch') WHERE id = (SELECT MAX(id) FROM history)`, [at(i * 2 + offset)]);
             }
-            await c.db.exec('COMMIT');
-        };
+        });
         await seed(A, 'a', 0);
         await seed(B, 'b', 1); // B's plays are each a minute after A's
         await settle();

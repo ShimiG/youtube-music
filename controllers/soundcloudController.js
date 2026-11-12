@@ -326,7 +326,9 @@ const streamTrack = async (req, res) => {
         cacheKey,
         seekTime,
         allowCache: !picked.isPreview,
-        timing: { label: `soundcloud ${id}`, resolveMs: Date.now() - resolveStartedAt, resolvedBy: usedYtdlp ? 'yt-dlp' : 'api' }
+        timing: { label: `soundcloud ${id}`, resolveMs: Date.now() - resolveStartedAt, resolvedBy: usedYtdlp ? (picked.from || 'yt-dlp') : 'api' },
+        // A remembered address that no longer works must not be handed out again.
+        onSourceFailed: () => ytdlp.forget(id)
     });
 };
 

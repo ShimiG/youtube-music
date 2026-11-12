@@ -1,7 +1,8 @@
 # Performance plan
 
 Status: plan from a code review and measurements (12 Nov 2026). **Built so
-far: steps 0, 1.1, 1.3 and 1.4** (see "Done so far"); the rest is open.
+far: steps 0, 1.1, 1.3, 1.4, 2.1, 3.1, 3.2 and 4.1** (see "Done so far").
+Open: 1.2, 1.5, 2.2, 3.3, 4.2, 4.3 and 5.
 
 ## What was measured
 
@@ -65,9 +66,44 @@ and converts the track straight into the disk cache, as one of at most two
 background conversions, and answers at once. If the listener skips ahead
 before that has finished, the remembered address still saves the lookup.
 
-Not covered yet: SoundCloud without API credentials still looks things up
-twice (same change as 1.1, in `controllers/soundcloud/ytdlp.js`), and step
-1.2.
+### Second round: steps 1.1 (SoundCloud), 2.1, 3.1, 3.2, 4.1
+
+Measured on the build machine against the real server, real ffmpeg and a
+30-minute test track served from a local address (so the source is as fast
+as it can be; a real one may deliver more slowly).
+
+| | Before | After |
+|---|---|---|
+| 30-minute track, listener reading like a player with a full buffer: converted after 9 s | 4 MB, then waiting for the listener | 13 MB and growing |
+| The same track, completely in the cache | only once the listener had read all of it (30 minutes), and cut off at 10 | about 20 s after it started |
+| In the browser: 24 s into that track | browser 3 s ahead; cache incomplete | browser 3 s ahead; **cache complete** (27 MB) |
+| Playing it again | conversion again | from the cache in 0.3 s, length known, seeking in the player |
+| A second request while a track is being converted (skipping to a track being prepared) | a second ffmpeg, from the start | follows the same file: first audio in 4 ms |
+| Listening after a seek, on a long track | cut off after 10 minutes | not cut off |
+| `yt-dlp` runs per SoundCloud play without API credentials | 2 | 1 |
+| First scan of 3,003 local files | 4.3 s | 3.1 s (what is left is reading the tags) |
+| Recording a play (HTTP included) | 2.9 ms | 2.0 ms |
+| Window opened before the server is up | first screen incomplete, not repaired | "Starting…", then the complete screen |
+| Work started the moment the server is up | `yt-dlp -U` and a rescan of every folder | nothing; both 45 s later, the update once a day |
+
+The database figures are from a fast SSD. The change removes a disk sync
+per write, so the gain is larger on slower disks (it is what made one test
+file take 56 s on the Windows build machine against 8 s on Linux).
+
+How 2.1 works (`controllers/transcode.js`): a full play that may be cached
+is a *conversion job*. ffmpeg writes `<key>_<time>.part` as fast as it can;
+each response opens that file and sends what is there, then the rest as it
+is written, at the pace its client reads. When ffmpeg is done the file
+becomes `<key>.mp3`. Anyone who asks for the track meanwhile follows the
+same job. Seeks, previews and files that are not cached still go straight
+from ffmpeg to the response.
+
+Limits on a job: ten minutes when nobody is listening (a prepared track, or
+one whose listener left; at most two such at a time, as before); stopped
+when its source sends nothing for a minute; three hours as a backstop. A
+straight-to-the-response conversion is stopped when its listener leaves.
+
+Not covered yet: step 1.2.
 
 ## Where the time goes
 
@@ -208,9 +244,10 @@ calls in the match engine, lyrics and cover colours (cached, de-duplicated).
 
 ## Order
 
-0 → 1.1 → 1.4 → 1.3 → 2.1 → 3.1 → 4.1, then the rest by what the numbers
-from step 0 show. Steps 0 to 1.4 are about three days and should account
-for most of what a user would notice.
+0 → 1.1 → 1.4 → 1.3 → 2.1 → 3.1 → 4.1 (all done), then the rest by what
+the numbers from step 0 show on the owner's computer: 1.2 and 1.5 if the
+`yt-dlp` time in the log is the larger part of the wait, 3.3 for moving
+around the app.
 
 ## With cloud sync (Stage 9)
 

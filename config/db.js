@@ -12,6 +12,11 @@ async function initDB(filename = path.join(dataDir(), 'database.sqlite')) {
     // WAL lets reads happen concurrently with a write, and busy_timeout makes
     // callers wait for a locked DB instead of instantly failing with SQLITE_BUSY.
     await db.exec('PRAGMA journal_mode = WAL;');
+    // With the write-ahead log, NORMAL cannot corrupt the database; at worst
+    // the last moments before a power cut are lost. FULL (the default) syncs
+    // the disk on every commit, which made each single write cost as much as
+    // 33 batched ones (docs/performance-plan.md, step 4.1).
+    await db.exec('PRAGMA synchronous = NORMAL;');
     await db.exec('PRAGMA busy_timeout = 5000;');
     await db.exec('PRAGMA foreign_keys = ON;');
 

@@ -63,3 +63,46 @@ describe('yt-dlp self-update at startup', () => {
         expect(execMock).not.toHaveBeenCalled();
     });
 });
+
+// docs/performance-plan.md, step 3.2.
+describe('looking for a yt-dlp update once a day', () => {
+    const os = require('os');
+    const path = require('path');
+    let dir;
+    let stampFile;
+    beforeEach(() => {
+        existsSpy.mockRestore();
+        dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-ytdlp-'));
+        stampFile = path.join(dir, '.ytdlp-update-check');
+        existsSpy = jest.spyOn(fs, 'existsSync').mockReturnValue(true);
+        execMock.mockResolvedValue({ stdout: 'yt-dlp is up to date (stable@2026.09.10)\n', stderr: '' });
+    });
+    afterEach(() => {
+        existsSpy.mockRestore();
+        fs.rmSync(dir, { recursive: true, force: true });
+        existsSpy = jest.spyOn(fs, 'existsSync').mockReturnValue(true);
+    });
+
+    it('runs the first time, then not again until a day has passed', async () => {
+        expect(updater.updateDue(stampFile)).toBe(true);
+        expect((await updater.updateYtDlpIfDue({ log: silentLog(), stampFile })).skipped).toBe(false);
+        expect(execMock).toHaveBeenCalledTimes(1);
+
+        const again = await updater.updateYtDlpIfDue({ log: silentLog(), stampFile });
+        expect(again.skipped).toBe(true);
+        expect(execMock).toHaveBeenCalledTimes(1);
+
+        // A day later it is due again.
+        const yesterday = new Date(Date.now() - updater.CHECK_EVERY_MS - 1000);
+        fs.utimesSync(stampFile, yesterday, yesterday);
+        await updater.updateYtDlpIfDue({ log: silentLog(), stampFile });
+        expect(execMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('a failed look is tried again at the next start', async () => {
+        execMock.mockReset();
+        execMock.mockRejectedValueOnce(Object.assign(new Error('exit 1'), { stderr: 'ERROR: no network\n' }));
+        expect((await updater.updateYtDlpIfDue({ log: silentLog(), stampFile })).failed).toBe(true);
+        expect(updater.updateDue(stampFile)).toBe(true);
+    });
+});

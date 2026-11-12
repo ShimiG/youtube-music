@@ -2,13 +2,14 @@
 //
 // yt-dlp breaks whenever YouTube or SoundCloud change their sites, and the fix
 // is nearly always "run the latest release", so the server refreshes the
-// binary in the background every time it starts. Startup never waits on it:
-// the update runs after listen() and only logs its outcome. Disable with
+// binary in the background, once a day, shortly after it starts. Startup never
+// waits on it: the update only logs its outcome. Disable with
 // YTDLP_AUTO_UPDATE=false (tests and CI, or offline machines).
 const fs = require('fs');
+const path = require('path');
 const { execFile } = require('child_process');
 
-const { resolveYtDlp } = require('./paths');
+const { resolveYtDlp, dataDir } = require('./paths');
 
 // See services/paths.js: bin/ in the project during development; the data
 // folder when packaged (so `-U` can rewrite it); else a system install.
@@ -73,4 +74,31 @@ async function updateYtDlp({ log = console } = {}) {
     }
 }
 
-module.exports = { ytDlpPath, runner, autoUpdateEnabled, summarizeUpdateOutput, updateYtDlp };
+// The update is looked for once a day, not on every start: it costs a network
+// round trip and a process, right when the app has just been opened
+// (docs/performance-plan.md, step 3.2). The time of the last successful look
+// is the modification time of a small file in the data folder.
+const CHECK_EVERY_MS = 24 * 60 * 60 * 1000;
+const defaultStampFile = () => path.join(dataDir(), '.ytdlp-update-check');
+
+function updateDue(stampFile = defaultStampFile(), now = Date.now()) {
+    try {
+        return now - fs.statSync(stampFile).mtimeMs >= CHECK_EVERY_MS;
+    } catch {
+        return true; // never looked
+    }
+}
+
+/** updateYtDlp(), unless it already ran in the last day. A failed run is tried again next time. */
+async function updateYtDlpIfDue({ log = console, stampFile = defaultStampFile() } = {}) {
+    if (!updateDue(stampFile)) return { skipped: true, message: 'yt-dlp was checked for updates less than a day ago' };
+    const result = await updateYtDlp({ log });
+    if (!result.skipped && !result.failed) {
+        try {
+            fs.writeFileSync(stampFile, `${new Date().toISOString()}\n`);
+        } catch { /* looked again next start: harmless */ }
+    }
+    return result;
+}
+
+module.exports = { ytDlpPath, runner, autoUpdateEnabled, summarizeUpdateOutput, updateYtDlp, updateYtDlpIfDue, updateDue, CHECK_EVERY_MS };

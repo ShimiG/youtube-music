@@ -140,14 +140,16 @@ and worth doing first whatever is decided about the cloud.
 6. A two-computer run against a real Cloudflare account. This cannot be done
    from the build environment and needs the owner's account.
 
-## Still to decide
+## Decided by the owner (12 Nov 2026)
 
-These follow the recommendations unless the owner says otherwise:
+1. Local database with cloud sync, not cloud-only.
+2. Provider: Cloudflare D1.
+3. One person, several computers, the same data on each. Sharing one cloud
+   database between several people is not a goal for now; the design does
+   not rule it out (rows belong to an account), but nothing is built for it.
 
-1. Local database plus sync (assumed), not cloud-only.
-2. Secrets: reconnect per computer (assumed), not passphrase sync.
-3. One person on several computers (assumed), not several people sharing
-   one cloud database.
+Still at its default, since it was not raised: service logins and
+credentials are not synced; each computer connects once (see "Secrets").
 
 ## Sources
 

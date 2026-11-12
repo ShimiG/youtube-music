@@ -141,9 +141,10 @@ export async function deleteAccount(env: Env, userId: number, body: unknown) {
     if (!user || !AUTH_KEY.test(authKey) || !(await sameSecret(await authHash(env, authKey), user.auth_hash))) {
         throw new ApiError(401, 'BAD_CREDENTIALS', 'Confirm with your password to delete the account.');
     }
-    // Two statements, one transaction: D1 does not enforce ON DELETE CASCADE
+    // Several statements, one transaction: D1 does not enforce ON DELETE CASCADE
     // unless foreign keys are on for the connection, so do not rely on it.
     await env.DB.batch([
+        env.DB.prepare('DELETE FROM google_links WHERE user_id = ?').bind(userId),
         env.DB.prepare('DELETE FROM records WHERE user_id = ?').bind(userId),
         env.DB.prepare('DELETE FROM users WHERE id = ?').bind(userId)
     ]);

@@ -7,6 +7,7 @@
 //   DELETE /auth/account           { authKey }                (signed in)
 //   POST   /sync/push              { deviceId, changes: [...] } (signed in)
 //   GET    /sync/pull?since=&limit=                             (signed in)
+//   /google/...                    YouTube sign-in through the cloud (src/google.ts)
 //
 // The callers are Music Manager's own desktop servers, never a web page, so no
 // cross-origin access is granted. The Worker is the only thing that touches D1.
@@ -14,12 +15,13 @@ import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { secureHeaders } from 'hono/secure-headers';
 import { deleteAccount, login, refresh, register, requireSession } from './auth';
+import * as google from './google';
 import { pull, push } from './sync';
 import { ApiError, type AppEnv } from './types';
 
 // Nothing but the handler may be exported from this file: the Workers runtime
 // treats every export of the entry module as an entrypoint.
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 const MAX_BODY_BYTES = 1024 * 1024;
 
 const app = new Hono<AppEnv>();
@@ -66,6 +68,23 @@ app.delete('/auth/account', async (c) => {
 app.use('/sync/*', requireSession);
 app.post('/sync/push', async (c) => c.json(await push(c.env, c.get('userId'), await jsonBody(c.req.raw))));
 app.get('/sync/pull', async (c) => c.json(await pull(c.env, c.get('userId'), { since: c.req.query('since'), limit: c.req.query('limit') })));
+
+// YouTube sign-in through the cloud (src/google.ts). The callback is where
+// Google sends the browser: no session there, the signed `state` says who.
+app.get('/google/callback', async (c) => google.callback(c.env, new URL(c.req.url).origin, {
+    code: c.req.query('code'), state: c.req.query('state'), error: c.req.query('error')
+}));
+app.use('/google', requireSession);
+app.use('/google/status', requireSession);
+app.use('/google/start', requireSession);
+app.use('/google/token', requireSession);
+app.get('/google/status', async (c) => c.json(await google.status(c.env, c.get('userId'))));
+app.post('/google/start', async (c) => c.json(await google.start(c.env, c.get('userId'), new URL(c.req.url).origin, await jsonBody(c.req.raw))));
+app.post('/google/token', async (c) => c.json(await google.accessToken(c.env, c.get('userId'))));
+app.delete('/google', async (c) => {
+    await google.disconnect(c.env, c.get('userId'));
+    return c.body(null, 204);
+});
 
 app.notFound((c) => c.json({ error: 'There is nothing at this address.', code: 'NOT_FOUND' }, 404));
 

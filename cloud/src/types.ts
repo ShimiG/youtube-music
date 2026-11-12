@@ -7,6 +7,9 @@ export interface Env {
     REGISTRATION_CODE?: string;
     /** Optional extra secret mixed into the stored login hashes. */
     AUTH_PEPPER?: string;
+    /** Google OAuth client for YouTube sign-in (optional; see src/google.ts). */
+    GOOGLE_CLIENT_ID?: string;
+    GOOGLE_CLIENT_SECRET?: string;
 }
 
 /** What is known about the caller once its session token has been checked. */

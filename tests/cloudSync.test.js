@@ -115,6 +115,12 @@ const syncNow = (c) => sync.syncNow(c.db, c.userId);
 // A changes something, both sync: A pushes, B pulls.
 const settle = async () => { await syncNow(A); await syncNow(B); await syncNow(A); };
 
+// Every test here builds two real databases and derives the account key the
+// slow way on purpose (scrypt). That is a third of a second on a fast disk and
+// several seconds on the Windows build machine, so the default 5 s is too tight.
+jest.setTimeout(30000);
+const derivedKeys = new Map();
+
 beforeEach(async () => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-cloud-'));
     delete process.env.CLOUD_URL;
@@ -126,6 +132,14 @@ beforeEach(async () => {
     client = require('../services/cloud/client');
     cloud = fakeCloud();
     client.http.fetch = cloud.fetch;
+    // The key is the real one, worked out once per name and password for the
+    // whole file instead of twice per test (it is slow by design).
+    const derive = client.deriveAuthKey;
+    client.deriveAuthKey = (username, password) => {
+        const id = JSON.stringify([username, password]);
+        if (!derivedKeys.has(id)) derivedKeys.set(id, derive(username, password));
+        return derivedKeys.get(id);
+    };
     A = await computer('a', 1);
     B = await computer('b', 2);
     for (const c of [A, B]) await sync.saveCloudUrl(c.db, WORKER);
@@ -339,12 +353,16 @@ describe('play history', () => {
         await linkAs(B);
         // 40 plays on each, at known times, 10 of them of the same tracks.
         const at = (minutes) => Math.floor(Date.now() / 1000) - 7200 + minutes * 60;
+        // In one transaction per computer: 80 plays written one by one take
+        // several seconds on a slow disk (the Windows build machine).
         const seed = async (c, prefix, offset) => {
+            await c.db.exec('BEGIN');
             for (let i = 0; i < 40; i++) {
                 const id = (i < 10 ? `shared${i}` : `${prefix}${i}`).padEnd(11, 'x');
                 await play(c, id, i < 10 ? `Shared ${i}` : `${prefix.toUpperCase()} ${i}`);
                 await c.db.run(`UPDATE history SET played_at = datetime(?, 'unixepoch') WHERE id = (SELECT MAX(id) FROM history)`, [at(i * 2 + offset)]);
             }
+            await c.db.exec('COMMIT');
         };
         await seed(A, 'a', 0);
         await seed(B, 'b', 1); // B's plays are each a minute after A's

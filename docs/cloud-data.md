@@ -18,8 +18,8 @@ those and is the same on every computer the app is used on, at no cost.
 | Custom playlists and their tracks | `playlists`, `playlist_tracks`, `tracks` | Yes |
 | Play history | `history` | Yes |
 | Match corrections | `track_matches` (overrides), `match_reports` | Yes |
-| Service logins (YouTube / SoundCloud tokens) | `user_connections`, `app_tokens` | Not by default (see "Secrets") |
-| Service credentials entered in the app | `app_settings` | Not by default (see "Secrets") |
+| Service logins (YouTube / SoundCloud tokens) | `user_connections`, `app_tokens` | Yes, held by the Worker, encrypted (see "Secrets") |
+| Service credentials (Google client ID and secret) | `app_settings` | Yes, as Worker secrets, never in the database (see "Secrets") |
 | Local music folders and their files | `local_folders`, `local_tracks` | No: they describe one computer's disk |
 | Caches (lyrics, cover colours, audio) | `lyrics_cache`, `artwork_colors`, `cache/` | No: rebuilt on demand |
 
@@ -79,9 +79,10 @@ How it is put together:
   is that the REST API is for administration (it shares the account-wide
   limit of 1,200 API calls per five minutes, and its token can do far more
   than read one database) and that applications should go through a Worker.
-  The Worker exposes two narrow operations, `POST /sync/push` and
-  `GET /sync/pull?since=`, checks a bearer token kept as a Worker secret,
-  validates what it is sent, and is the only thing that touches D1.
+  The Worker exposes a few narrow operations (sign in, `POST /sync/push`,
+  `GET /sync/pull?since=`, and the Google sign-in described under
+  "Secrets"), checks who is calling, validates what it is sent, and is the
+  only thing that touches D1.
 - **A sync module in the desktop server** sends changed rows and fetches
   other computers' changes: on start, a few seconds after a change
   (batched), and every few minutes. Rows carry "changed at" and "deleted at"
@@ -96,24 +97,65 @@ How it is put together:
   never as data loss: the local copy is complete.
 - **In the repository:** a `cloud/` folder with the Worker, its Wrangler
   configuration and the D1 migrations, deployed with `wrangler deploy` to
-  the user's own free Cloudflare account. The Worker's address and the sync
-  token are entered under Settings → Accounts, stored encrypted, owner only.
-  No shared server; nobody else holds the data.
+  the owner's own free Cloudflare account. A computer is linked by signing
+  in to the cloud account (see "Secrets" below). Nobody else holds the
+  data.
 - The cloud side stays behind one small interface (`push`, `pull`), so
   another provider would be a second adapter, not a rewrite.
 
-### Secrets
+### Secrets, and "set up once, not once per computer"
 
-Service logins and credentials are encrypted with a key that exists only on
-the computer that stored them (`.token-key`), which is why they are useless
-if copied elsewhere. Two choices:
+Asked by the owner: can the YouTube credentials live in the cloud too, so
+they are not pasted in on every computer, and be built into the app?
 
-- **Default, proposed:** do not sync them. On a new computer you connect
-  YouTube once more and enter the credentials once more. Nothing secret
-  leaves the computer.
-- **Optional, later:** sync them encrypted with a key derived from a
-  passphrase the user types on each computer. More work, and the passphrase
-  becomes the thing protecting the tokens.
+Yes, and without the secret ever being stored in the database or shipped in
+the app. Two things are meant by "credentials", and they are handled
+differently:
+
+- **The Google client ID and secret** (what identifies this app to Google)
+  become **secrets of the Worker** (`wrangler secret put`). The Worker, not
+  the desktop app, does the sign-in with Google: the app opens the Worker's
+  "connect YouTube" address, Google sends the result back to the Worker,
+  and the Worker exchanges it using the secret. No computer ever holds the
+  secret, so there is nothing to paste. This is the standard arrangement
+  for an app with a server side, and the Worker is that server side.
+- **The YouTube login itself** (the refresh token Google issues) is kept by
+  the Worker in D1, encrypted with a key that is also a Worker secret. The
+  desktop app asks the Worker for a short-lived access token when it needs
+  one. Connect YouTube once, on any computer, and it is connected on all of
+  them. This replaces the earlier default of reconnecting on each computer.
+
+What "built into the app" can mean:
+
+- **Built in: the Worker's address.** It is not a secret. The release build
+  can carry it (a build setting), with Settings → Accounts able to override
+  it. A new computer then needs only the app and the account's user name
+  and password.
+- **Not built in: the Google secret.** The repository and the installers
+  are public; a secret placed in either can be read by anyone, and GitHub's
+  secret scanning has flagged exactly that in this repository before. With
+  the Worker doing the sign-in, it never needs to be.
+
+What this adds to the design:
+
+- **Accounts move to the Worker.** Signing in on a computer is "user name
+  and password, checked by the Worker", which then also decides whose data
+  is synced and whose YouTube login is used. The sync token of the first
+  design is replaced by that login. The local server keeps working on its
+  own, with local accounts, when no cloud is set up.
+- **Sign-up is closed by default.** Because the Worker's address would be
+  in a public installer, the Worker only accepts the accounts its owner
+  creates (the first account, or an invite code). "For now it's just me"
+  is the default, not an assumption.
+- **Google's side.** The redirect address registered with Google becomes
+  the Worker's. One thing to confirm in the Google Cloud console: while a
+  project's consent screen is in "Testing", Google expires logins after
+  seven days; it needs to be "In production" for a login to last. (From
+  memory of Google's rules; to be checked when this is built.)
+- SoundCloud's optional credentials follow the same pattern.
+
+It is more to build than sync alone (accounts, sign-in broker, token
+storage), so it comes after the data sync works.
 
 ### A fix that needs no cloud
 
@@ -130,13 +172,15 @@ and worth doing first whatever is decided about the cloud.
 2. Sync groundwork in the local database: "changed at" / "deleted at" on the
    synced tables, a stable id per row that is the same on every computer,
    and a per-installation id.
-3. `cloud/`: the D1 schema as migrations, the Worker (push, pull, token
-   check, input validation, tests that run in the Workers runtime), and the
-   deploy instructions.
-4. The sync module in the desktop server, with settings and status under
-   Settings → Accounts ("Cloud sync: on, last synced 2 minutes ago").
-5. First-run flows: "this computer has data, the cloud is empty" (upload),
-   "the cloud has data, this computer is empty" (download), both (merge).
+3. `cloud/`: the D1 schema as migrations, the Worker with accounts (sign-in,
+   closed sign-up) and sync (push, pull), input validation, tests that run
+   in the Workers runtime, and the deploy instructions.
+4. The sync module in the desktop server, with sign-in to the cloud account
+   and status under Settings → Accounts ("Cloud sync: on, last synced 2
+   minutes ago"), and the first-run flows: upload, download, merge.
+5. Google sign-in through the Worker: client secret as a Worker secret,
+   YouTube login stored encrypted in D1, short-lived access tokens handed
+   to the desktop app. Then the Worker's address as a build setting.
 6. A two-computer run against a real Cloudflare account. This cannot be done
    from the build environment and needs the owner's account.
 
@@ -148,8 +192,8 @@ and worth doing first whatever is decided about the cloud.
    database between several people is not a goal for now; the design does
    not rule it out (rows belong to an account), but nothing is built for it.
 
-Still at its default, since it was not raised: service logins and
-credentials are not synced; each computer connects once (see "Secrets").
+4. Service credentials and logins live in the cloud too (Worker secrets and
+   encrypted rows), so nothing is pasted in per computer (see "Secrets").
 
 ## Sources
 

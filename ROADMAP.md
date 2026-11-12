@@ -184,10 +184,12 @@ Tests: PKCE challenge, token grants, single-use refresh handling, app-token cach
   is a Spotify Premium or Apple Music subscription. Without one, they add only
   YouTube-matched playback, and Apple Music needs a paid Apple Developer
   Program membership even for catalog search.
-- Next: **catch-up on finished stages** (issues #27, #28), then **Stage 6**
-  (open and self-hosted sources), which needs no accounts or subscriptions and
-  plugs into the Stage 0 provider interface, then **Stage 7** (player
-  experience).
+- Done since: the catch-up (issues #27, #28), **Stage 6** (Audius, Deezer,
+  local files, audio quality) and **Stage 7** (Now Playing view, lyrics,
+  colours from the cover). The phone remote (#40) is shelved.
+- Next: **Stage 8** (performance; plan in `docs/performance-plan.md`), then
+  **Stage 9** (data in the cloud on Cloudflare D1; design in
+  `docs/cloud-data.md`).
 
 ### Open GitHub issues in this plan
 
@@ -451,6 +453,29 @@ Everything around playback that is not a new source.
   code shown on the desktop) and an authenticated WebSocket, rather than
   "same Google account" as the issue suggests. Two to three days.
 
+## Stage 8: Performance (planned)
+
+From a code review and measurements; the full plan, with the numbers and how
+each step is checked, is in
+[docs/performance-plan.md](docs/performance-plan.md). In short: the app's
+own code is fast (local requests 1 to 6 ms, conversion's first byte in 50 to
+110 ms), and the wait before a streamed track starts is almost entirely
+`yt-dlp`, which is run more often than needed. In order:
+
+0. Log real timings per play; fix "Load more" hidden behind the player bar.
+1. Time to first sound: one remembered `yt-dlp` lookup per track instead of
+   two or more; stop looking up lengths already known; make "load the next
+   track early" work for streamed tracks; seek inside cached tracks in the
+   player (also fixes seeking restarting the sound).
+2. Convert to disk at full speed and play from the growing file, so the
+   cache completes at once and long tracks are not cut off.
+3. Start-up: the window waits for the server; background jobs wait a
+   minute; the interface stops re-asking for the same data.
+4. Database: batched writes (33 times faster per row), deep paging of large
+   folders.
+5. Low priority: keep the playback clock from re-rendering the whole app
+   (measured at about 1% of a processor core).
+
 ## Stage 9: Data that survives and follows the user (planned)
 
 Today the data is one SQLite file on one computer, and a fresh copy of the
@@ -465,14 +490,16 @@ stays as fast as it is and works offline. In order:
    copy starts empty".
 2. Sync groundwork in the local schema (changed-at / deleted-at, stable row
    ids, an installation id).
-3. `cloud/`: D1 migrations and the Worker (push / pull, token check), with
-   tests in the Workers runtime.
+3. `cloud/`: D1 migrations and the Worker (accounts with closed sign-up,
+   push / pull), with tests in the Workers runtime.
 4. The sync module, its settings and status under Settings → Accounts, and
    the first-run flows (upload, download, merge).
 5. A two-computer run on a real Cloudflare account (needs the owner).
 
-Service logins and credentials are not synced by default: each computer
-connects once.
+6. Google sign-in through the Worker, so the Google client secret is a
+   Worker secret and the YouTube login is stored once, encrypted, in the
+   cloud: nothing to paste in on a new computer, and YouTube stays
+   connected everywhere. The Worker's address can then be a build setting.
 
 ## Parked
 

@@ -489,9 +489,10 @@ reached through a small Worker deployed to the user's own free account, with
 the local database kept in charge and synced in the background, so the app
 stays as fast as it is and works offline. In order:
 
-1. Keep the database in the per-user data folder when run from source too
-   (one-time move of an existing one). No cloud needed; fixes "every new
-   copy starts empty".
+1. **Done.** The database lives in the per-user data folder when run from
+   source too (an existing project-folder one is moved once), and no `.env`
+   is needed to start. No cloud involved; fixes "every new copy starts
+   empty".
 2. Sync groundwork in the local schema (changed-at / deleted-at, stable row
    ids, an installation id).
 3. `cloud/`: D1 migrations and the Worker (accounts with closed sign-up,

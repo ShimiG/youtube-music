@@ -1,14 +1,20 @@
 // Where the server keeps its files and finds its helper binaries.
 //
-// Two modes:
-//   - Development (`node server.js`): everything lives in the project folder,
-//     exactly as before (database.sqlite, cache/, .token-key, bin/yt-dlp_*).
-//   - Packaged (single executable, see scripts/build-sea.mjs): the executable's
-//     folder is read-only inside an installed app, so writable data goes to the
-//     per-user app-data folder, and helper binaries are looked up next to the
-//     executable, then in well-known system locations.
+// Data (the database, the audio cache, the token key, the log) lives in the
+// per-user app-data folder, however the server is started:
+//   macOS    ~/Library/Application Support/Music Manager
+//   Windows  %APPDATA%\Music Manager
+//   Linux    ~/.local/share/music-manager
+// It used to live in the project folder when run from source, which meant
+// every fresh copy of the source started empty; an existing project-folder
+// database is moved over once (services/dataFolder.js). A test run keeps to
+// the project folder, so it can never touch real data.
 //
-// MUSIC_DATA_DIR, FFMPEG_PATH and YTDLP_PATH override the defaults in both modes.
+// Helper binaries are looked up in the data folder, then next to the code
+// (the project's bin/ from source, the executable's folder when packaged, see
+// scripts/build-sea.mjs), then in well-known system locations.
+//
+// MUSIC_DATA_DIR, FFMPEG_PATH and YTDLP_PATH override the defaults.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -36,12 +42,25 @@ function osDataDir() {
     return path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), 'music-manager');
 }
 
+const isTestRun = () => process.env.NODE_ENV === 'test';
+
+/** Whether the data folder is the per-user one (not an override, not a test run). */
+function usesUserDataDir() {
+    return !process.env.MUSIC_DATA_DIR && (isPackaged() || !isTestRun());
+}
+
+let ensuredDir = null;
+
 /** Writable folder for the database, audio cache, token key and yt-dlp. */
 function dataDir() {
-    const dir = process.env.MUSIC_DATA_DIR
-        ? path.resolve(process.env.MUSIC_DATA_DIR)
-        : (isPackaged() ? osDataDir() : appRoot());
-    fs.mkdirSync(dir, { recursive: true });
+    let dir;
+    if (process.env.MUSIC_DATA_DIR) dir = path.resolve(process.env.MUSIC_DATA_DIR);
+    else dir = usesUserDataDir() ? osDataDir() : appRoot();
+    // Created once per location, not on every call (every log line asks).
+    if (dir !== ensuredDir) {
+        fs.mkdirSync(dir, { recursive: true });
+        ensuredDir = dir;
+    }
     return dir;
 }
 
@@ -115,4 +134,4 @@ function resolveFfmpeg() {
     ]) || exe; // last resort: let the OS find it on the PATH
 }
 
-module.exports = { isPackaged, appRoot, dataDir, osDataDir, resolveYtDlp, resolveFfmpeg, ytDlpFileName };
+module.exports = { isPackaged, appRoot, dataDir, osDataDir, usesUserDataDir, resolveYtDlp, resolveFfmpeg, ytDlpFileName };

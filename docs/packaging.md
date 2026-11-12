@@ -62,8 +62,15 @@ key for stored OAuth tokens), `.jwt-secret` and `bin/yt-dlp`. On first run
 the bundled yt-dlp is copied there so `yt-dlp -U` can update it in place.
 `MUSIC_DATA_DIR` overrides the location.
 
-In development (`node server.js`) nothing changes: all of these stay in the
-project folder, as before.
+Run from source (`node server.js`, `npm run dev`) the same folder is used, so
+a fresh copy of the source finds the accounts, playlists, service
+credentials and logins of the last one, and shares them with the installed
+app. A database left in the project folder by an earlier version is moved
+there on the first start (the old file is kept as
+`database.sqlite.moved-to-data-folder`). The server prints the data folder
+when it starts. To keep data somewhere else, for example in the project
+folder as before, set `MUSIC_DATA_DIR` (`MUSIC_DATA_DIR=.`). Test runs keep
+to the project folder and never touch real data.
 
 ## Configuration in the packaged app
 

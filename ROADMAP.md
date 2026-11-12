@@ -494,8 +494,9 @@ stays as fast as it is and works offline. In order:
    copy starts empty".
 2. Sync groundwork in the local schema (changed-at / deleted-at, stable row
    ids, an installation id).
-3. `cloud/`: D1 migrations and the Worker (accounts with closed sign-up,
-   push / pull), with tests in the Workers runtime.
+3. **Done.** `cloud/`: D1 migration and the Worker (accounts with closed
+   sign-up, sessions, push / pull), with tests in the Workers runtime and a
+   CI job. Deploying it is a short list of commands in `cloud/README.md`.
 4. The sync module, its settings and status under Settings → Accounts, and
    the first-run flows (upload, download, merge).
 5. A two-computer run on a real Cloudflare account (needs the owner).

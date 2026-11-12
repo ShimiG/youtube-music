@@ -62,7 +62,8 @@
     "testPathIgnorePatterns": [
       "/node_modules/",
       "<rootDir>/.claude/",
-      "<rootDir>/client/"
+      "<rootDir>/client/",
+      "<rootDir>/cloud/"
     ]
   },
   "engines": {

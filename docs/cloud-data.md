@@ -166,6 +166,28 @@ folder for source runs too, and moving an existing project-folder database
 there once, makes the data survive new copies on the same computer. Small,
 and worth doing first whatever is decided about the cloud.
 
+## Built so far
+
+- **Step 1:** data in the per-user data folder for source runs too
+  (`services/dataFolder.js`).
+- **Step 3, the cloud side:** [`cloud/`](../cloud/README.md) holds the
+  Worker (Hono, TypeScript), the D1 schema as a migration, and tests that
+  run inside the Workers runtime. Accounts (sign-up closed unless a
+  registration code is set), sessions, push and pull are done. What changed
+  from the sketch above while building it:
+  - **The password is stretched on the device, not in the Worker.** The free
+    plan gives a Worker 10 ms of processor time per request, too little to
+    hash a password properly. The device derives a key with scrypt and sends
+    that; the Worker stores only a hash of it.
+  - **Records are stored generically** (collection, id, JSON content, time of
+    change), not as a copy of the desktop's tables, so a change to the
+    desktop's schema needs no change in the cloud.
+  - **A push is one transaction of two statements** whatever its size (the
+    records travel as one JSON parameter), which fits the limits of 50
+    queries per request and 100 parameters per query.
+  - Not built yet: the desktop side of sync (steps 2 and 4) and Google
+    sign-in through the Worker (step 5).
+
 ## Proposed steps
 
 1. Per-user data folder for source runs, with a one-time move (above).

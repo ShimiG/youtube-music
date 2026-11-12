@@ -1,0 +1,4 @@
+node_modules/
+# Wrangler's local state (the local D1 database) and local secrets
+.wrangler/
+.dev.vars

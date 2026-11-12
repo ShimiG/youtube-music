@@ -140,6 +140,43 @@ jobs:
         run: npm run build
         working-directory: client
 
+  cloud:
+    # The Cloudflare Worker (cloud/): types, and its tests inside the Workers
+    # runtime against a local D1 database built from the real migrations.
+    # Nothing is deployed from CI.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: cloud/package-lock.json
+
+      - name: Install Worker Dependencies
+        run: npm ci
+        working-directory: cloud
+
+      - name: Typecheck
+        run: npm run typecheck
+        working-directory: cloud
+
+      - name: Test (Workers runtime)
+        run: npm test
+        working-directory: cloud
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: cloud
+
+      - name: Bundle check (what would be deployed)
+        run: npx wrangler deploy --dry-run --outdir dist
+        working-directory: cloud
+
   desktop:
     # The Tauri v2 shell (src-tauri/) must keep compiling. A full app build
     # needs the server executable and a signing setup; `cargo clippy` checks

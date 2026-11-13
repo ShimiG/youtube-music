@@ -170,6 +170,28 @@ search fails, the yt-dlp `ytsearch` fallback (`services/matcher/ytsearch.js`, ab
 per query on the dev machine) takes over; `MATCH_YTDLP_FALLBACK=off` disables it, and
 `MATCH_YTDLP_RECALL=true` also runs it when YouTube Music found no acceptable candidate.
 
+### Measuring it: eval, decision log, usage
+
+- **Eval** (`evals/matcher/`, `npm run eval`). 94 labelled cases and about 2,000 generated
+  robustness checks run the real engine on recorded and constructed search results, with no
+  network. The results are compared with `evals/matcher/baseline.json`; `npm test` fails
+  when they differ, so a change to the matching rules has to show what it did to every
+  case. See [evals/matcher/README.md](evals/matcher/README.md) and the write-up in
+  [docs/case-study-matcher-evals.md](docs/case-study-matcher-evals.md).
+- **Decision log** (`services/matcher/journal.js`). Every fresh decision is one JSON line
+  in `logs/matches.jsonl` in the data folder (rotated at 5 MB): the track, each search with
+  its query, time and results, the verdict and reasons for every candidate, and what the
+  decision cost. `GET /api/system/matches?limit=` (owner only) returns the latest ones.
+  `MATCH_LOG=off` disables it. `evals/matcher/from-journal.js` turns logged decisions that
+  a person corrected into eval cases.
+- **Usage** (`services/usage.js`). Calls to services the app does not own are counted per
+  day with the time they took: YouTube Music searches, yt-dlp searches and stream lookups,
+  rate limits, cache hits, and YouTube Data API calls with their quota units (a search is
+  100 units plus 1 for the lengths; a Google project gets 10,000 a day). Totals are kept in
+  the `usage_daily` table; `GET /api/system/usage?days=` (owner only) returns them with
+  today's quota position and a matching summary (cache hit rate, searches per track).
+  Days follow Pacific time, because that is when Google's quota resets.
+
 ## Prerequisites
 
 - **Node.js 22.13+** (the database is Node's built-in `node:sqlite`)
@@ -212,6 +234,8 @@ Required environment variables (see `.env.example`):
 | `MATCH_ERROR_TTL_MS` | How long a failed search is remembered before it is retried (default `600000`, 10 min) |
 | `MATCH_YTDLP_FALLBACK` | `on` (default) runs yt-dlp `ytsearch` when the YouTube Music search fails; `off` disables it |
 | `MATCH_YTDLP_RECALL` | `true` also runs yt-dlp when YouTube Music found no acceptable candidate (default `false`; slow) |
+| `MATCH_LOG` | `off` stops the match engine writing `logs/matches.jsonl` (default: on) |
+| `YOUTUBE_API_DAILY_QUOTA` | Your Google project's daily YouTube Data API quota in units, for the usage report (default `10000`) |
 
 No `.env` is needed to start: every value has a default or can be set in the app. Data
 (database, cache, log, generated secrets) lives in the per-user data folder, not in the

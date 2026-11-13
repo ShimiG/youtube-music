@@ -60,6 +60,8 @@ validateEnv();
 initDB()
     .then(async (db) => {
         app.locals.db = db;
+        // Keep the day's usage totals (searches, yt-dlp runs, API quota units).
+        require('./services/usage').attach(db);
         // Service credentials entered in the app (Settings -> Accounts).
         await require('./services/appSettings').applyStored(db);
         app.listen(PORT, HOST, () => {

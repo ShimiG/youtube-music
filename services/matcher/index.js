@@ -17,6 +17,8 @@ const { normalizeText, parseTitle, artistsOf, primaryArtist } = require('./norma
 const { pickBest, durationTolerance } = require('./score');
 const innertube = require('./innertube');
 const ytsearch = require('./ytsearch');
+const journal = require('./journal');
+const usage = require('../usage');
 
 const { MatchSourceError } = innertube;
 
@@ -330,11 +332,45 @@ function addCandidates(collected, seen, more) {
     return added;
 }
 
+// One upstream search as the queue will run it: timed, counted by the usage
+// meter, and marked `sent` on its step. A search refused by the back-off or by
+// a full queue never gets here, so it costs (and counts) nothing.
+function metered(step, metric, run) {
+    return async () => {
+        const startedAt = Date.now();
+        step.sent = true;
+        try {
+            return await run();
+        } finally {
+            step.ms = Date.now() - startedAt;
+            usage.record(metric, { ms: step.ms });
+        }
+    };
+}
+
+// Runs one search and keeps what happened in `steps` (the decision's trace,
+// which the journal writes out): the query, the time, and the results or the
+// error code.
+async function traced(steps, kind, q, start) {
+    const step = { kind, q, ms: 0 };
+    steps.push(step);
+    try {
+        const found = await start(step);
+        step.results = found || [];
+        return found;
+    } catch (err) {
+        step.error = (err && (err.code || err.name)) || 'Error';
+        if (step.sent && isRateLimited(err)) usage.record('innertube.rate_limited');
+        else if (step.sent) usage.record(kind === 'ytsearch' ? 'ytdlp.search_failed' : 'innertube.search_failed');
+        throw err;
+    }
+}
+
 // Runs the query sequence and the fallback. Returns everything collected,
 // ranked, plus the errors met on the way; the caller decides what the outcome
 // means. Candidates are scored as they arrive, so each query's results are
 // evaluated once, and the track's title is parsed once per pickBest call.
-async function searchCandidates(track) {
+async function searchCandidates(track, steps = []) {
     const artists = artistsOf(track) || [];
     const artist = primaryArtist(track) || artists[0] || '';
     const title = track.title || '';
@@ -360,26 +396,30 @@ async function searchCandidates(track) {
         asked.add(norm);
         return true;
     };
+    const songs = (query) => traced(steps, 'songs', query,
+        (step) => viaInnertube(metered(step, 'innertube.search', () => innertube.searchSongs(query))));
+    const videos = (query) => traced(steps, 'videos', query,
+        (step) => viaInnertube(metered(step, 'innertube.search', () => innertube.searchVideos(query))));
 
     try {
         isNew(rawQuery);
-        consider(await viaInnertube(() => innertube.searchSongs(rawQuery)));
+        consider(await songs(rawQuery));
         if (!hasPassing()) {
             // Spotify's qualifiers ("- Remastered 2011", "(feat. X)") can keep
             // the catalog song out of the top results; retry on the bare title
             // when that actually removes something.
             const coreQuery = clip([artist, core]);
-            if (isNew(coreQuery)) consider(await viaInnertube(() => innertube.searchSongs(coreQuery)));
+            if (isNew(coreQuery)) consider(await songs(coreQuery));
         }
         if (!hasPassing()) {
             // Title first: for a small act sharing a title with a hit ("Get
             // Lucky" by Funk Punk) the artist-first query returns only the
             // hit's entries, while the title-first one surfaces the act's own.
             const reversedQuery = clip([core, artist]);
-            if (isNew(reversedQuery)) consider(await viaInnertube(() => innertube.searchSongs(reversedQuery)));
+            if (isNew(reversedQuery)) consider(await songs(reversedQuery));
         }
         if (!hasPassing()) {
-            consider(await viaInnertube(() => innertube.searchVideos(rawQuery)));
+            consider(await videos(rawQuery));
         }
     } catch (err) {
         errors.push(err);
@@ -396,7 +436,9 @@ async function searchCandidates(track) {
         try {
             // The bare title: YouTube titles never contain Spotify's full
             // "(feat. X & Y)" string verbatim, and yt-dlp quotes each phrase.
-            consider(await ytsearchQueue.run(() => ytsearch.searchVideos(artist, core || title)));
+            const phrase = core || title;
+            consider(await traced(steps, 'ytsearch', clip([artist, phrase]),
+                (step) => ytsearchQueue.run(metered(step, 'ytdlp.search', () => ytsearch.searchVideos(artist, phrase)))));
         } catch (err) {
             errors.push(err);
         }
@@ -412,10 +454,14 @@ function warn(track, err) {
     console.warn(`matcher: ${keyOf(track)} could not be resolved${code}: ${err && err.message}`);
 }
 
-async function searchOutcome(track) {
+// `trace` ({ steps, evaluated }) is filled in for the decision log: every
+// search that ran and the verdict on every candidate, not only the few kept
+// in the row.
+async function searchOutcome(track, trace = { steps: [] }) {
     try {
-        const { ranked, errors } = await searchCandidates(track);
+        const { ranked, errors } = await searchCandidates(track, trace.steps);
         const { best, evaluated } = ranked;
+        trace.evaluated = evaluated || [];
         const candidates = (evaluated || []).slice(0, MAX_STORED_CANDIDATES);
         if (best) {
             const score = Number.isFinite(Number(best.score)) ? Math.round(Number(best.score)) : null;
@@ -501,7 +547,15 @@ async function resolveFresh(db, track, sourceId, force) {
     // real: both exist to get rid of an answer, and the sibling with the same
     // ISRC may hold that very answer.
     const skipIsrc = force || forgotten.delete(keyOf(track));
-    const outcome = (isrc && !skipIsrc && await reuseByIsrc(db, isrc, sourceId, externalId, track.durationSec)) || await searchOutcome(track);
+    const startedAt = Date.now();
+    const trace = { steps: [], evaluated: [] };
+    const reused = isrc && !skipIsrc ? await reuseByIsrc(db, isrc, sourceId, externalId, track.durationSec) : null;
+    const outcome = reused || await searchOutcome(track, trace);
+    // Counted and logged before the row is written, so a decision is on
+    // record even when saving it fails.
+    usage.record(`match.${outcome.status}`);
+    if (reused) usage.record('match.isrc_reuse');
+    journal.record(track, outcome, { ...trace, ms: Date.now() - startedAt });
     return persist(db, { sourceId, externalId, isrc, ...outcome, force });
 }
 
@@ -517,7 +571,10 @@ async function resolve(db, rawTrack, { force = false } = {}) {
         const sourceId = await sourceIdOf(db, track.source);
         if (!force) {
             const row = await readRow(db, sourceId, externalIdOf(track));
-            if (isFresh(row)) return resultFromRow(row, true);
+            if (isFresh(row)) {
+                usage.record('match.cache_hit');
+                return resultFromRow(row, true);
+            }
         }
         return resolveFresh(db, track, sourceId, force);
     })();

@@ -16,6 +16,8 @@
     "tauri:build": "npm run build:all && tauri build",
     "test": "jest",
     "test:watch": "jest --watchAll",
+    "eval": "node evals/matcher/run.js",
+    "eval:mutants": "node evals/matcher/mutants.js",
     "prepare": "husky"
   },
   "dependencies": {

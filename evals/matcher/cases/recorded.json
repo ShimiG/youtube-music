@@ -1,0 +1,84 @@
+[
+  {
+    "id": "rec-get-lucky-album",
+    "tags": ["recorded","feat"],
+    "origin": "recorded",
+    "why": "Real YouTube Music songs response for \"Get Lucky\": the 369 s album track must land on the album entry, not the radio edit.",
+    "track": {"source":"spotify","title":"Get Lucky (feat. Pharrell Williams & Nile Rodgers)","artist":"Daft Punk","durationSec":369,"artists":["Daft Punk","Pharrell Williams","Nile Rodgers"],"album":"Random Access Memories"},
+    "songs": {"fixture":"innertube-search.json"},
+    "videos": {"fixture":"innertube-videos.json"},
+    "accept": ["4D7u5KF7SP8"],
+    "prefer": "4D7u5KF7SP8"
+  },
+  {
+    "id": "rec-get-lucky-radio-edit",
+    "tags": ["recorded","variant"],
+    "origin": "recorded",
+    "why": "Same response: the 248 s radio edit must land on the radio edit entry.",
+    "track": {"source":"spotify","title":"Get Lucky (Radio Edit) [feat. Pharrell Williams & Nile Rodgers]","artist":"Daft Punk","durationSec":248,"artists":["Daft Punk","Pharrell Williams","Nile Rodgers"],"album":"Get Lucky (Radio Edit) [feat. Pharrell Williams & Nile Rodgers]"},
+    "songs": {"fixture":"innertube-search.json"},
+    "videos": {"fixture":"innertube-videos.json"},
+    "accept": ["Rgrt_8mXrK8"]
+  },
+  {
+    "id": "rec-get-lucky-funk-punk",
+    "tags": ["recorded","artist"],
+    "origin": "recorded",
+    "why": "A small act sharing a title with a hit: Funk Punk's own entry, never Daft Punk's.",
+    "track": {"source":"spotify","title":"Get Lucky","artist":"Funk Punk","durationSec":250,"album":"Get Lucky"},
+    "songs": {"fixture":"innertube-search.json"},
+    "videos": {"fixture":"innertube-videos.json"},
+    "accept": ["2KPIShmFouY"]
+  },
+  {
+    "id": "rec-get-lucky-leo-cover-only",
+    "tags": ["recorded","variant"],
+    "origin": "recorded",
+    "why": "The only entry by this artist is a \"(Metal Cover)\": a plain \"Get Lucky\" by Leo has no acceptable match.",
+    "track": {"source":"spotify","title":"Get Lucky","artist":"Leo","durationSec":209},
+    "songs": {"fixture":"innertube-search.json"},
+    "videos": {"fixture":"innertube-videos.json"},
+    "accept": []
+  },
+  {
+    "id": "rec-maria-tambien-accent",
+    "tags": ["recorded","unicode"],
+    "origin": "recorded",
+    "why": "Real response for an accented title (Khruangbin, \"Maria También\").",
+    "track": {"source":"spotify","title":"Maria También","artist":"Khruangbin","durationSec":191,"album":"Con Todo El Mundo"},
+    "songs": {"fixture":"innertube-songs-khruangbin.json"},
+    "videos": {"fixture":"innertube-videos.json"},
+    "accept": ["olf4IO9Dx4E"]
+  },
+  {
+    "id": "rec-unknown-song",
+    "tags": ["recorded","official"],
+    "origin": "recorded",
+    "why": "A track that does not exist: the real responses hold only other songs, so nothing may play.",
+    "track": {"source":"spotify","title":"Song That Does Not Exist","artist":"Nobody","durationSec":200},
+    "songs": {"fixture":"innertube-search.json"},
+    "videos": {"fixture":"innertube-videos.json"},
+    "accept": []
+  },
+  {
+    "id": "rec-fallback-verified-channel",
+    "tags": ["recorded","fallback"],
+    "origin": "recorded",
+    "why": "YouTube Music unreachable; the real yt-dlp search output holds the artist's verified channel upload of the 249 s single.",
+    "track": {"source":"spotify","title":"Get Lucky (feat. Pharrell Williams & Nile Rodgers)","artist":"Daft Punk","durationSec":249,"artists":["Daft Punk","Pharrell Williams","Nile Rodgers"],"album":"Random Access Memories"},
+    "innertube": "down",
+    "ytsearch": {"fixture":"ytsearch-flat.jsonl"},
+    "accept": ["5NV6Rdv1a3I"]
+  },
+  {
+    "id": "rec-fallback-reupload-only",
+    "tags": ["recorded","fallback","official"],
+    "origin": "recorded",
+    "why": "YouTube Music unreachable; for the 369 s album track yt-dlp finds only an unverified re-upload. Not a definitive miss: recorded as an error and retried.",
+    "track": {"source":"spotify","title":"Get Lucky (feat. Pharrell Williams & Nile Rodgers)","artist":"Daft Punk","durationSec":369,"artists":["Daft Punk","Pharrell Williams","Nile Rodgers"],"album":"Random Access Memories"},
+    "innertube": "down",
+    "ytsearch": {"fixture":"ytsearch-flat.jsonl"},
+    "accept": [],
+    "expectStatus": "error"
+  }
+]

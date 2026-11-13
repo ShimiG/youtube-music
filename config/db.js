@@ -151,6 +151,19 @@ async function initDB(filename = path.join(dataDir(), 'database.sqlite')) {
         );
     `);
 
+    // What the app spent on outside services, per day and per kind of call
+    // (services/usage.js): searches, yt-dlp runs, YouTube Data API quota units.
+    await db.exec(`
+        CREATE TABLE IF NOT EXISTS usage_daily (
+            day TEXT NOT NULL,                 -- YYYY-MM-DD, Pacific time (Google's quota day)
+            metric TEXT NOT NULL,              -- e.g. innertube.search, youtube_api.search_list
+            count INTEGER NOT NULL DEFAULT 0,
+            ms INTEGER NOT NULL DEFAULT 0,     -- time spent in those calls
+            units INTEGER NOT NULL DEFAULT 0,  -- quota units, where the service has them
+            PRIMARY KEY (day, metric)
+        );
+    `);
+
     // Match tables created before ISRC reuse checked durations lack this
     // column; add it in place like user_connections.expires_at above.
     const matchColumns = await db.all(`PRAGMA table_info(track_matches)`);

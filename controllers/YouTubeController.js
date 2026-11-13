@@ -2,6 +2,7 @@ const { execFile } = require('child_process');
 const { parseSeek, serveFromCache, streamTranscoded, qualityCacheKey } = require('./transcode');
 const { ytDlpPath } = require('../services/ytdlp');
 const { sendSourceError } = require('../services/errors');
+const usage = require('../services/usage');
 
 // Small in-memory cache for /duration so we do not spawn yt-dlp for a track we
 // already looked up. Bounded to avoid unbounded growth.
@@ -107,6 +108,7 @@ function resolveVideo(videoId, { res } = {}) {
     const startedAt = Date.now();
     const known = resolved.get(videoId);
     if (known && known.expiresAt > startedAt) {
+        usage.record('ytdlp.resolve_cached');
         return Promise.resolve({ url: known.url, duration: known.duration, from: 'memory', ms: 0 });
     }
     resolved.delete(videoId);
@@ -128,7 +130,18 @@ function resolveVideo(videoId, { res } = {}) {
             }
         });
     }
-    return job.promise.then((found) => ({ ...found, from: running ? 'shared' : 'yt-dlp', ms: Date.now() - startedAt }));
+    return job.promise.then(
+        (found) => {
+            const ms = Date.now() - startedAt;
+            // Only the request that started the run is charged for it.
+            if (!running) usage.record('ytdlp.resolve', { ms });
+            return { ...found, from: running ? 'shared' : 'yt-dlp', ms };
+        },
+        (err) => {
+            if (!running) usage.record('ytdlp.resolve_failed', { ms: Date.now() - startedAt });
+            throw err;
+        }
+    );
 }
 
 /** Forgets a remembered address (it stopped working before its stated time). */

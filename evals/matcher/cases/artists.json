@@ -1,0 +1,184 @@
+[
+  {
+    "id": "feat-in-title-vs-artist-list",
+    "tags": ["feat"],
+    "origin": "constructed",
+    "why": "The track names the guest in its title; the catalog lists the guest as a second artist instead.",
+    "track": {"title":"Lean On (feat. MØ & DJ Snake)","artist":"Major Lazer","durationSec":176,"artists":["Major Lazer","MØ","DJ Snake"]},
+    "songs": [
+      {"label":"album","title":"Lean On","artists":["Major Lazer","MØ","DJ Snake"],"dur":177,"album":"Peace Is The Mission"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "feat-in-candidate-title-only",
+    "tags": ["feat"],
+    "origin": "constructed",
+    "why": "The track has a contributor list and a bare title; the catalog credits only the lead artist and puts the guest in the title.",
+    "track": {"title":"Lean On","artist":"Major Lazer","durationSec":176,"artists":["Major Lazer","MØ","DJ Snake"]},
+    "songs": [
+      {"label":"album","title":"Lean On (feat. MØ & DJ Snake)","artists":["Major Lazer"],"dur":177,"album":"Peace Is The Mission"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "feat-with-vs-feat",
+    "tags": ["feat"],
+    "origin": "constructed",
+    "why": "\"(with X)\" on one side, \"(feat. X)\" on the other.",
+    "track": {"title":"Señorita (with Camila Cabello)","artist":"Shawn Mendes","durationSec":191,"artists":["Shawn Mendes","Camila Cabello"]},
+    "songs": [
+      {"label":"album","title":"Señorita (feat. Camila Cabello)","artists":["Shawn Mendes"],"dur":191,"album":"Shawn Mendes"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "feat-joined-artist-string",
+    "tags": ["feat","artist"],
+    "origin": "constructed",
+    "why": "No contributor list: the two acts arrive as one \"A & B\" string, the catalog lists them separately.",
+    "track": {"title":"Texas Sun","artist":"Khruangbin & Leon Bridges","durationSec":252},
+    "songs": [
+      {"label":"album","title":"Texas Sun","artists":["Khruangbin","Leon Bridges"],"dur":252,"album":"Texas Sun"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "feat-trailing-in-video-title",
+    "tags": ["feat","omv"],
+    "origin": "constructed",
+    "why": "No catalog audio; the official video writes \"Artist - Title ft. Guest (Official Video)\".",
+    "track": {"title":"Lean On (feat. MØ & DJ Snake)","artist":"Major Lazer","durationSec":176,"artists":["Major Lazer","MØ","DJ Snake"]},
+    "songs": [],
+    "videos": [
+      {"label":"video","title":"Major Lazer - Lean On ft. MØ, DJ Snake (Official Music Video)","artists":["Major Lazer"],"dur":179,"type":"omv","plays":3000000000},
+      {"label":"lyrics","title":"Major Lazer - Lean On (Lyrics)","artists":["7clouds"],"dur":176,"type":"ugc","plays":90000000}
+    ],
+    "accept": ["video"]
+  },
+  {
+    "id": "artist-comma-in-name",
+    "tags": ["artist"],
+    "origin": "constructed",
+    "why": "An act whose name contains a comma.",
+    "track": {"title":"EARFQUAKE","artist":"Tyler, The Creator","durationSec":190,"artists":["Tyler, The Creator"]},
+    "songs": [
+      {"label":"album","title":"EARFQUAKE","artists":["Tyler, The Creator"],"dur":190,"album":"IGOR"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "artist-comma-and-ampersand-single-act",
+    "tags": ["artist"],
+    "origin": "constructed",
+    "why": "One act with joiners in its name, given as a bare string; a candidate by an act called just \"Fire\" must not be accepted for it.",
+    "track": {"title":"September","artist":"Earth, Wind & Fire","durationSec":215},
+    "songs": [
+      {"label":"fire","title":"September","artists":["Fire"],"dur":214},
+      {"label":"album","title":"September","artists":["Earth, Wind & Fire"],"dur":215,"album":"The Best of Earth, Wind & Fire, Vol. 1"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "artist-plus-vs-and",
+    "tags": ["artist","punctuation"],
+    "origin": "constructed",
+    "why": "\"+\" in the act's name on one side, \"and\" on the other.",
+    "track": {"title":"Dog Days Are Over","artist":"Florence + The Machine","durationSec":252,"artists":["Florence + The Machine"]},
+    "songs": [
+      {"label":"album","title":"Dog Days Are Over","artists":["Florence and the Machine"],"dur":253,"album":"Lungs"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "artist-hyphen-vs-space",
+    "tags": ["artist","punctuation"],
+    "origin": "constructed",
+    "why": "The same name hyphenated on one side and spaced on the other.",
+    "track": {"title":"Empire State Of Mind","artist":"JAY-Z","durationSec":276,"artists":["JAY-Z","Alicia Keys"]},
+    "songs": [
+      {"label":"album","title":"Empire State Of Mind (feat. Alicia Keys)","artists":["JAY Z"],"dur":277,"album":"The Blueprint 3"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "artist-diacritics",
+    "tags": ["artist","unicode"],
+    "origin": "constructed",
+    "why": "The act's name carries a diacritic on one side only.",
+    "track": {"title":"Ace of Spades","artist":"Motörhead","durationSec":166,"artists":["Motörhead"]},
+    "songs": [
+      {"label":"album","title":"Ace of Spades","artists":["Motorhead"],"dur":167,"album":"Ace of Spades"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "artist-duo-one-name-vs-two",
+    "tags": ["artist"],
+    "origin": "constructed",
+    "why": "A duo credited as one name on the track (\"A & B\", with a contributor list holding that one name) and as two separate artists in the catalog.",
+    "track": {"title":"Thrift Shop (feat. Wanz)","artist":"Macklemore & Ryan Lewis","durationSec":235,"artists":["Macklemore & Ryan Lewis"]},
+    "songs": [
+      {"label":"album","title":"Thrift Shop (feat. Wanz)","artists":["Macklemore","Ryan Lewis"],"dur":236,"album":"The Heist"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "artist-cover-same-title-same-length",
+    "tags": ["artist","official"],
+    "origin": "constructed",
+    "why": "Only a cover by another act is in the catalog, with the same title and nearly the same length.",
+    "track": {"title":"Hallelujah","artist":"Jeff Buckley","durationSec":413,"artists":["Jeff Buckley"]},
+    "songs": [
+      {"label":"cover","title":"Hallelujah","artists":["Pentatonix"],"dur":269},
+      {"label":"cover-close","title":"Hallelujah","artists":["Rufus Wainwright"],"dur":411}
+    ],
+    "accept": []
+  },
+  {
+    "id": "artist-karaoke-credit",
+    "tags": ["artist","official"],
+    "origin": "constructed",
+    "why": "A karaoke label's catalog entry names the original artist in its title.",
+    "track": {"title":"Shallow","artist":"Lady Gaga","durationSec":216,"artists":["Lady Gaga","Bradley Cooper"]},
+    "songs": [
+      {"label":"karaoke","title":"Shallow (Originally Performed by Lady Gaga & Bradley Cooper) [Karaoke Version]","artists":["Sing2Piano"],"dur":216}
+    ],
+    "accept": []
+  },
+  {
+    "id": "artist-tribute-name-contains-artist",
+    "tags": ["artist","official"],
+    "origin": "constructed",
+    "why": "A tribute act whose name contains the artist's name.",
+    "track": {"title":"Yesterday","artist":"The Beatles","durationSec":125,"artists":["The Beatles"]},
+    "songs": [
+      {"label":"tribute","title":"Yesterday","artists":["The Beatles Tribute Band"],"dur":126},
+      {"label":"revival","title":"Yesterday","artists":["The Beatles Revival Band"],"dur":125}
+    ],
+    "accept": []
+  },
+  {
+    "id": "artist-classical-performers-order",
+    "tags": ["artist","classical"],
+    "origin": "constructed",
+    "why": "A classical movement: the track leads with the composer, the catalog lists the performers.",
+    "track": {"title":"Symphony No. 5 in C Minor, Op. 67: I. Allegro con brio","artist":"Ludwig van Beethoven","durationSec":445,"artists":["Ludwig van Beethoven","Berliner Philharmoniker","Herbert von Karajan"]},
+    "songs": [
+      {"label":"other-orchestra","title":"Symphony No. 5 in C Minor, Op. 67: I. Allegro con brio","artists":["Wiener Philharmoniker","Carlos Kleiber"],"dur":442},
+      {"label":"album","title":"Symphony No. 5 in C Minor, Op. 67: I. Allegro con brio","artists":["Herbert von Karajan","Berliner Philharmoniker"],"dur":445}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "artist-guest-own-song-same-title",
+    "tags": ["artist","limit"],
+    "origin": "constructed",
+    "why": "The only entry is a different song of the same title by the track's guest artist alone. Every listed contributor is trusted as proof of authorship, so this is a known way to a wrong match.",
+    "track": {"title":"Home (feat. Nora Vale)","artist":"The Lanterns","durationSec":201,"artists":["The Lanterns","Nora Vale"]},
+    "songs": [
+      {"label":"guest-own-song","title":"Home","artists":["Nora Vale"],"dur":204,"album":"Small Rooms"}
+    ],
+    "accept": []
+  }
+]

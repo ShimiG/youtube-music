@@ -1,0 +1,222 @@
+[
+  {
+    "id": "exact-plain",
+    "tags": ["exact"],
+    "origin": "constructed",
+    "why": "The plain case: one catalog entry with the same title, artist and length, among other songs by the artist.",
+    "track": {"title":"Dreams","artist":"Fleetwood Mac","durationSec":257,"artists":["Fleetwood Mac"],"album":"Rumours"},
+    "songs": [
+      {"label":"album","title":"Dreams","artists":["Fleetwood Mac"],"dur":257,"album":"Rumours","plays":900000000},
+      {"label":"other-song","title":"Everywhere","artists":["Fleetwood Mac"],"dur":226,"album":"Tango in the Night"},
+      {"label":"live","title":"Dreams (Live)","artists":["Fleetwood Mac"],"dur":268,"album":"The Dance"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "exact-one-second-drift",
+    "tags": ["exact","duration"],
+    "origin": "constructed",
+    "why": "Services round a track's length differently; one second apart is the same recording.",
+    "track": {"title":"Midnight City","artist":"M83","durationSec":243,"artists":["M83"],"album":"Hurry Up, We're Dreaming"},
+    "songs": [
+      {"label":"album","title":"Midnight City","artists":["M83"],"dur":244,"album":"Hurry Up, We're Dreaming"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "exact-same-title-other-artists",
+    "tags": ["exact","artist"],
+    "origin": "constructed",
+    "why": "A common title: the right artist's entry is third in the results, behind bigger songs called the same.",
+    "track": {"title":"Stay","artist":"Rihanna","durationSec":240,"artists":["Rihanna","Mikky Ekko"],"album":"Unapologetic"},
+    "songs": [
+      {"label":"laroi","title":"STAY","artists":["The Kid LAROI","Justin Bieber"],"dur":141,"album":"F*CK LOVE 3","plays":3000000000},
+      {"label":"zedd","title":"Stay","artists":["Zedd","Alessia Cara"],"dur":210,"album":"Stay"},
+      {"label":"rihanna","title":"Stay","artists":["Rihanna","Mikky Ekko"],"dur":240,"album":"Unapologetic"}
+    ],
+    "accept": ["rihanna"]
+  },
+  {
+    "id": "punct-typographic-apostrophe",
+    "tags": ["punctuation"],
+    "origin": "constructed",
+    "why": "A straight apostrophe on one side, a typographic one on the other.",
+    "track": {"title":"Don't Stop Me Now","artist":"Queen","durationSec":209,"artists":["Queen"],"album":"Jazz"},
+    "songs": [
+      {"label":"album","title":"Don’t Stop Me Now","artists":["Queen"],"dur":210,"album":"Jazz"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "punct-ampersand-vs-and",
+    "tags": ["punctuation"],
+    "origin": "constructed",
+    "why": "\"&\" on one side, \"and\" on the other.",
+    "track": {"title":"Rock and Roll","artist":"Led Zeppelin","durationSec":220,"artists":["Led Zeppelin"]},
+    "songs": [
+      {"label":"album","title":"Rock & Roll","artists":["Led Zeppelin"],"dur":221,"album":"Led Zeppelin IV"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "punct-symbols-in-title",
+    "tags": ["punctuation"],
+    "origin": "constructed",
+    "why": "Lower case, a comma and a digit in the title.",
+    "track": {"title":"thank u, next","artist":"Ariana Grande","durationSec":207,"artists":["Ariana Grande"]},
+    "songs": [
+      {"label":"other","title":"7 rings","artists":["Ariana Grande"],"dur":178,"album":"thank u, next"},
+      {"label":"album","title":"thank u, next","artists":["Ariana Grande"],"dur":207,"album":"thank u, next"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "punct-leading-bracket-title",
+    "tags": ["punctuation"],
+    "origin": "constructed",
+    "why": "The bracket is part of the song's name, not a qualifier.",
+    "track": {"title":"(I Can't Get No) Satisfaction","artist":"The Rolling Stones","durationSec":222,"artists":["The Rolling Stones"]},
+    "songs": [
+      {"label":"album","title":"(I Can't Get No) Satisfaction","artists":["The Rolling Stones"],"dur":223,"album":"Out of Our Heads"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "punct-bracket-subtitle",
+    "tags": ["punctuation","variant"],
+    "origin": "constructed",
+    "why": "A bracketed subtitle that belongs to the name, next to a remix that adds its own bracket.",
+    "track": {"title":"Blue (Da Ba Dee)","artist":"Eiffel 65","durationSec":283,"artists":["Eiffel 65"],"album":"Europop"},
+    "songs": [
+      {"label":"remix","title":"Blue (Da Ba Dee) [Gabry Ponte Ice Pop Radio]","artists":["Eiffel 65"],"dur":284,"album":"Blue (Da Ba Dee)"},
+      {"label":"album","title":"Blue (Da Ba Dee)","artists":["Eiffel 65"],"dur":283,"album":"Europop"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "punct-quotes-in-title",
+    "tags": ["punctuation","remaster"],
+    "origin": "constructed",
+    "why": "The catalog writes the title in quotation marks.",
+    "track": {"title":"Heroes (2017 Remaster)","artist":"David Bowie","durationSec":371,"artists":["David Bowie"]},
+    "songs": [
+      {"label":"album","title":"\"Heroes\" (2017 Remaster)","artists":["David Bowie"],"dur":371,"album":"\"Heroes\""}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "unicode-accented-artist",
+    "tags": ["unicode"],
+    "origin": "constructed",
+    "why": "The artist's accent is missing on one side.",
+    "track": {"title":"Halo","artist":"Beyoncé","durationSec":261,"artists":["Beyoncé"]},
+    "songs": [
+      {"label":"album","title":"Halo","artists":["Beyonce"],"dur":261,"album":"I AM...SASHA FIERCE"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "unicode-hebrew",
+    "tags": ["unicode"],
+    "origin": "constructed",
+    "why": "A Hebrew title and artist: letters outside Latin must survive normalisation.",
+    "track": {"title":"בואי","artist":"הפרויקט של עידן רייכל","durationSec":265,"artists":["הפרויקט של עידן רייכל"]},
+    "songs": [
+      {"label":"other","title":"ממעמקים","artists":["הפרויקט של עידן רייכל"],"dur":349},
+      {"label":"album","title":"בואי","artists":["הפרויקט של עידן רייכל"],"dur":266}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "unicode-japanese-vs-english-version",
+    "tags": ["unicode","variant"],
+    "origin": "constructed",
+    "why": "A Japanese title next to the artist's own English-language re-recording, which is another recording.",
+    "track": {"title":"夜に駆ける","artist":"YOASOBI","durationSec":261,"artists":["YOASOBI"]},
+    "songs": [
+      {"label":"english","title":"Into The Night","artists":["YOASOBI"],"dur":260,"album":"E-SIDE"},
+      {"label":"album","title":"夜に駆ける","artists":["YOASOBI"],"dur":261,"album":"THE BOOK"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "unicode-only-translated-version",
+    "tags": ["unicode","official"],
+    "origin": "constructed",
+    "why": "Only the English-language re-recording is in the catalog: nothing should play for the Japanese original.",
+    "track": {"title":"夜に駆ける","artist":"YOASOBI","durationSec":261,"artists":["YOASOBI"]},
+    "songs": [
+      {"label":"english","title":"Into The Night","artists":["YOASOBI"],"dur":260,"album":"E-SIDE"}
+    ],
+    "accept": []
+  },
+  {
+    "id": "title-word-live-in-name",
+    "tags": ["variant","punctuation"],
+    "origin": "constructed",
+    "why": "\"Live\" is a word of the title, and the catalog also holds a concert recording.",
+    "track": {"title":"Live and Let Die","artist":"Wings","durationSec":192,"artists":["Wings"]},
+    "songs": [
+      {"label":"concert","title":"Live and Let Die (Live)","artists":["Wings"],"dur":194,"album":"Wings over America"},
+      {"label":"studio","title":"Live and Let Die","artists":["Wings"],"dur":192,"album":"Live and Let Die"}
+    ],
+    "accept": ["studio"]
+  },
+  {
+    "id": "title-word-radio-in-name",
+    "tags": ["variant","punctuation"],
+    "origin": "constructed",
+    "why": "\"Radio\" in the name must not be read as a radio edit.",
+    "track": {"title":"Radio Ga Ga","artist":"Queen","durationSec":348,"artists":["Queen"],"album":"The Works"},
+    "songs": [
+      {"label":"album","title":"Radio Ga Ga","artists":["Queen"],"dur":349,"album":"The Works"},
+      {"label":"single","title":"Radio Ga Ga (Single Version)","artists":["Queen"],"dur":260}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "title-soundtrack-credit",
+    "tags": ["punctuation"],
+    "origin": "constructed",
+    "why": "One side appends a film credit to the title.",
+    "track": {"title":"Stayin' Alive - From \"Saturday Night Fever\" Soundtrack","artist":"Bee Gees","durationSec":285,"artists":["Bee Gees"]},
+    "songs": [
+      {"label":"album","title":"Stayin' Alive","artists":["Bee Gees"],"dur":285,"album":"Saturday Night Fever"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "title-noise-album-version",
+    "tags": ["punctuation"],
+    "origin": "constructed",
+    "why": "\"(Album Version)\" says nothing about the recording.",
+    "track": {"title":"Black Hole Sun (Album Version)","artist":"Soundgarden","durationSec":318,"artists":["Soundgarden"]},
+    "songs": [
+      {"label":"album","title":"Black Hole Sun","artists":["Soundgarden"],"dur":318,"album":"Superunknown"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "title-unknown-qualifier-both-sides",
+    "tags": ["variant"],
+    "origin": "constructed",
+    "why": "A qualifier the rules do not know (\"Stripped\") appears on both sides; the plain version must lose.",
+    "track": {"title":"Bad Habits (Stripped)","artist":"Ed Sheeran","durationSec":221,"artists":["Ed Sheeran"]},
+    "songs": [
+      {"label":"plain","title":"Bad Habits","artists":["Ed Sheeran"],"dur":231,"album":"="},
+      {"label":"stripped","title":"Bad Habits (Stripped)","artists":["Ed Sheeran"],"dur":221}
+    ],
+    "accept": ["stripped"]
+  },
+  {
+    "id": "title-unknown-qualifier-only-other",
+    "tags": ["variant","official"],
+    "origin": "constructed",
+    "why": "The plain track, when only the \"Stripped\" recording of similar length exists: a different recording, so nothing plays.",
+    "track": {"title":"Bad Habits","artist":"Ed Sheeran","durationSec":223,"artists":["Ed Sheeran"]},
+    "songs": [
+      {"label":"stripped","title":"Bad Habits (Stripped)","artists":["Ed Sheeran"],"dur":221}
+    ],
+    "accept": []
+  }
+]

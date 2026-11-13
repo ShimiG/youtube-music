@@ -16,6 +16,8 @@ const playlistController = require('./controllers/playlistController');
 const historyController = require('./controllers/historyController');
 const streamingController = require('./controllers/streamingController');
 const { getHealth } = require('./services/health');
+const usage = require('./services/usage');
+const matchJournal = require('./services/matcher/journal');
 const soundcloudController = require('./controllers/soundcloudController');
 const libraryController = require('./controllers/libraryController');
 const matchController = require('./controllers/matchController');
@@ -100,6 +102,25 @@ app.get('/api/health', requireAuth, async (req, res, next) => {
 app.get('/api/system/log', requireAuth, settingsController.requireOwner, (req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json({ file: `logs/${logFile.FILE_NAME}`, lines: logFile.readRecent(req.query.lines) });
+});
+
+// What the app spent on outside services (services/usage.js): searches,
+// yt-dlp runs and YouTube Data API quota units per day, and what is left of
+// today's quota. Owner only, like the log: it covers every account here.
+app.get('/api/system/usage', requireAuth, settingsController.requireOwner, async (req, res, next) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.json(await usage.report(req.app.locals.db, { days: req.query.days }));
+    } catch (err) {
+        next(err);
+    }
+});
+
+// The match engine's latest decisions with what each was made from
+// (services/matcher/journal.js): the place to look when the wrong song played.
+app.get('/api/system/matches', requireAuth, settingsController.requireOwner, (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ file: `logs/${matchJournal.FILE_NAME}`, enabled: matchJournal.enabled(), entries: matchJournal.readRecent(req.query.limit) });
 });
 
 // --- Local account auth ---

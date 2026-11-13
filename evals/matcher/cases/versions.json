@@ -1,0 +1,291 @@
+[
+  {
+    "id": "remaster-dash-vs-bracket",
+    "tags": ["remaster"],
+    "origin": "constructed",
+    "why": "A remaster written \"- Remastered 2011\" on one side and \"(Remastered 2011)\" on the other.",
+    "track": {"title":"Under Pressure - Remastered 2011","artist":"Queen","durationSec":248,"artists":["Queen","David Bowie"]},
+    "songs": [
+      {"label":"album","title":"Under Pressure (Remastered 2011)","artists":["Queen","David Bowie"],"dur":249,"album":"Hot Space"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "remaster-tag-one-side-only",
+    "tags": ["remaster"],
+    "origin": "constructed",
+    "why": "The track is tagged as a remaster; the catalog entry carries no tag.",
+    "track": {"title":"Go Your Own Way (2004 Remaster)","artist":"Fleetwood Mac","durationSec":223,"artists":["Fleetwood Mac"]},
+    "songs": [
+      {"label":"album","title":"Go Your Own Way","artists":["Fleetwood Mac"],"dur":221,"album":"Rumours"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "remaster-only-remaster-available",
+    "tags": ["remaster"],
+    "origin": "constructed",
+    "why": "The track is untagged; the catalog only has the remaster.",
+    "track": {"title":"Paranoid","artist":"Black Sabbath","durationSec":168,"artists":["Black Sabbath"]},
+    "songs": [
+      {"label":"album","title":"Paranoid (2009 Remaster)","artists":["Black Sabbath"],"dur":169,"album":"Paranoid"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "remaster-digital-remaster-wording",
+    "tags": ["remaster"],
+    "origin": "constructed",
+    "why": "\"2004 Digital Remaster\" against \"Remastered\".",
+    "track": {"title":"Let's Dance (2004 Digital Remaster)","artist":"David Bowie","durationSec":458,"artists":["David Bowie"]},
+    "songs": [
+      {"label":"single","title":"Let's Dance (Single Version) [2014 Remaster]","artists":["David Bowie"],"dur":251},
+      {"label":"album","title":"Let's Dance (Remastered)","artists":["David Bowie"],"dur":457,"album":"Let's Dance"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "remaster-longer-fade",
+    "tags": ["remaster","duration","hard"],
+    "origin": "constructed",
+    "why": "The same recording from a later remaster whose fade-out runs 8 s longer. Past the 5 s tolerance, so the engine has no way to accept it.",
+    "track": {"title":"Hotel California (Remastered)","artist":"Eagles","durationSec":391,"artists":["Eagles"]},
+    "songs": [
+      {"label":"album","title":"Hotel California (2013 Remaster)","artists":["Eagles"],"dur":399,"album":"Hotel California"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "variant-studio-over-live",
+    "tags": ["variant"],
+    "origin": "constructed",
+    "why": "Studio track; a concert recording of nearly the same length is listed first.",
+    "track": {"title":"Creep","artist":"Radiohead","durationSec":238,"artists":["Radiohead"],"album":"Pablo Honey"},
+    "songs": [
+      {"label":"live","title":"Creep (Live)","artists":["Radiohead"],"dur":240,"album":"Live Recordings"},
+      {"label":"studio","title":"Creep","artists":["Radiohead"],"dur":239,"album":"Pablo Honey"}
+    ],
+    "accept": ["studio"]
+  },
+  {
+    "id": "variant-only-live-available",
+    "tags": ["variant","official"],
+    "origin": "constructed",
+    "why": "Studio track; only a concert recording of the same length exists.",
+    "track": {"title":"Creep","artist":"Radiohead","durationSec":238,"artists":["Radiohead"]},
+    "songs": [
+      {"label":"live","title":"Creep (Live at the Astoria)","artists":["Radiohead"],"dur":239}
+    ],
+    "accept": []
+  },
+  {
+    "id": "variant-live-venue-wording",
+    "tags": ["variant"],
+    "origin": "constructed",
+    "why": "A concert recording whose venue and date are worded differently on each side.",
+    "track": {"title":"Radio Ga Ga (Live at Wembley '86)","artist":"Queen","durationSec":353,"artists":["Queen"]},
+    "songs": [
+      {"label":"studio","title":"Radio Ga Ga","artists":["Queen"],"dur":349,"album":"The Works"},
+      {"label":"wembley","title":"Radio Ga Ga (Live at Wembley Stadium, July 1986)","artists":["Queen"],"dur":354,"album":"Live at Wembley '86"}
+    ],
+    "accept": ["wembley"]
+  },
+  {
+    "id": "variant-live-track-only-studio",
+    "tags": ["variant","official"],
+    "origin": "constructed",
+    "why": "A concert recording, when only the studio version (4 s apart) exists.",
+    "track": {"title":"Radio Ga Ga (Live at Wembley '86)","artist":"Queen","durationSec":353,"artists":["Queen"]},
+    "songs": [
+      {"label":"studio","title":"Radio Ga Ga","artists":["Queen"],"dur":349,"album":"The Works"}
+    ],
+    "accept": []
+  },
+  {
+    "id": "variant-acoustic",
+    "tags": ["variant"],
+    "origin": "constructed",
+    "why": "An acoustic version, tagged \"(Acoustic)\" on one side and \"- Acoustic\" on the other.",
+    "track": {"title":"Shape of You (Acoustic)","artist":"Ed Sheeran","durationSec":223,"artists":["Ed Sheeran"]},
+    "songs": [
+      {"label":"plain","title":"Shape of You","artists":["Ed Sheeran"],"dur":234,"album":"÷"},
+      {"label":"acoustic","title":"Shape of You - Acoustic","artists":["Ed Sheeran"],"dur":223}
+    ],
+    "accept": ["acoustic"]
+  },
+  {
+    "id": "variant-radio-edit",
+    "tags": ["variant"],
+    "origin": "constructed",
+    "why": "A radio edit next to the full-length album version.",
+    "track": {"title":"One More Time (Radio Edit)","artist":"Daft Punk","durationSec":236,"artists":["Daft Punk"]},
+    "songs": [
+      {"label":"album","title":"One More Time","artists":["Daft Punk"],"dur":320,"album":"Discovery"},
+      {"label":"edit","title":"One More Time - Radio Edit","artists":["Daft Punk"],"dur":235}
+    ],
+    "accept": ["edit"]
+  },
+  {
+    "id": "variant-album-track-only-radio-edit",
+    "tags": ["variant","official"],
+    "origin": "constructed",
+    "why": "The album version, when only the radio edit exists.",
+    "track": {"title":"One More Time","artist":"Daft Punk","durationSec":320,"artists":["Daft Punk"],"album":"Discovery"},
+    "songs": [
+      {"label":"edit","title":"One More Time (Radio Edit)","artists":["Daft Punk"],"dur":235}
+    ],
+    "accept": []
+  },
+  {
+    "id": "variant-instrumental",
+    "tags": ["variant"],
+    "origin": "constructed",
+    "why": "An instrumental next to the vocal version of the same length.",
+    "track": {"title":"HUMBLE. (Instrumental)","artist":"Kendrick Lamar","durationSec":177,"artists":["Kendrick Lamar"]},
+    "songs": [
+      {"label":"vocal","title":"HUMBLE.","artists":["Kendrick Lamar"],"dur":177,"album":"DAMN."},
+      {"label":"instrumental","title":"HUMBLE. (Instrumental)","artists":["Kendrick Lamar"],"dur":177}
+    ],
+    "accept": ["instrumental"]
+  },
+  {
+    "id": "variant-named-remix",
+    "tags": ["variant"],
+    "origin": "constructed",
+    "why": "One named remix among the original and another remix.",
+    "track": {"title":"Cola (CamelPhat Remix)","artist":"CamelPhat","durationSec":223,"artists":["CamelPhat","Elderbrook"]},
+    "songs": [
+      {"label":"original","title":"Cola","artists":["CamelPhat","Elderbrook"],"dur":223},
+      {"label":"other-remix","title":"Cola (Mousse T. Remix)","artists":["CamelPhat","Elderbrook"],"dur":224},
+      {"label":"remix","title":"Cola (CamelPhat Remix)","artists":["CamelPhat","Elderbrook"],"dur":223}
+    ],
+    "accept": ["remix"]
+  },
+  {
+    "id": "variant-only-sped-up",
+    "tags": ["variant","official"],
+    "origin": "constructed",
+    "why": "Only the label's own \"Sped Up\" release exists for the original track.",
+    "track": {"title":"Bloody Mary","artist":"Lady Gaga","durationSec":244,"artists":["Lady Gaga"]},
+    "songs": [
+      {"label":"sped","title":"Bloody Mary (Sped Up)","artists":["Lady Gaga"],"dur":181}
+    ],
+    "accept": []
+  },
+  {
+    "id": "variant-rerecording-tagged",
+    "tags": ["variant"],
+    "origin": "constructed",
+    "why": "A tagged re-recording (\"Taylor's Version\") next to the original of nearly the same length.",
+    "track": {"title":"Love Story (Taylor's Version)","artist":"Taylor Swift","durationSec":236,"artists":["Taylor Swift"]},
+    "songs": [
+      {"label":"original","title":"Love Story","artists":["Taylor Swift"],"dur":235,"album":"Fearless"},
+      {"label":"rerecorded","title":"Love Story (Taylor’s Version)","artists":["Taylor Swift"],"dur":236,"album":"Fearless (Taylor's Version)"}
+    ],
+    "accept": ["rerecorded"]
+  },
+  {
+    "id": "variant-original-only-rerecording",
+    "tags": ["variant","official"],
+    "origin": "constructed",
+    "why": "The original, when only the tagged re-recording exists.",
+    "track": {"title":"Love Story","artist":"Taylor Swift","durationSec":235,"artists":["Taylor Swift"],"album":"Fearless"},
+    "songs": [
+      {"label":"rerecorded","title":"Love Story (Taylor's Version)","artists":["Taylor Swift"],"dur":236,"album":"Fearless (Taylor's Version)"}
+    ],
+    "accept": []
+  },
+  {
+    "id": "variant-extended-mix",
+    "tags": ["variant"],
+    "origin": "constructed",
+    "why": "An extended mix next to the radio edit.",
+    "track": {"title":"Strobe (Extended Mix)","artist":"deadmau5","durationSec":637,"artists":["deadmau5"]},
+    "songs": [
+      {"label":"edit","title":"Strobe (Radio Edit)","artists":["deadmau5"],"dur":214},
+      {"label":"extended","title":"Strobe - Extended Mix","artists":["deadmau5"],"dur":637}
+    ],
+    "accept": ["extended"]
+  },
+  {
+    "id": "variant-demo",
+    "tags": ["variant"],
+    "origin": "constructed",
+    "why": "A demo next to the released version.",
+    "track": {"title":"Karma Police (Demo)","artist":"Radiohead","durationSec":262,"artists":["Radiohead"]},
+    "songs": [
+      {"label":"album","title":"Karma Police","artists":["Radiohead"],"dur":264,"album":"OK Computer"},
+      {"label":"demo","title":"Karma Police - Demo","artists":["Radiohead"],"dur":262}
+    ],
+    "accept": ["demo"]
+  },
+  {
+    "id": "variant-mono",
+    "tags": ["variant"],
+    "origin": "constructed",
+    "why": "A mono mix, worded \"- Mono\" and \"(Mono Version)\".",
+    "track": {"title":"Paint It, Black - Mono","artist":"The Rolling Stones","durationSec":202,"artists":["The Rolling Stones"]},
+    "songs": [
+      {"label":"stereo","title":"Paint It, Black","artists":["The Rolling Stones"],"dur":204,"album":"Aftermath"},
+      {"label":"mono","title":"Paint It, Black (Mono Version)","artists":["The Rolling Stones"],"dur":202}
+    ],
+    "accept": ["mono"]
+  },
+  {
+    "id": "variant-single-version-vs-untagged",
+    "tags": ["variant","hard"],
+    "origin": "constructed",
+    "why": "The track is tagged \"(Single Version)\"; the same recording is in the catalog on a hits collection with no tag. The tag has to appear on both sides, so the engine cannot take it.",
+    "track": {"title":"Space Oddity (Single Version)","artist":"David Bowie","durationSec":212,"artists":["David Bowie"]},
+    "songs": [
+      {"label":"hits","title":"Space Oddity","artists":["David Bowie"],"dur":212,"album":"Legacy"}
+    ],
+    "accept": ["hits"]
+  },
+  {
+    "id": "variant-edit-vs-radio-edit",
+    "tags": ["variant","hard"],
+    "origin": "constructed",
+    "why": "The label's version text is shortened to \"(Edit)\" on one side and reads \"(Radio Edit)\" on the other; same recording, same length.",
+    "track": {"title":"Levels (Edit)","artist":"Avicii","durationSec":199,"artists":["Avicii"]},
+    "songs": [
+      {"label":"edit","title":"Levels (Radio Edit)","artists":["Avicii"],"dur":199}
+    ],
+    "accept": ["edit"]
+  },
+  {
+    "id": "variant-unmarked-rerecording",
+    "tags": ["variant","limit"],
+    "origin": "constructed",
+    "why": "The only entry is an untagged re-recording from a \"re-recorded hits\" album, 2 s apart. Title, artist and length all agree; only the album differs. Metadata alone cannot tell them apart.",
+    "track": {"title":"Africa","artist":"Toto","durationSec":295,"artists":["Toto"],"album":"Toto IV"},
+    "songs": [
+      {"label":"rerecorded","title":"Africa","artists":["Toto"],"dur":297,"album":"Greatest Hits Re-Recorded"}
+    ],
+    "accept": []
+  },
+  {
+    "id": "album-breaks-tie-same-artist-same-title",
+    "tags": ["album"],
+    "origin": "constructed",
+    "why": "Two recordings by the same artist with the same title and nearly the same length; the album tells them apart.",
+    "track": {"title":"Intro","artist":"The xx","durationSec":127,"artists":["The xx"],"album":"xx"},
+    "songs": [
+      {"label":"other-album","title":"Intro","artists":["The xx"],"dur":128,"album":"Coexist"},
+      {"label":"album","title":"Intro","artists":["The xx"],"dur":127,"album":"xx"}
+    ],
+    "accept": ["album"],
+    "prefer": "album"
+  },
+  {
+    "id": "album-compilation-vs-original",
+    "tags": ["album"],
+    "origin": "constructed",
+    "why": "The track comes from a compilation; the catalog has the same recording on its original album.",
+    "track": {"title":"Take On Me","artist":"a-ha","durationSec":225,"artists":["a-ha"],"album":"Headlines and Deadlines: The Hits of a-ha"},
+    "songs": [
+      {"label":"album","title":"Take On Me","artists":["a-ha"],"dur":225,"album":"Hunting High and Low"}
+    ],
+    "accept": ["album"]
+  }
+]

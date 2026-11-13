@@ -1,0 +1,339 @@
+[
+  {
+    "id": "duration-at-tolerance",
+    "tags": ["duration"],
+    "origin": "constructed",
+    "why": "Exactly 5 s apart: still inside the tolerance.",
+    "track": {"title":"Clocks","artist":"Coldplay","durationSec":307,"artists":["Coldplay"]},
+    "songs": [
+      {"label":"album","title":"Clocks","artists":["Coldplay"],"dur":312,"album":"A Rush of Blood to the Head"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "duration-padding-past-tolerance",
+    "tags": ["duration","hard"],
+    "origin": "constructed",
+    "why": "The same master delivered with 7 s of trailing silence. Past the tolerance, so it is missed.",
+    "track": {"title":"Clocks","artist":"Coldplay","durationSec":307,"artists":["Coldplay"]},
+    "songs": [
+      {"label":"album","title":"Clocks","artists":["Coldplay"],"dur":314,"album":"A Rush of Blood to the Head"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "duration-untagged-shorter-edit",
+    "tags": ["duration","official"],
+    "origin": "constructed",
+    "why": "An untagged single edit 12 s shorter than the album track: a different cut, correctly refused on length alone.",
+    "track": {"title":"Clocks","artist":"Coldplay","durationSec":307,"artists":["Coldplay"],"album":"A Rush of Blood to the Head"},
+    "songs": [
+      {"label":"edit","title":"Clocks","artists":["Coldplay"],"dur":295,"album":"Clocks"}
+    ],
+    "accept": []
+  },
+  {
+    "id": "duration-unknown-on-track",
+    "tags": ["duration"],
+    "origin": "constructed",
+    "why": "The source gives no length for the track (0): title and artist have to carry the match.",
+    "track": {"title":"Yellow","artist":"Coldplay","durationSec":0,"artists":["Coldplay"]},
+    "songs": [
+      {"label":"album","title":"Yellow","artists":["Coldplay"],"dur":267,"album":"Parachutes"}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "duration-closest-wins",
+    "tags": ["duration"],
+    "origin": "constructed",
+    "why": "Two acceptable entries: the one with the exact length should be picked over the one 4 s apart.",
+    "track": {"title":"Yellow","artist":"Coldplay","durationSec":267,"artists":["Coldplay"]},
+    "songs": [
+      {"label":"other-master","title":"Yellow","artists":["Coldplay"],"dur":271,"album":"Live in Buenos Aires Bonus"},
+      {"label":"album","title":"Yellow","artists":["Coldplay"],"dur":267,"album":"Parachutes"}
+    ],
+    "accept": ["album","other-master"],
+    "prefer": "album"
+  },
+  {
+    "id": "duration-video-with-long-intro",
+    "tags": ["duration","omv","official"],
+    "origin": "constructed",
+    "why": "No catalog audio; the official video runs 40 s longer because of a spoken intro. Not the same cut, so nothing plays.",
+    "track": {"title":"Bad Guy","artist":"Billie Eilish","durationSec":194,"artists":["Billie Eilish"]},
+    "songs": [],
+    "videos": [
+      {"label":"video","title":"Billie Eilish - bad guy (Official Music Video)","artists":["Billie Eilish"],"dur":234,"type":"omv","plays":1300000000}
+    ],
+    "accept": []
+  },
+  {
+    "id": "official-only-lyric-uploads",
+    "tags": ["official"],
+    "origin": "constructed",
+    "why": "Nothing in the catalog; the videos search holds only fan lyric uploads with the right title and length.",
+    "track": {"title":"Small Hours","artist":"Marlo Finch","durationSec":203,"artists":["Marlo Finch"]},
+    "songs": [],
+    "videos": [
+      {"label":"lyrics","title":"Marlo Finch - Small Hours (Lyrics)","artists":["LyricWave"],"dur":203,"type":"ugc","plays":4000000},
+      {"label":"reupload","title":"Marlo Finch - Small Hours","artists":["Marlo Finch"],"dur":203,"type":"ugc","plays":90000}
+    ],
+    "accept": []
+  },
+  {
+    "id": "official-video-when-no-catalog-audio",
+    "tags": ["official","omv"],
+    "origin": "constructed",
+    "why": "No catalog audio; an official video and a fan upload are both in the videos search.",
+    "track": {"title":"Small Hours","artist":"Marlo Finch","durationSec":203,"artists":["Marlo Finch"]},
+    "songs": [],
+    "videos": [
+      {"label":"lyrics","title":"Marlo Finch - Small Hours (Lyrics)","artists":["LyricWave"],"dur":203,"type":"ugc","plays":4000000},
+      {"label":"video","title":"Marlo Finch - Small Hours (Official Video)","artists":["Marlo Finch"],"dur":205,"type":"omv","plays":800000}
+    ],
+    "accept": ["video"]
+  },
+  {
+    "id": "official-video-matches-single-length",
+    "tags": ["official","omv"],
+    "origin": "constructed",
+    "why": "The track is the short single; the catalog audio is the long album cut, and the official video is the single.",
+    "track": {"title":"Paradise City","artist":"Guns N' Roses","durationSec":251,"artists":["Guns N' Roses"]},
+    "songs": [
+      {"label":"album","title":"Paradise City","artists":["Guns N' Roses"],"dur":406,"album":"Appetite for Destruction"}
+    ],
+    "videos": [
+      {"label":"video","title":"Guns N' Roses - Paradise City (Official Music Video)","artists":["Guns N' Roses"],"dur":253,"type":"omv","plays":900000000}
+    ],
+    "accept": ["video"]
+  },
+  {
+    "id": "official-audio-preferred-over-video",
+    "tags": ["official","omv"],
+    "origin": "constructed",
+    "why": "Catalog audio and an official video both fit: the audio is the better master and costs one search.",
+    "track": {"title":"Paradise City","artist":"Guns N' Roses","durationSec":406,"artists":["Guns N' Roses"],"album":"Appetite for Destruction"},
+    "songs": [
+      {"label":"album","title":"Paradise City","artists":["Guns N' Roses"],"dur":406,"album":"Appetite for Destruction"}
+    ],
+    "videos": [
+      {"label":"video","title":"Guns N' Roses - Paradise City (Official Music Video)","artists":["Guns N' Roses"],"dur":408,"type":"omv","plays":900000000}
+    ],
+    "accept": ["album","video"],
+    "prefer": "album"
+  },
+  {
+    "id": "official-unclassified-result",
+    "tags": ["official"],
+    "origin": "constructed",
+    "why": "A result YouTube Music did not classify as catalog audio or official video is treated as a private upload.",
+    "track": {"title":"Small Hours","artist":"Marlo Finch","durationSec":203,"artists":["Marlo Finch"]},
+    "songs": [
+      {"label":"unclassified","title":"Small Hours","artists":["Marlo Finch"],"dur":203,"type":"other"}
+    ],
+    "accept": []
+  },
+  {
+    "id": "official-video-4k-remaster-noise",
+    "tags": ["official","omv","punctuation"],
+    "origin": "constructed",
+    "why": "An official video whose title carries upload noise in two brackets.",
+    "track": {"title":"Take On Me","artist":"a-ha","durationSec":225,"artists":["a-ha"]},
+    "songs": [],
+    "videos": [
+      {"label":"video","title":"a-ha - Take On Me (Official Video) [4K Remaster]","artists":["a-ha"],"dur":228,"type":"omv","plays":2000000000}
+    ],
+    "accept": ["video"]
+  },
+  {
+    "id": "official-video-quoted-title",
+    "tags": ["omv","hard"],
+    "origin": "constructed",
+    "why": "No catalog audio; the official video is titled ARTIST 'Title' Official MV, with no separator to split artist from title.",
+    "track": {"title":"Dynamite","artist":"BTS","durationSec":199,"artists":["BTS"]},
+    "songs": [],
+    "videos": [
+      {"label":"video","title":"BTS 'Dynamite' Official MV","artists":["BTS"],"dur":203,"type":"omv","plays":1900000000}
+    ],
+    "accept": ["video"]
+  },
+  {
+    "id": "query-core-title-finds-it",
+    "tags": ["query"],
+    "origin": "constructed",
+    "why": "The full title with its qualifiers surfaces only other songs; the bare title finds the entry. Two searches.",
+    "track": {"title":"Starman (2012 Remaster)","artist":"David Bowie","durationSec":254,"artists":["David Bowie"]},
+    "songs": { "calls": [
+      [
+        {"label":"other","title":"Life on Mars? (2015 Remaster)","artists":["David Bowie"],"dur":235}
+      ],
+      [
+        {"label":"album","title":"Starman (2012 Remaster)","artists":["David Bowie"],"dur":254,"album":"The Rise and Fall of Ziggy Stardust"}
+      ]
+    ] },
+    "accept": ["album"]
+  },
+  {
+    "id": "query-title-first-finds-it",
+    "tags": ["query"],
+    "origin": "constructed",
+    "why": "Artist-first surfaces only a bigger act's song of the same title; title-first finds the small act's. Two searches (the bare title equals the title, so that query is skipped).",
+    "track": {"title":"Heroes","artist":"Night Ferry","durationSec":198,"artists":["Night Ferry"]},
+    "songs": { "calls": [
+      [
+        {"label":"big","title":"Heroes","artists":["Alesso","Tove Lo"],"dur":210}
+      ],
+      [
+        {"label":"big","title":"Heroes","artists":["Alesso","Tove Lo"],"dur":210},
+        {"label":"small","title":"Heroes","artists":["Night Ferry"],"dur":198}
+      ]
+    ] },
+    "accept": ["small"]
+  },
+  {
+    "id": "query-all-four-then-video",
+    "tags": ["query","omv"],
+    "origin": "constructed",
+    "why": "Three song searches find nothing acceptable; the videos search has the official video. Four searches.",
+    "track": {"title":"Starman (2012 Remaster)","artist":"David Bowie","durationSec":254,"artists":["David Bowie"]},
+    "songs": [
+      {"label":"other","title":"Life on Mars? (2015 Remaster)","artists":["David Bowie"],"dur":235}
+    ],
+    "videos": [
+      {"label":"video","title":"David Bowie – Starman (Official Video)","artists":["David Bowie"],"dur":256,"type":"omv","plays":80000000}
+    ],
+    "accept": ["video"]
+  },
+  {
+    "id": "query-nothing-anywhere",
+    "tags": ["query","official"],
+    "origin": "constructed",
+    "why": "A track with qualifiers that is nowhere: all four searches are spent before the answer is \"not found\".",
+    "track": {"title":"Paper Boats (2019 Remaster)","artist":"Marlo Finch","durationSec":187,"artists":["Marlo Finch"]},
+    "songs": [],
+    "videos": [],
+    "accept": []
+  },
+  {
+    "id": "fallback-topic-channel",
+    "tags": ["fallback"],
+    "origin": "constructed",
+    "why": "YouTube Music unreachable; yt-dlp finds the auto-generated \"<Artist> - Topic\" upload among fan uploads.",
+    "track": {"title":"Dreams","artist":"Fleetwood Mac","durationSec":257,"artists":["Fleetwood Mac"]},
+    "innertube": "down",
+    "ytsearch": [
+      {"label":"lyrics","title":"Fleetwood Mac - Dreams (Lyrics)","channel":"LyricWave","dur":257,"verified":true,"views":50000000},
+      {"label":"topic","title":"Dreams","channel":"Fleetwood Mac - Topic","dur":258,"views":9000000}
+    ],
+    "accept": ["topic"]
+  },
+  {
+    "id": "fallback-vevo-channel",
+    "tags": ["fallback"],
+    "origin": "constructed",
+    "why": "YouTube Music unreachable; the artist's verified VEVO channel has the official video.",
+    "track": {"title":"Dreams","artist":"Fleetwood Mac","durationSec":257,"artists":["Fleetwood Mac"]},
+    "innertube": "down",
+    "ytsearch": [
+      {"label":"vevo","title":"Fleetwood Mac - Dreams (Official Music Video)","channel":"FleetwoodMacVEVO","dur":259,"verified":true,"views":300000000},
+      {"label":"fan","title":"Fleetwood Mac - Dreams","channel":"classicrockfan77","dur":257,"views":12000000}
+    ],
+    "accept": ["vevo"]
+  },
+  {
+    "id": "fallback-only-fan-uploads",
+    "tags": ["fallback","official"],
+    "origin": "constructed",
+    "why": "YouTube Music unreachable; yt-dlp finds only an unverified re-upload and a verified lyric channel. Nothing official, so it is an error to retry, not a final miss.",
+    "track": {"title":"Dreams","artist":"Fleetwood Mac","durationSec":257,"artists":["Fleetwood Mac"]},
+    "innertube": "down",
+    "ytsearch": [
+      {"label":"lyrics","title":"Fleetwood Mac - Dreams (Lyrics)","channel":"LyricWave","dur":257,"verified":true,"views":50000000},
+      {"label":"fan","title":"Fleetwood Mac - Dreams","channel":"classicrockfan77","dur":257,"views":12000000}
+    ],
+    "accept": [],
+    "expectStatus": "error"
+  },
+  {
+    "id": "fallback-not-on-rate-limit",
+    "tags": ["fallback","cost"],
+    "origin": "constructed",
+    "why": "YouTube Music answers 429. A rate limit is not an outage: no yt-dlp run, the track is an error to retry after the back-off.",
+    "track": {"title":"Dreams","artist":"Fleetwood Mac","durationSec":257,"artists":["Fleetwood Mac"]},
+    "innertube": "rate_limited",
+    "ytsearch": [
+      {"label":"topic","title":"Dreams","channel":"Fleetwood Mac - Topic","dur":258}
+    ],
+    "accept": [],
+    "expectStatus": "error"
+  },
+  {
+    "id": "fallback-on-server-error",
+    "tags": ["fallback"],
+    "origin": "constructed",
+    "why": "YouTube Music answers HTTP 500: an outage, so yt-dlp takes over.",
+    "track": {"title":"Dreams","artist":"Fleetwood Mac","durationSec":257,"artists":["Fleetwood Mac"]},
+    "innertube": "http500",
+    "ytsearch": [
+      {"label":"topic","title":"Dreams","channel":"Fleetwood Mac - Topic","dur":258}
+    ],
+    "accept": ["topic"]
+  },
+  {
+    "id": "fallback-live-stream-refused",
+    "tags": ["fallback","official"],
+    "origin": "constructed",
+    "why": "YouTube Music unreachable; the artist's verified channel is running a live stream titled like the song.",
+    "track": {"title":"Dreams","artist":"Fleetwood Mac","durationSec":257,"artists":["Fleetwood Mac"]},
+    "innertube": "down",
+    "ytsearch": [
+      {"label":"stream","title":"Fleetwood Mac - Dreams","channel":"Fleetwood Mac","dur":257,"verified":true,"live":"is_live"}
+    ],
+    "accept": [],
+    "expectStatus": "error"
+  },
+  {
+    "id": "fallback-recall-mode",
+    "tags": ["fallback","cost"],
+    "origin": "constructed",
+    "why": "With MATCH_YTDLP_RECALL=true, a track YouTube Music does not surface is looked for with yt-dlp as well. Found, at the price of three searches and a yt-dlp run.",
+    "env": {"MATCH_YTDLP_RECALL":"true"},
+    "track": {"title":"Small Hours","artist":"Marlo Finch","durationSec":203,"artists":["Marlo Finch"]},
+    "songs": [],
+    "videos": [],
+    "ytsearch": [
+      {"label":"topic","title":"Small Hours","channel":"Marlo Finch - Topic","dur":203}
+    ],
+    "accept": ["topic"]
+  },
+  {
+    "id": "isrc-reuse-no-search",
+    "tags": ["isrc","cost"],
+    "origin": "constructed",
+    "why": "The same recording was already matched under another id (same ISRC, same length): the answer is copied without a search.",
+    "track": {"title":"Dreams","artist":"Fleetwood Mac","durationSec":257,"artists":["Fleetwood Mac"],"album":"Greatest Hits","isrc":"USWB10400047"},
+    "seed": [
+      {"isrc":"USWB10400047","label":"album","durationSec":257}
+    ],
+    "songs": [
+      {"label":"other","title":"Dreams (Live)","artists":["Fleetwood Mac"],"dur":268}
+    ],
+    "accept": ["album"]
+  },
+  {
+    "id": "isrc-length-disagrees-so-search",
+    "tags": ["isrc"],
+    "origin": "constructed",
+    "why": "The ISRC is shared with an already-matched row whose video is 40 s shorter (an edit released under the same code): the copy is refused and a search finds the full version.",
+    "track": {"title":"Dreams","artist":"Fleetwood Mac","durationSec":257,"artists":["Fleetwood Mac"],"isrc":"USWB10400047"},
+    "seed": [
+      {"isrc":"USWB10400047","label":"edit","durationSec":217}
+    ],
+    "songs": [
+      {"label":"edit","title":"Dreams (Edit)","artists":["Fleetwood Mac"],"dur":217},
+      {"label":"album","title":"Dreams","artists":["Fleetwood Mac"],"dur":257,"album":"Rumours"}
+    ],
+    "accept": ["album"]
+  }
+]

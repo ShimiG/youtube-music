@@ -1,0 +1,907 @@
+{
+  "summary": {
+    "cases": 94,
+    "passed": 86,
+    "passRate": 0.915,
+    "outcomes": {
+      "correct_match": 65,
+      "correct_reject": 21,
+      "wrong_match": 2,
+      "miss": 6,
+      "wrong_status": 0,
+      "error": 0
+    },
+    "precision": 0.97,
+    "recall": 0.915,
+    "preferredPicked": {
+      "of": 4,
+      "picked": 4
+    },
+    "cost": {
+      "innertubeSearches": 161,
+      "ytdlpRuns": 8,
+      "searchesPerCase": 1.713,
+      "searchesPerSearchedCase": 1.731,
+      "casesBySearchCount": {
+        "0": 1,
+        "1": 62,
+        "2": 2,
+        "3": 21,
+        "4": 8
+      },
+      "byStatus": {
+        "matched": {
+          "cases": 67,
+          "innertubeSearches": 82,
+          "ytdlpRuns": 5,
+          "searchesPerCase": 1.224
+        },
+        "not_found": {
+          "cases": 23,
+          "innertubeSearches": 75,
+          "ytdlpRuns": 0,
+          "searchesPerCase": 3.261
+        },
+        "error": {
+          "cases": 4,
+          "innertubeSearches": 4,
+          "ytdlpRuns": 3,
+          "searchesPerCase": 1
+        }
+      }
+    },
+    "origins": {
+      "constructed": {
+        "cases": 86,
+        "passed": 78
+      },
+      "recorded": {
+        "cases": 8,
+        "passed": 8
+      }
+    },
+    "tags": {
+      "feat": {
+        "cases": 6,
+        "passed": 6,
+        "wrongMatch": 0
+      },
+      "artist": {
+        "cases": 14,
+        "passed": 12,
+        "wrongMatch": 1
+      },
+      "omv": {
+        "cases": 8,
+        "passed": 7,
+        "wrongMatch": 0
+      },
+      "punctuation": {
+        "cases": 13,
+        "passed": 13,
+        "wrongMatch": 0
+      },
+      "unicode": {
+        "cases": 6,
+        "passed": 6,
+        "wrongMatch": 0
+      },
+      "official": {
+        "cases": 23,
+        "passed": 23,
+        "wrongMatch": 0
+      },
+      "classical": {
+        "cases": 1,
+        "passed": 1,
+        "wrongMatch": 0
+      },
+      "limit": {
+        "cases": 2,
+        "passed": 0,
+        "wrongMatch": 2
+      },
+      "recorded": {
+        "cases": 8,
+        "passed": 8,
+        "wrongMatch": 0
+      },
+      "variant": {
+        "cases": 26,
+        "passed": 23,
+        "wrongMatch": 1
+      },
+      "fallback": {
+        "cases": 9,
+        "passed": 9,
+        "wrongMatch": 0
+      },
+      "duration": {
+        "cases": 8,
+        "passed": 6,
+        "wrongMatch": 0
+      },
+      "hard": {
+        "cases": 5,
+        "passed": 0,
+        "wrongMatch": 0
+      },
+      "query": {
+        "cases": 4,
+        "passed": 4,
+        "wrongMatch": 0
+      },
+      "cost": {
+        "cases": 3,
+        "passed": 3,
+        "wrongMatch": 0
+      },
+      "isrc": {
+        "cases": 2,
+        "passed": 2,
+        "wrongMatch": 0
+      },
+      "exact": {
+        "cases": 3,
+        "passed": 3,
+        "wrongMatch": 0
+      },
+      "remaster": {
+        "cases": 6,
+        "passed": 5,
+        "wrongMatch": 0
+      },
+      "album": {
+        "cases": 2,
+        "passed": 2,
+        "wrongMatch": 0
+      }
+    }
+  },
+  "cases": {
+    "feat-in-title-vs-artist-list": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "feat-in-candidate-title-only": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "feat-with-vs-feat": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "feat-joined-artist-string": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "feat-trailing-in-video-title": {
+      "outcome": "correct_match",
+      "picked": "video",
+      "searches": 4,
+      "ytdlp": 0
+    },
+    "artist-comma-in-name": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "artist-comma-and-ampersand-single-act": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "artist-plus-vs-and": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "artist-hyphen-vs-space": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "artist-diacritics": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "artist-duo-one-name-vs-two": {
+      "outcome": "miss",
+      "picked": null,
+      "searches": 4,
+      "ytdlp": 0
+    },
+    "artist-cover-same-title-same-length": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 3,
+      "ytdlp": 0
+    },
+    "artist-karaoke-credit": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 3,
+      "ytdlp": 0
+    },
+    "artist-tribute-name-contains-artist": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 3,
+      "ytdlp": 0
+    },
+    "artist-classical-performers-order": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "artist-guest-own-song-same-title": {
+      "outcome": "wrong_match",
+      "picked": "guest-own-song",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "rec-get-lucky-album": {
+      "outcome": "correct_match",
+      "picked": "4D7u5KF7SP8",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "rec-get-lucky-radio-edit": {
+      "outcome": "correct_match",
+      "picked": "Rgrt_8mXrK8",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "rec-get-lucky-funk-punk": {
+      "outcome": "correct_match",
+      "picked": "2KPIShmFouY",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "rec-get-lucky-leo-cover-only": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 3,
+      "ytdlp": 0
+    },
+    "rec-maria-tambien-accent": {
+      "outcome": "correct_match",
+      "picked": "olf4IO9Dx4E",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "rec-unknown-song": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 3,
+      "ytdlp": 0
+    },
+    "rec-fallback-verified-channel": {
+      "outcome": "correct_match",
+      "picked": "5NV6Rdv1a3I",
+      "searches": 1,
+      "ytdlp": 1
+    },
+    "rec-fallback-reupload-only": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 1,
+      "ytdlp": 1
+    },
+    "duration-at-tolerance": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "duration-padding-past-tolerance": {
+      "outcome": "miss",
+      "picked": null,
+      "searches": 3,
+      "ytdlp": 0
+    },
+    "duration-untagged-shorter-edit": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 3,
+      "ytdlp": 0
+    },
+    "duration-unknown-on-track": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "duration-closest-wins": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "duration-video-with-long-intro": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 3,
+      "ytdlp": 0
+    },
+    "official-only-lyric-uploads": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 3,
+      "ytdlp": 0
+    },
+    "official-video-when-no-catalog-audio": {
+      "outcome": "correct_match",
+      "picked": "video",
+      "searches": 3,
+      "ytdlp": 0
+    },
+    "official-video-matches-single-length": {
+      "outcome": "correct_match",
+      "picked": "video",
+      "searches": 3,
+      "ytdlp": 0
+    },
+    "official-audio-preferred-over-video": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "official-unclassified-result": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 3,
+      "ytdlp": 0
+    },
+    "official-video-4k-remaster-noise": {
+      "outcome": "correct_match",
+      "picked": "video",
+      "searches": 3,
+      "ytdlp": 0
+    },
+    "official-video-quoted-title": {
+      "outcome": "miss",
+      "picked": null,
+      "searches": 3,
+      "ytdlp": 0
+    },
+    "query-core-title-finds-it": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 2,
+      "ytdlp": 0
+    },
+    "query-title-first-finds-it": {
+      "outcome": "correct_match",
+      "picked": "small",
+      "searches": 2,
+      "ytdlp": 0
+    },
+    "query-all-four-then-video": {
+      "outcome": "correct_match",
+      "picked": "video",
+      "searches": 4,
+      "ytdlp": 0
+    },
+    "query-nothing-anywhere": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 4,
+      "ytdlp": 0
+    },
+    "fallback-topic-channel": {
+      "outcome": "correct_match",
+      "picked": "topic",
+      "searches": 1,
+      "ytdlp": 1
+    },
+    "fallback-vevo-channel": {
+      "outcome": "correct_match",
+      "picked": "vevo",
+      "searches": 1,
+      "ytdlp": 1
+    },
+    "fallback-only-fan-uploads": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 1,
+      "ytdlp": 1
+    },
+    "fallback-not-on-rate-limit": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "fallback-on-server-error": {
+      "outcome": "correct_match",
+      "picked": "topic",
+      "searches": 1,
+      "ytdlp": 1
+    },
+    "fallback-live-stream-refused": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 1,
+      "ytdlp": 1
+    },
+    "fallback-recall-mode": {
+      "outcome": "correct_match",
+      "picked": "topic",
+      "searches": 3,
+      "ytdlp": 1
+    },
+    "isrc-reuse-no-search": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 0,
+      "ytdlp": 0
+    },
+    "isrc-length-disagrees-so-search": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "exact-plain": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "exact-one-second-drift": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "exact-same-title-other-artists": {
+      "outcome": "correct_match",
+      "picked": "rihanna",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "punct-typographic-apostrophe": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "punct-ampersand-vs-and": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "punct-symbols-in-title": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "punct-leading-bracket-title": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "punct-bracket-subtitle": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "punct-quotes-in-title": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "unicode-accented-artist": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "unicode-hebrew": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "unicode-japanese-vs-english-version": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "unicode-only-translated-version": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 3,
+      "ytdlp": 0
+    },
+    "title-word-live-in-name": {
+      "outcome": "correct_match",
+      "picked": "studio",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "title-word-radio-in-name": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "title-soundtrack-credit": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "title-noise-album-version": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "title-unknown-qualifier-both-sides": {
+      "outcome": "correct_match",
+      "picked": "stripped",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "title-unknown-qualifier-only-other": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 3,
+      "ytdlp": 0
+    },
+    "remaster-dash-vs-bracket": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "remaster-tag-one-side-only": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "remaster-only-remaster-available": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "remaster-digital-remaster-wording": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "remaster-longer-fade": {
+      "outcome": "miss",
+      "picked": null,
+      "searches": 4,
+      "ytdlp": 0
+    },
+    "variant-studio-over-live": {
+      "outcome": "correct_match",
+      "picked": "studio",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "variant-only-live-available": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 3,
+      "ytdlp": 0
+    },
+    "variant-live-venue-wording": {
+      "outcome": "correct_match",
+      "picked": "wembley",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "variant-live-track-only-studio": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 4,
+      "ytdlp": 0
+    },
+    "variant-acoustic": {
+      "outcome": "correct_match",
+      "picked": "acoustic",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "variant-radio-edit": {
+      "outcome": "correct_match",
+      "picked": "edit",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "variant-album-track-only-radio-edit": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 3,
+      "ytdlp": 0
+    },
+    "variant-instrumental": {
+      "outcome": "correct_match",
+      "picked": "instrumental",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "variant-named-remix": {
+      "outcome": "correct_match",
+      "picked": "remix",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "variant-only-sped-up": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 3,
+      "ytdlp": 0
+    },
+    "variant-rerecording-tagged": {
+      "outcome": "correct_match",
+      "picked": "rerecorded",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "variant-original-only-rerecording": {
+      "outcome": "correct_reject",
+      "picked": null,
+      "searches": 3,
+      "ytdlp": 0
+    },
+    "variant-extended-mix": {
+      "outcome": "correct_match",
+      "picked": "extended",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "variant-demo": {
+      "outcome": "correct_match",
+      "picked": "demo",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "variant-mono": {
+      "outcome": "correct_match",
+      "picked": "mono",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "variant-single-version-vs-untagged": {
+      "outcome": "miss",
+      "picked": null,
+      "searches": 4,
+      "ytdlp": 0
+    },
+    "variant-edit-vs-radio-edit": {
+      "outcome": "miss",
+      "picked": null,
+      "searches": 4,
+      "ytdlp": 0
+    },
+    "variant-unmarked-rerecording": {
+      "outcome": "wrong_match",
+      "picked": "rerecorded",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "album-breaks-tie-same-artist-same-title": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    },
+    "album-compilation-vs-original": {
+      "outcome": "correct_match",
+      "picked": "album",
+      "searches": 1,
+      "ytdlp": 0
+    }
+  },
+  "robustness": {
+    "pairs": 71,
+    "checks": 1976,
+    "passed": 1975,
+    "rewrites": {
+      "remaster \"- Remastered 2011\"": {
+        "kind": "invariant",
+        "checks": 71,
+        "passed": 71
+      },
+      "remaster \"(2011 Remaster)\"": {
+        "kind": "invariant",
+        "checks": 71,
+        "passed": 71
+      },
+      "noise \"(Album Version)\"": {
+        "kind": "invariant",
+        "checks": 71,
+        "passed": 71
+      },
+      "noise \"[Explicit]\"": {
+        "kind": "invariant",
+        "checks": 71,
+        "passed": 71
+      },
+      "noise \"(Deluxe Edition)\"": {
+        "kind": "invariant",
+        "checks": 71,
+        "passed": 71
+      },
+      "film credit \"(From ...)\"": {
+        "kind": "invariant",
+        "checks": 71,
+        "passed": 71
+      },
+      "round brackets as square": {
+        "kind": "invariant",
+        "checks": 26,
+        "passed": 26
+      },
+      "doubled spaces": {
+        "kind": "invariant",
+        "checks": 55,
+        "passed": 55
+      },
+      "title in upper case": {
+        "kind": "invariant",
+        "checks": 68,
+        "passed": 68
+      },
+      "artist in lower case": {
+        "kind": "invariant",
+        "checks": 67,
+        "passed": 67
+      },
+      "\"&\" and \"and\" swapped": {
+        "kind": "invariant",
+        "checks": 8,
+        "passed": 8
+      },
+      "album unknown": {
+        "kind": "invariant",
+        "checks": 26,
+        "passed": 26
+      },
+      "artists as one \"A & B\" string": {
+        "kind": "invariant",
+        "checks": 12,
+        "passed": 11
+      },
+      "3 s longer": {
+        "kind": "invariant",
+        "checks": 71,
+        "passed": 71
+      },
+      "3 s shorter": {
+        "kind": "invariant",
+        "checks": 71,
+        "passed": 71
+      },
+      "5 s longer (at the tolerance)": {
+        "kind": "invariant",
+        "checks": 71,
+        "passed": 71
+      },
+      "tagged \"(Live)\"": {
+        "kind": "sensitive",
+        "checks": 69,
+        "passed": 69
+      },
+      "tagged \"- Acoustic\"": {
+        "kind": "sensitive",
+        "checks": 70,
+        "passed": 70
+      },
+      "tagged \"(Instrumental)\"": {
+        "kind": "sensitive",
+        "checks": 70,
+        "passed": 70
+      },
+      "tagged \"(Sped Up)\"": {
+        "kind": "sensitive",
+        "checks": 71,
+        "passed": 71
+      },
+      "tagged \"(Karaoke Version)\"": {
+        "kind": "sensitive",
+        "checks": 71,
+        "passed": 71
+      },
+      "tagged \"(Demo)\"": {
+        "kind": "sensitive",
+        "checks": 70,
+        "passed": 70
+      },
+      "tagged \"(Mono)\"": {
+        "kind": "sensitive",
+        "checks": 70,
+        "passed": 70
+      },
+      "tagged \"- Live at Wembley Stadium\"": {
+        "kind": "sensitive",
+        "checks": 69,
+        "passed": 69
+      },
+      "a named remix": {
+        "kind": "sensitive",
+        "checks": 71,
+        "passed": 71
+      },
+      "another artist": {
+        "kind": "sensitive",
+        "checks": 71,
+        "passed": 71
+      },
+      "another title": {
+        "kind": "sensitive",
+        "checks": 71,
+        "passed": 71
+      },
+      "6 s longer (past the tolerance)": {
+        "kind": "sensitive",
+        "checks": 71,
+        "passed": 71
+      },
+      "6 s shorter (past the tolerance)": {
+        "kind": "sensitive",
+        "checks": 71,
+        "passed": 71
+      },
+      "30 s longer": {
+        "kind": "sensitive",
+        "checks": 71,
+        "passed": 71
+      },
+      "tagged \"(Radio Edit)\"": {
+        "kind": "sensitive",
+        "checks": 69,
+        "passed": 69
+      },
+      "typographic apostrophes": {
+        "kind": "invariant",
+        "checks": 9,
+        "passed": 9
+      },
+      "accents removed": {
+        "kind": "invariant",
+        "checks": 4,
+        "passed": 4
+      },
+      "guests moved into the title": {
+        "kind": "invariant",
+        "checks": 7,
+        "passed": 7
+      }
+    },
+    "failing": [
+      "artist-classical-performers-order / artists as one \"A & B\" string"
+    ]
+  }
+}

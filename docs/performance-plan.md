@@ -391,10 +391,9 @@ there (`controllers/YouTubeController.js`, `downloadFeed`;
   (`yt-dlp: ERROR: … HTTP Error 403: Forbidden`), and the request is
   answered with 502 instead of an empty success.
 
-What it costs: a seek in a track that is not in the cache yet starts a new
-download and reads up to the position (a pipe cannot be searched), where it
-used to reuse a remembered address. Once a track is cached, which takes
-seconds, seeks are served from the file as before.
+What it cost: a seek in a track that is not in the cache yet started a new
+download and read up to the position (a pipe cannot be searched), where it
+used to reuse a remembered address. The next round took that cost away.
 
 Checked with real ffmpeg and a stand-in yt-dlp that writes an Opus file to
 its output: a whole play (40.0 s of audio out of 40), a seek to 25 s (15.0 s
@@ -409,6 +408,39 @@ shows it in a terminal:
 Open: SoundCloud through yt-dlp still hands ffmpeg an address. Its AAC
 renditions decode as noise there (the megabytes of ffmpeg errors in the
 owner's log); the same pipe would let yt-dlp fetch and unpack them.
+
+### Ninth round: a seek joins the conversion that is running
+
+A play converts the whole track into the cache as fast as the source
+delivers it, well ahead of the listener. A seek during that time did not
+use it: it started a second yt-dlp and a second ffmpeg, which downloaded
+the track again and read through it up to the position. For a two-hour set
+that is a long wait, and two downloads of the same thing.
+
+Now such a seek reads from the conversion that is already running
+(`controllers/transcode.js`, `follow` with `fromSeconds`). What a
+conversion writes is constant-bitrate MP3, so a time is a byte position
+(128 kbit/s: 16,000 bytes a second); the stream starts at the next place a
+frame begins (`services/mp3Frames.js`), and when the conversion has not got
+that far yet, the listener waits for it to arrive there, nothing more.
+
+Measured with real ffmpeg and a stand-in yt-dlp (1 s look-up, a 20-minute
+track delivered in 30 s), seeking 6 s after the track started:
+
+| | before | after |
+|---|---|---|
+| seek to 1:00 (already converted) | 2.56 s | 0.005 s |
+| seek to 15:00 (not converted yet) | 23.7 s | 17.6 s |
+| yt-dlp downloads for the three requests | 3 | 1 |
+
+Both streams decode without a single error and are exactly as long as they
+should be (1140.0 s and 300.0 s). With the real yt-dlp the first figure
+includes its look-up, about 3 s on the owner's Mac.
+
+Not for a source that is passed through as it is (SoundCloud's own MP3):
+its bitrate is its own and may vary, so there a seek still converts from
+the position. Once a track is in the cache, seeks are served from the file
+as before.
 
 ### Still open
 

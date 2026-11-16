@@ -140,6 +140,27 @@ export const MusicProvider = ({ children }) => {
     }, [currentTrack, loadAudio]);
 
 
+    // Plays `track` as part of the list it was clicked in: the list becomes
+    // the queue, so playback carries on with what follows (and Previous goes
+    // back to what came before). Besides being what one expects of a
+    // playlist, it is what gives the player a next track to get ready while
+    // this one plays; a queue of one has nothing to prepare, so every change
+    // of track waited for the full look-up and conversion.
+    const playFrom = useCallback((tracks, track) => {
+        const list = (Array.isArray(tracks) ? tracks : []).filter(t => t && t.playable !== false);
+        const index = list.indexOf(track);
+        if (index === -1) return playTrack(track);
+        const same = currentTrack
+            && currentTrack.id === track.id
+            && (currentTrack.source || DEFAULT_SOURCE) === (track.source || DEFAULT_SOURCE);
+        setQueue(list);
+        setQueueIndex(index);
+        setIsShuffle(false);
+        // Already playing: only its surroundings change, the sound goes on.
+        if (!same) loadAudio(track);
+        return undefined;
+    }, [currentTrack, loadAudio, playTrack]);
+
     const playNext = useCallback(() => {
         if (queueIndex < queue.length - 1) {
             const nextIndex = queueIndex + 1;
@@ -447,6 +468,7 @@ const seek = useCallback((time) => {
         isLoading, 
         queue,
         playTrack,
+        playFrom,
         togglePlay,
         playNext,
         playPrev,

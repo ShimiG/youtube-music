@@ -496,6 +496,11 @@ Added after the plan: a cloud sync run no longer reads the whole library
 after every play (102 ms → 2 ms with 6,000 playlist tracks, during which
 the server answered nothing else).
 
+Also added: a track clicked in a playlist now plays as part of it, so the
+music carries on down the list and the next track is prepared in ordinary
+use, not only after "Play All" (the next track in 0.3 s instead of a click
+and 2.4 s).
+
 Open: only 1.5 (which `yt-dlp` build the installers carry, and the flags it
 is run with), which needs figures from the owner's computer: "starts in …
 s" under Settings → System in the installed app, and the `Play …` lines in

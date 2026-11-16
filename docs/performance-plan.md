@@ -208,6 +208,32 @@ Left as it is: a change to a playlist reads all playlists and their tracks
 track missing from the read is taken for deleted and the deletion is sent
 on, so reading them in instalments while they may change would risk data.
 
+### Sixth round: the next track, in ordinary use
+
+Step 1.3 gets the next track ready while the current one plays. It needs a
+next track: clicking a song in a playlist made a queue of that one song, so
+there was nothing to prepare, the music stopped when the song ended, and
+the Next button did nothing. Only "Play All" filled the queue. Measured in
+a browser with a stand-in `yt-dlp` that takes 2 seconds:
+
+| | Before | After |
+|---|---|---|
+| A track clicked in a playlist ends | silence | the next one starts by itself, 0.7 s after the last sound |
+| Getting to the following track | a click on it, then 2.4 s | Next: 0.3 s |
+| "Play All" on a list of N tracks | N separate updates of the queue | one |
+
+How: a track clicked in a playlist plays as part of it
+(`playFrom` in `client/src/context/MusicContext.jsx`). The tracks loaded so
+far become the queue, positioned at the clicked one, so playback carries on
+down the list and Previous goes back up it. A long queue draws only the
+rows near the screen. Search results and Recently Played are unchanged: a
+click there still plays that one track.
+
+Also measured and left alone: the packaged server answers 0.2 s after it is
+started (warm disk). A V8 code cache made that 0.16 s, but it does not work
+together with the two dynamic imports in the bundle, and 40 ms is not worth
+that risk. Minifying the bundle made no difference to the start.
+
 ### Still open: step 1.5
 
 Two parts, and neither can be settled from the build machine:

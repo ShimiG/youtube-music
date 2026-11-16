@@ -7,6 +7,7 @@ const connections = require('../services/connections');
 const { SOURCE_IDS, storeConnection } = connections;
 const { parseReturnTarget, finishOAuth, clientOrigin } = require('../services/oauthReturn');
 const cloudGoogle = require('../services/cloud/google');
+const cloudSoundcloud = require('../services/cloud/soundcloud');
 
 const DEFAULT_REDIRECT_URI = 'http://localhost:3000/auth/google/callback';
 const GOOGLE_REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
@@ -187,6 +188,12 @@ const getConnections = async (req, res, next) => {
             const youtube = rows.find((row) => row.source_name === 'youtube');
             if (youtube) youtube.refreshable = 1;
             else rows.push({ source_name: 'youtube', expires_at: null, refreshable: 1 });
+        }
+        // The same for a SoundCloud login kept with the cloud account.
+        if (await cloudSoundcloud.connected(db, req.userId)) {
+            const soundcloud = rows.find((row) => row.source_name === 'soundcloud');
+            if (soundcloud) soundcloud.refreshable = 1;
+            else rows.push({ source_name: 'soundcloud', expires_at: null, refreshable: 1 });
         }
         res.json(rows);
     } catch (err) {

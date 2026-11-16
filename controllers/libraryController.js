@@ -14,6 +14,7 @@
 // of a match-mode source; see withMatching below.
 const { canRefresh } = require('../services/connections');
 const cloudGoogle = require('../services/cloud/google');
+const cloudSoundcloud = require('../services/cloud/soundcloud');
 const { listProviders } = require('../providers');
 const { SourceError } = require('../providers/errors');
 const { likedPlaylist, LIKED_PLAYLIST_ID } = require('../providers/normalize');
@@ -83,13 +84,15 @@ const getSources = async (req, res, next) => {
         // YouTube connected through the cloud account: this computer holds at
         // most a short-lived token, and asks the cloud for the next one.
         const youtubeViaCloud = await cloudGoogle.connected(req.app.locals.db, req.userId);
+        const soundcloudViaCloud = await cloudSoundcloud.connected(req.app.locals.db, req.userId);
+        const viaCloud = (name) => (name === 'youtube' && youtubeViaCloud) || (name === 'soundcloud' && soundcloudViaCloud);
 
         const sources = listProviders().map(p => {
             const row = byName.get(p.name);
             let connected;
             if (!p.connect.required) {
                 connected = true;
-            } else if (p.name === 'youtube' && youtubeViaCloud) {
+            } else if (viaCloud(p.name)) {
                 connected = true;
             } else if (!row) {
                 connected = false;
@@ -116,7 +119,7 @@ const getSources = async (req, res, next) => {
                 // tab must stay usable even when it cannot be connected here.
                 searchRequiresConnection: Boolean(p.connect.required && p.searchRequiresToken),
                 // No expiry to act on when the cloud account renews it.
-                expiresAt: row && row.expires_at && !(p.name === 'youtube' && youtubeViaCloud) ? row.expires_at : null
+                expiresAt: row && row.expires_at && !viaCloud(p.name) ? row.expires_at : null
             };
         });
         res.json({ sources });

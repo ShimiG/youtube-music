@@ -5,7 +5,8 @@
 // public content does not need a user session; /me/* endpoints go through
 // middleware/sourceToken.js and use the user's own token.
 const { sendSourceError } = require('../services/errors');
-const { parseReturnTarget, finishOAuth } = require('../services/oauthReturn');
+const { parseReturnTarget, finishOAuth, clientOrigin } = require('../services/oauthReturn');
+const cloudSoundcloud = require('../services/cloud/soundcloud');
 const client = require('./soundcloud/client');
 const tokens = require('./soundcloud/tokens');
 const ytdlp = require('./soundcloud/ytdlp');
@@ -24,7 +25,7 @@ const playReport = require('../services/playReport');
 
 // --- Provider selection (shared with providers/soundcloud.js) -----------------
 // See controllers/soundcloud/fallback.js for how api / ytdlp / auto is chosen.
-const { providerMode, activeProvider, withFallback } = require('./soundcloud/fallback');
+const { providerMode, activeProvider, apiAvailable, withFallback } = require('./soundcloud/fallback');
 
 function sendYtdlpError(res, err, fallbackMessage) {
     console.error(`SoundCloud (yt-dlp): ${fallbackMessage}:`, err.message);
@@ -40,11 +41,13 @@ const getStatus = (req, res) => {
     res.json({
         provider: activeProvider(),
         mode: providerMode(),
-        apiConfigured: client.isConfigured(),
+        // With credentials on this computer, or through the cloud service.
+        apiConfigured: apiAvailable(),
+        viaCloud: cloudSoundcloud.available(),
         // Connecting an account (and thus the library) needs the official API.
-        connectAvailable: client.isConfigured(),
+        connectAvailable: apiAvailable(),
         searchAvailable: true,
-        libraryAvailable: client.isConfigured()
+        libraryAvailable: apiAvailable()
     });
 };
 
@@ -93,7 +96,36 @@ function sendSoundCloudError(res, err, fallbackMessage) {
 // --- Connect flow -------------------------------------------------------------
 
 // Returns the SoundCloud consent URL for the logged-in user (requireAuth runs first).
-const getAuthUrl = (req, res) => {
+//
+// Through the cloud service when it holds SoundCloud's credentials: the login
+// is then kept with the cloud account and works on every computer signed in
+// to it. Otherwise with this computer's own credentials, when it has some.
+const getAuthUrl = async (req, res, next) => {
+    try {
+        const viaCloud = await cloudSoundcloud.startConnect(req.app.locals.db, req.userId, {
+            // The cloud sends the browser back to the desktop app's link, or
+            // to the web client on this computer; it accepts nothing else.
+            returnTo: parseReturnTarget(req.query.return) === 'app' ? 'app' : clientOrigin()
+        });
+        if (viaCloud) return res.json({ url: viaCloud, via: 'cloud' });
+    } catch (err) {
+        console.warn(`SoundCloud connect: the cloud account could not start it: ${err.message}`);
+        if (!client.isConfigured()) {
+            return res.status(502).json({
+                error: 'Your cloud account could not be reached to connect SoundCloud. Try again in a moment.',
+                code: 'SOURCE_UPSTREAM',
+                source: 'soundcloud'
+            });
+        }
+    }
+    try {
+        return localAuthUrl(req, res);
+    } catch (err) {
+        return next(err);
+    }
+};
+
+const localAuthUrl = (req, res) => {
     if (!client.isConfigured()) {
         return res.status(503).json({ error: 'SoundCloud is not configured on this server.', code: 'SOUNDCLOUD_NOT_CONFIGURED' });
     }
@@ -171,6 +203,13 @@ const disconnect = async (req, res, next) => {
         await tokens.disconnectUser(req.app.locals.db, req.userId);
         res.status(204).end();
     } catch (err) {
+        if (err instanceof client.SoundCloudError && err.code === 'SOUNDCLOUD_UNAVAILABLE') {
+            return res.status(502).json({
+                error: 'Your cloud account could not be reached, so SoundCloud is still connected there. Try again in a moment.',
+                code: 'SOURCE_UPSTREAM',
+                source: 'soundcloud'
+            });
+        }
         next(err);
     }
 };

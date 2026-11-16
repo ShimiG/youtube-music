@@ -19,7 +19,7 @@ those and is the same on every computer the app is used on, at no cost.
 | Play history | `history` | Yes |
 | Match corrections | `track_matches` (overrides), `match_reports` | Yes |
 | Service logins (YouTube / SoundCloud tokens) | `user_connections`, `app_tokens` | Yes, held by the Worker, encrypted (see "Secrets") |
-| Service credentials (Google client ID and secret) | `app_settings` | Yes, as Worker secrets, never in the database (see "Secrets") |
+| Service credentials (Google's and SoundCloud's client ID and secret, the Audius key) | `app_settings` | Yes, as Worker secrets, never in the database (see "Secrets") |
 | Local music folders and their files | `local_folders`, `local_tracks` | No: they describe one computer's disk |
 | Caches (lyrics, cover colours, audio) | `lyrics_cache`, `artwork_colors`, `cache/` | No: rebuilt on demand |
 
@@ -124,6 +124,35 @@ differently:
   desktop app asks the Worker for a short-lived access token when it needs
   one. Connect YouTube once, on any computer, and it is connected on all of
   them. This replaces the earlier default of reconnecting on each computer.
+
+**SoundCloud works the same way** (asked by the owner, 16 Nov 2026: move
+every credential that can be moved). Its client ID and secret are Worker
+secrets, the Worker does the sign-in, and an account's SoundCloud login is
+kept in D1, encrypted. Two things differ from Google, both handled in the
+Worker (`cloud/src/soundcloud.ts`):
+
+- SoundCloud also has a token that belongs to the installation, not to a
+  person: the "app" token behind search and public tracks. SoundCloud hands
+  out few of those (50 in 12 hours per app), so the Worker keeps one and
+  every signed-in computer shares it.
+- SoundCloud's refresh tokens work once. Two computers renewing at the same
+  moment would otherwise spend the same one, and the loser would be signed
+  out; the Worker gives the loser the token the winner just stored.
+
+**What is not a secret** is handed out as it is: `GET /services` tells a
+signed-in computer which sign-ins the Worker can do, and the Audius API key
+(it only names the app to Audius).
+
+**What stays on the computer**, on purpose: the secret that signs this
+computer's own sessions (`JWT_SECRET`) and the key that encrypts what it
+stores (`TOKEN_ENCRYPTION_KEY`). They protect this computer only, the app
+makes them itself on first start, and a copy in the cloud would only be one
+more place to lose them from. So are the settings that describe the
+computer (port, cache size, folders).
+
+A computer's own credentials still work when the cloud has none (a `.env`
+entry, or typed in under Settings → Accounts): an installation set up
+before this keeps running. Where the cloud has them, the cloud's are used.
 
 What "built into the app" can mean:
 

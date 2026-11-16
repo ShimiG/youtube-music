@@ -185,6 +185,11 @@ export default function AccountsPanel() {
             .catch(() => setServices([]));
     }, []);
     useEffect(() => { load(); }, [load]);
+    // What can be connected depends on what the cloud service is set up with,
+    // which may have changed since this computer last asked.
+    useEffect(() => {
+        apiFetch('/api/cloud/services').then(() => changed()).catch(() => {});
+    }, []);
 
     const onServices = (next, message) => {
         setServices(next || []);

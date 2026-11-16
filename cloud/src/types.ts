@@ -10,6 +10,11 @@ export interface Env {
     /** Google OAuth client for YouTube sign-in (optional; see src/google.ts). */
     GOOGLE_CLIENT_ID?: string;
     GOOGLE_CLIENT_SECRET?: string;
+    /** SoundCloud API client (optional; see src/soundcloud.ts). */
+    SOUNDCLOUD_CLIENT_ID?: string;
+    SOUNDCLOUD_CLIENT_SECRET?: string;
+    /** Audius API key (optional, not a secret: it only names the app to Audius). */
+    AUDIUS_API_KEY?: string;
 }
 
 /** What is known about the caller once its session token has been checked. */

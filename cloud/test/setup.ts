@@ -7,6 +7,8 @@ beforeEach(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
     await env.DB.batch([
         env.DB.prepare('DELETE FROM google_links'),
+        env.DB.prepare('DELETE FROM soundcloud_links'),
+        env.DB.prepare('DELETE FROM service_tokens'),
         env.DB.prepare('DELETE FROM records'),
         env.DB.prepare('DELETE FROM users')
     ]);

@@ -11,11 +11,14 @@
 //   POST   /api/cloud/link  { password }   sign in again, when the cloud session ran out
 //   POST   /api/cloud/sync                 sync now
 //   GET    /api/cloud/google/status        ask the cloud whether YouTube is connected
+//   GET    /api/cloud/services             ask the cloud what every service is set up with
 // The password is turned into a key on this computer and is never sent; the
 // session the cloud returns is kept encrypted and never returned.
 const bcrypt = require('bcryptjs');
 const sync = require('../services/cloud/sync');
 const cloudGoogle = require('../services/cloud/google');
+const cloudSoundcloud = require('../services/cloud/soundcloud');
+const cloudSettings = require('../services/cloud/settings');
 const settings = require('../services/appSettings');
 const accounts = require('../services/accounts');
 const users = require('./UserController');
@@ -191,6 +194,26 @@ const googleStatus = async (req, res, next) => {
     } catch (err) { sendCloudError(res, err, next); }
 };
 
+// Asks the cloud what the installation's services are set up with and which
+// of them this account has connected, and remembers it (the Accounts screen
+// and the sources list read what is remembered).
+const servicesStatus = async (req, res, next) => {
+    try {
+        const db = req.app.locals.db;
+        const [google, soundcloud, settings] = await Promise.all([
+            cloudGoogle.refreshStatus(db, req.userId),
+            cloudSoundcloud.refreshStatus(db, req.userId),
+            cloudSettings.refresh(db, req.userId)
+        ]);
+        res.set('Cache-Control', 'no-store');
+        res.json({
+            youtube: google || { configured: false, connected: false },
+            soundcloud: soundcloud || { configured: false, connected: false },
+            audius: { configured: Boolean(settings && settings.audius) }
+        });
+    } catch (err) { sendCloudError(res, err, next); }
+};
+
 const syncNow = async (req, res, next) => {
     try {
         const result = await sync.syncNow(req.app.locals.db, req.userId);
@@ -198,4 +221,4 @@ const syncNow = async (req, res, next) => {
     } catch (err) { next(err); }
 };
 
-module.exports = { getStatus, saveUrl, clearUrl, link, syncNow, getInfo, login, googleStatus };
+module.exports = { getStatus, saveUrl, clearUrl, link, syncNow, getInfo, login, googleStatus, servicesStatus };

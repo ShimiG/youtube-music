@@ -2,7 +2,8 @@
 // app's side of it. It follows the Worker's rules: newest change wins, equal
 // times go to the larger device id, every accepted change gets the account's
 // next number (cloud/src/sync.ts); and the YouTube sign-in the Worker offers
-// (cloud/src/google.ts), with Google itself left out.
+// (cloud/src/google.ts), with Google itself left out; and the same for
+// SoundCloud (cloud/src/soundcloud.ts) and the settings that are no secret.
 //
 //   const cloud = fakeCloud();
 //   client.http.fetch = cloud.fetch;      // services/cloud/client.js
@@ -14,7 +15,11 @@ function fakeCloud() {
     const state = {
         calls: [], pushes: [], registrationCode: 'let-me-in', down: false, rejectSessions: false, nextToken: 1,
         // YouTube sign-in (cloud/src/google.ts)
-        googleConfigured: true, googleDown: false, googleStarts: [], googleTokens: 0
+        googleConfigured: true, googleDown: false, googleStarts: [], googleTokens: 0,
+        // SoundCloud (cloud/src/soundcloud.ts). Off unless a test turns it on.
+        soundcloudConfigured: false, soundcloudDown: false, soundcloudStarts: [], soundcloudTokens: 0, soundcloudAppTokens: 0,
+        // What is not a secret (GET /services)
+        audiusApiKey: null
     };
     const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
     const session = (account) => {
@@ -90,8 +95,41 @@ function fakeCloud() {
             account.google = false;
             return json(200, { connected: false });
         }
+        if (u.pathname === '/services') {
+            return json(200, { google: { configured: state.googleConfigured }, soundcloud: { configured: state.soundcloudConfigured }, audius: { apiKey: state.audiusApiKey } });
+        }
+        if (u.pathname === '/soundcloud/status') return json(200, { configured: state.soundcloudConfigured, connected: Boolean(account.soundcloud) });
+        const noSoundcloud = () => json(503, { code: 'SOUNDCLOUD_NOT_CONFIGURED', error: 'SoundCloud is not set up on the cloud service: its SoundCloud credentials are missing.' });
+        if (u.pathname === '/soundcloud/start') {
+            if (!state.soundcloudConfigured) return noSoundcloud();
+            if (body.returnTo !== 'app' && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(String(body.returnTo))) {
+                return json(400, { code: 'BAD_RETURN', error: 'returnTo must be "app" or an address on this computer.' });
+            }
+            state.soundcloudStarts.push(body);
+            return json(200, { url: `https://secure.soundcloud.com/authorize?client_id=cloud-client&state=signed-by-the-cloud-${state.soundcloudStarts.length}` });
+        }
+        if (u.pathname === '/soundcloud/token') {
+            if (!state.soundcloudConfigured) return noSoundcloud();
+            if (!account.soundcloud) return json(409, { code: 'SOUNDCLOUD_NOT_CONNECTED', error: 'SoundCloud is not connected for this account. Connect it again.' });
+            if (state.soundcloudDown) return json(503, { code: 'SOUNDCLOUD_UNREACHABLE', error: 'SoundCloud could not be reached. Try again in a moment.' });
+            state.soundcloudTokens += 1;
+            return json(200, { accessToken: `sc-user-from-the-cloud-${state.soundcloudTokens}`, expiresAt: Date.now() + 3600 * 1000 });
+        }
+        if (u.pathname === '/soundcloud/app-token') {
+            if (!state.soundcloudConfigured) return noSoundcloud();
+            if (state.soundcloudDown) return json(503, { code: 'SOUNDCLOUD_UNREACHABLE', error: 'SoundCloud could not be reached. Try again in a moment.' });
+            state.soundcloudAppTokens += 1;
+            return json(200, { accessToken: `sc-app-from-the-cloud-${state.soundcloudAppTokens}`, expiresAt: Date.now() + 3600 * 1000 });
+        }
+        if (u.pathname === '/soundcloud' && init.method === 'DELETE') {
+            account.soundcloud = false;
+            return new Response(null, { status: 204 }); // as the Worker answers
+        }
         return json(404, { code: 'NOT_FOUND', error: 'nothing here' });
     };
+    // What SoundCloud's consent page and the cloud's callback do between them.
+    state.connectSoundCloud = (name = 'shimi') => { accounts.get(name).soundcloud = true; };
+    state.disconnectSoundCloud = (name = 'shimi') => { accounts.get(name).soundcloud = false; };
     // What Google's consent page and the cloud's callback do between them.
     state.connectYouTube = (name = 'shimi') => { accounts.get(name).google = true; };
     state.records = (name = 'shimi') => [...accounts.get(name).records.values()];

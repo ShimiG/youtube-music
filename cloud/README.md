@@ -207,6 +207,72 @@ A YouTube connection made earlier with credentials typed into the app keeps
 working on that computer. To move it to the cloud: disconnect YouTube there,
 then connect again while signed in to the cloud account.
 
+## SoundCloud through the cloud (optional, once)
+
+The same arrangement for SoundCloud: no computer needs its credentials, an
+account connects its SoundCloud login once for all its computers, and search
+and playback use SoundCloud's official API instead of yt-dlp. You need a
+SoundCloud app (https://soundcloud.com/you/apps; SoundCloud gives API access
+to Artist Pro accounts).
+
+1. In the SoundCloud app's settings, set this **Redirect URI** (your
+   Worker's address, then `/soundcloud/callback`):
+
+   ```
+   https://music-manager-cloud.<your-subdomain>.workers.dev/soundcloud/callback
+   ```
+
+2. Create the tables it needs (once; this is migration `0003`):
+
+   ```bash
+   npm run migrate
+   ```
+
+3. Give the client ID and the client secret to the Worker, then deploy:
+
+   ```bash
+   npx wrangler secret put SOUNDCLOUD_CLIENT_ID
+   ```
+
+   ```bash
+   npx wrangler secret put SOUNDCLOUD_CLIENT_SECRET
+   ```
+
+   ```bash
+   npm run deploy
+   ```
+
+4. In Music Manager: Settings → Accounts → SoundCloud → Connect. Search and
+   playback use the API from then on without anyone connecting; connecting
+   adds that person's playlists and likes.
+
+The Worker keeps two kinds of SoundCloud token, both encrypted with a key
+made from `JWT_SECRET`: each account's own login, and one "app" token that
+every signed-in computer shares (SoundCloud issues only 50 of those in 12
+hours, so it is asked for once and renewed).
+
+A SoundCloud connection made earlier with credentials on a computer keeps
+working there. To move it: disconnect SoundCloud on that computer, then
+connect again.
+
+## Other settings the Worker hands out
+
+Not secrets, so the Worker simply passes them on to signed-in computers
+(`GET /services`). Today there is one, and it is optional:
+
+```bash
+npx wrangler secret put AUDIUS_API_KEY
+```
+
+(An Audius API key raises Audius's rate limits; search and playback work
+without one.)
+
+## What stays on each computer
+
+Nothing has to be put there. The secret that signs a computer's own
+sessions and the key that encrypts what it stores are made by the app on
+first start and never leave it.
+
 ## Build the address into the app (optional)
 
 So that the login screen does not ask for the address at all. It is an

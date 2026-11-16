@@ -219,11 +219,11 @@ Required environment variables (see `.env.example`):
 | `PORT` | API port (default 3000) |
 | `HOST` | Interface the API binds to (default `127.0.0.1`, so it is not reachable from the network; `0.0.0.0` only inside a container) |
 | `JWT_SECRET` | Secret for signing login tokens. Optional: when it is not set, one is generated once and kept in the data folder |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth credentials. Can be entered in the app instead (Settings → Accounts); a value set here wins. Not needed at all when YouTube is connected through the cloud account (`cloud/README.md`) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth credentials. **Not needed on a computer:** they belong in the cloud service (`cloud/README.md`), which does the YouTube sign-in. Only for an installation without them there |
 | `CLOUD_URL` | Address of your cloud service (optional). Set here, it cannot be changed in the app |
 | `CLOUD_ALLOW_LOCAL` | `1` accepts a cloud address on this computer or a private network (`http://localhost:8787` for `wrangler dev`). Off by default: the address must be https and on the public internet |
 | `REDIRECT_URI` | Google OAuth callback, e.g. `http://localhost:3000/auth/google/callback` |
-| `SOUNDCLOUD_CLIENT_ID` / `SOUNDCLOUD_CLIENT_SECRET` | SoundCloud app credentials (optional; adds the SoundCloud library). Also enterable under Settings → Accounts |
+| `SOUNDCLOUD_CLIENT_ID` / `SOUNDCLOUD_CLIENT_SECRET` | SoundCloud app credentials. **Not needed on a computer:** they belong in the cloud service too, which then hands out the tokens. Only for an installation without them there |
 | `LOG_FILE` | `off` stops the server writing `logs/server.log` (default: on) |
 | `SOUNDCLOUD_REDIRECT_URI` | SoundCloud OAuth callback registered on the app, default `http://localhost:3000/auth/soundcloud/callback` |
 | `SOUNDCLOUD_PROVIDER` | `auto` (default), `api` or `ytdlp`; see "SoundCloud without API credentials" |
@@ -232,7 +232,7 @@ Required environment variables (see `.env.example`):
 | `CLIENT_ORIGIN` | Allowed browser origin(s), comma-separated (default `http://localhost:5173`) |
 | `TOKEN_ENCRYPTION_KEY` | Key (32 bytes: 64 hex chars or base64) for encrypting stored OAuth tokens. Blank: the server generates `.token-key` in the data folder on first run. Changing it means users reconnect their services |
 | `CACHE_MAX_BYTES` | Audio cache size cap in bytes; least recently played tracks are evicted first (default `524288000`, 500 MB) |
-| `AUDIUS_API_KEY` | Optional Audius API key for higher rate limits (Audius search and playback need no account) |
+| `AUDIUS_API_KEY` | Optional Audius API key for higher rate limits. Comes from the cloud service when it has one; a value here wins |
 | `LOCAL_MUSIC_ROOTS` | Extra places music folders may be added from, separated by `:` (`;` on Windows). By default only your home folder and other drives / mounted volumes are allowed |
 | `MUSIC_DATA_DIR` | Use this folder for data instead of the per-user data folder |
 | `MATCH_DURATION_TOLERANCE_SEC` | Largest duration difference, in seconds, between a track and its YouTube match (default `5`) |

@@ -41,8 +41,8 @@ function reportConnectResult(fragment) {
     const changed = () => window.dispatchEvent(new Event('connections-changed'));
     // A YouTube login made through the cloud account is kept there, not on
     // this computer: have the server ask the cloud before the lists reload.
-    if (params.get('google') === 'connected') {
-        apiFetch('/api/cloud/google/status').catch(() => {}).then(changed);
+    if (params.get('google') === 'connected' || params.get('soundcloud') === 'connected') {
+        apiFetch('/api/cloud/services').catch(() => {}).then(changed);
     } else {
         changed();
     }

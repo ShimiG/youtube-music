@@ -33,13 +33,10 @@ function validateEnv() {
     if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
         console.warn('Warning: JWT_SECRET is short; use at least 32 random characters.');
     }
-    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-        const where = require('path').join(require('./services/paths').dataDir(), '.env');
-        console.warn(`YouTube: no Google OAuth credentials in the environment. Enter them in the app (Settings, Accounts) or set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in ${where}.`);
-    }
-    if (!process.env.SOUNDCLOUD_CLIENT_ID || !process.env.SOUNDCLOUD_CLIENT_SECRET) {
-        console.warn('SoundCloud: no API credentials (SOUNDCLOUD_CLIENT_ID / SECRET). Search and playback run through yt-dlp; connecting an account and the library need the official API.');
-    }
+    // Service credentials (Google's for YouTube, SoundCloud's) are not
+    // expected on this computer: the cloud service holds them and hands out
+    // tokens (docs/cloud-data.md, "Secrets"). Settings, Accounts shows what
+    // it is set up with. Ones set here are still used when the cloud has none.
     // Load (or create) the token encryption key now, so a malformed
     // TOKEN_ENCRYPTION_KEY stops the server at boot, not at the first connect.
     try {

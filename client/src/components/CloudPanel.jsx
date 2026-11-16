@@ -134,6 +134,11 @@ export default function CloudPanel() {
     else if (status.lastError) badge = { text: 'Waiting to retry', kind: 'warn' };
     else badge = { text: 'In sync', kind: 'ok' };
 
+    // Which service logins are kept with the cloud account, and which on this computer.
+    const throughCloud = { YouTube: status.youtube, SoundCloud: status.soundcloud };
+    const viaAccount = Object.keys(throughCloud).filter(name => throughCloud[name] && throughCloud[name].available);
+    const onThisComputer = Object.keys(throughCloud).filter(name => !viaAccount.includes(name));
+
     return (
         <div className="accounts-row cloud-panel">
             <div className="accounts-head">
@@ -184,17 +189,18 @@ export default function CloudPanel() {
                     </p>
                 )}
 
-            {status.linked && !needsSignIn && status.youtube && status.youtube.available && (
+            {status.linked && !needsSignIn && viaAccount.length > 0 && (
                 <p className="accounts-detail">
-                    {status.youtube.connected
-                        ? 'Your YouTube connection is kept with your account: it works on every computer you sign in on.'
-                        : 'YouTube is connected once for your account (above), and then works on every computer you sign in on.'}
+                    {viaAccount.join(' and ')} {viaAccount.length > 1 ? 'are' : 'is'} connected once for your account (under Accounts), and then
+                    {viaAccount.length > 1 ? ' work' : ' works'} on every computer you sign in on. The keys for {viaAccount.length > 1 ? 'these services' : 'this service'} are
+                    held by your cloud service, not by this computer.
                 </p>
             )}
             <p className="accounts-note">
                 Kept in your account: custom playlists and recently played
-                {status.youtube && status.youtube.available ? ', and your YouTube connection' : ''}.
-                Stays on this computer: music from Local Files{status.youtube && status.youtube.available ? ' and your SoundCloud connection' : ', and your YouTube and SoundCloud connections'}.
+                {viaAccount.length > 0 ? `, and your ${viaAccount.join(' and ')} connection${viaAccount.length > 1 ? 's' : ''}` : ''}.
+                Stays on this computer: music from Local Files
+                {onThisComputer.length > 0 ? `, and your ${onThisComputer.join(' and ')} connection${onThisComputer.length > 1 ? 's' : ''}` : ''}.
             </p>
         </div>
     );

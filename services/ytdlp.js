@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 
-const { resolveYtDlp, dataDir } = require('./paths');
+const { resolveYtDlp, dataDir, isPackaged } = require('./paths');
 const folder = require('./ytdlpFolder');
 
 // The yt-dlp found at start-up. See services/paths.js: bin/ in the project
@@ -24,6 +24,66 @@ let folderBuild = folder.currentExe();
 
 /** The yt-dlp to run, now. */
 const ytDlpPath = () => process.env.YTDLP_PATH || folderBuild || foundAtStart;
+
+// --- The JavaScript runtime yt-dlp needs for YouTube -------------------------------
+//
+// YouTube's player hides the audio addresses behind JavaScript, and yt-dlp
+// runs that script in a runtime it finds on the computer. Left alone it only
+// looks for deno; with none it falls back to one limited YouTube client
+// ("YouTube extraction without a JS runtime has been deprecated, and some
+// formats may be missing"), and what that client hands out may not be
+// something ffmpeg can fetch. So yt-dlp is told where a runtime is:
+//   - YTDLP_JS_RUNTIME=off: nothing is passed (yt-dlp's own default);
+//   - YTDLP_JS_RUNTIME=<name[:path]>: that one (deno, node, bun, quickjs);
+//   - otherwise: the Node this server runs on. The packaged app is not a
+//     Node that can run a script, so there a deno or node installed on the
+//     computer is looked for in the usual places.
+// yt-dlp runs node with its permission model switched on (no files, no
+// network, no processes for the script); deno, where installed, still wins.
+const RUNTIME_DIRS = process.platform === 'win32'
+    ? []
+    : ['/opt/homebrew/bin', '/usr/local/bin', path.join(require('os').homedir(), '.deno', 'bin'), '/usr/bin'];
+const MIN_NODE_MAJOR = 20;
+
+function findOnComputer(name) {
+    const exe = process.platform === 'win32' ? `${name}.exe` : name;
+    const dirs = [...String(process.env.PATH || '').split(path.delimiter), ...RUNTIME_DIRS].filter(Boolean);
+    for (const dir of dirs) {
+        const candidate = path.join(dir, exe);
+        try {
+            if (fs.statSync(candidate).isFile()) return candidate;
+        } catch { /* not there */ }
+    }
+    return null;
+}
+
+let runtimeMemo; // undefined: not looked for yet
+/** { name, path, from } of the runtime yt-dlp is pointed at, or null. */
+function jsRuntime() {
+    const wanted = String(process.env.YTDLP_JS_RUNTIME || 'auto').trim();
+    if (/^(off|none|no|false|0)$/i.test(wanted)) return null;
+    if (wanted.toLowerCase() !== 'auto') {
+        const [name, ...rest] = wanted.split(':');
+        return { name, path: rest.join(':') || null, from: 'YTDLP_JS_RUNTIME' };
+    }
+    if (runtimeMemo !== undefined) return runtimeMemo;
+    if (!isPackaged() && Number(process.versions.node.split('.')[0]) >= MIN_NODE_MAJOR) {
+        runtimeMemo = { name: 'node', path: process.execPath, from: 'this server' };
+    } else {
+        const deno = findOnComputer('deno');
+        const node = deno ? null : findOnComputer('node');
+        runtimeMemo = deno ? { name: 'deno', path: deno, from: 'this computer' }
+            : node ? { name: 'node', path: node, from: 'this computer' } : null;
+    }
+    return runtimeMemo;
+}
+
+/** The flags that tell yt-dlp which runtime to use (none when there is none). */
+function jsRuntimeArgs() {
+    const runtime = jsRuntime();
+    if (!runtime) return [];
+    return ['--js-runtimes', runtime.path ? `${runtime.name}:${runtime.path}` : runtime.name];
+}
 
 const UPDATE_TIMEOUT_MS = 2 * 60 * 1000;
 
@@ -136,4 +196,4 @@ async function updateYtDlpIfDue({ log = console, stampFile = defaultStampFile() 
 // Tests only.
 function _useFolderBuild(exe) { folderBuild = exe || null; }
 
-module.exports = { ytDlpPath, runner, autoUpdateEnabled, summarizeUpdateOutput, updateYtDlp, updateYtDlpIfDue, updateDue, CHECK_EVERY_MS, _useFolderBuild };
+module.exports = { ytDlpPath, jsRuntime, jsRuntimeArgs, _forgetRuntime: () => { runtimeMemo = undefined; }, runner, autoUpdateEnabled, summarizeUpdateOutput, updateYtDlp, updateYtDlpIfDue, updateDue, CHECK_EVERY_MS, _useFolderBuild };

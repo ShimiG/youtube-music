@@ -1,6 +1,6 @@
 const { execFile } = require('child_process');
 const { parseSeek, serveFromCache, streamTranscoded, qualityCacheKey } = require('./transcode');
-const { ytDlpPath } = require('../services/ytdlp');
+const { ytDlpPath, jsRuntimeArgs } = require('../services/ytdlp');
 const { sendSourceError } = require('../services/errors');
 // Lengths are remembered there, across restarts, so /duration does not start
 // yt-dlp for a track that has been seen before.
@@ -60,10 +60,36 @@ function rememberDuration(videoId, seconds) {
     trackLengths.remember('youtube', videoId, seconds);
 }
 
+// yt-dlp's warnings say when it works with less than it should ("No supported
+// JavaScript runtime could be found", "... formats have been skipped"). Each
+// distinct one goes to the log once; the latest goes with the play, where the
+// app shows it (services/playReport.js).
+const warned = new Set();
+function firstWarning(stderr) {
+    const line = String(stderr || '').split('\n').map((l) => l.trim()).find((l) => /^WARNING:/.test(l));
+    if (!line) return null;
+    // eslint-disable-next-line no-control-regex
+    const text = line.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 240);
+    if (!warned.has(text) && warned.size < 20) {
+        warned.add(text);
+        console.warn(`yt-dlp: ${text}`);
+    }
+    return text;
+}
+
 function startResolving(videoId) {
     // --print implies "do not download". bestaudio/best always yields a single
     // address; a bare default would print two (video and audio).
-    const args = ['-f', 'bestaudio/best', '--no-playlist', '--print', 'duration', '--print', 'urls', `https://www.youtube.com/watch?v=${videoId}`];
+    // Besides the length and the address: the request headers yt-dlp itself
+    // would fetch that address with (ffmpeg is given the same ones, as yt-dlp
+    // does when it runs ffmpeg), and which rendition it chose, for the report.
+    const args = [
+        '-f', 'bestaudio/best', '--no-playlist', ...jsRuntimeArgs(),
+        '--print', 'duration', '--print', 'urls',
+        '--print', '%(http_headers)j',
+        '--print', 'chosen: format %(format_id)s, %(protocol)s, %(acodec)s',
+        `https://www.youtube.com/watch?v=${videoId}`
+    ];
     const job = { waiters: 0, done: false, child: null, promise: null };
     job.promise = new Promise((resolve, reject) => {
         job.child = runner.execFile(ytDlpPath(), args, { timeout: YTDLP_TIMEOUT_MS, windowsHide: true }, (error, stdout, stderr) => {
@@ -78,15 +104,23 @@ function startResolving(videoId) {
             const url = lines.find((l) => /^https?:\/\//.test(l)) || null;
             const numeric = lines.find((l) => /^\d+(\.\d+)?$/.test(l));
             const duration = numeric ? Math.round(Number(numeric)) : 0;
+            let headers = null;
+            try {
+                const parsed = JSON.parse(lines.find((l) => l.startsWith('{')) || 'null');
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) headers = parsed;
+            } catch { /* an older yt-dlp, or none given */ }
+            const chosenLine = lines.find((l) => l.startsWith('chosen: '));
+            const chosen = chosenLine ? chosenLine.slice('chosen: '.length).slice(0, 120) : null;
+            const warning = firstWarning(stderr);
             if (duration > 0) rememberDuration(videoId, duration);
             if (url) {
                 const expiresAt = urlExpiry(url);
                 if (expiresAt > Date.now()) {
                     if (resolved.size >= RESOLVED_MAX) resolved.delete(resolved.keys().next().value);
-                    resolved.set(videoId, { url, duration, expiresAt });
+                    resolved.set(videoId, { url, duration, headers, chosen, warning, expiresAt });
                 }
             }
-            return resolve({ url, duration });
+            return resolve({ url, duration, headers, chosen, warning });
         });
     });
     // A run whose waiters all left is killed and rejects with nobody listening.
@@ -105,7 +139,7 @@ function resolveVideo(videoId, { res } = {}) {
     const startedAt = Date.now();
     const known = resolved.get(videoId);
     if (known && known.expiresAt > startedAt) {
-        return Promise.resolve({ url: known.url, duration: known.duration, from: 'memory', ms: 0 });
+        return Promise.resolve({ url: known.url, duration: known.duration, headers: known.headers, chosen: known.chosen, warning: known.warning, from: 'memory', ms: 0 });
     }
     resolved.delete(videoId);
 
@@ -171,8 +205,13 @@ function streamVideo(req, res, videoId) {
             if (!res.headersSent) sendSourceError(res, 'TRACK_UNAVAILABLE', 'youtube', { reason: 'no_audio_url' });
             return;
         }
+        // What yt-dlp handed over, for the report: when ffmpeg then gets no
+        // audio out of it, this is what says why.
+        if (found.chosen) playReport.note(res, `yt-dlp chose ${found.chosen}`);
+        if (found.warning) playReport.note(res, `yt-dlp: ${found.warning}`);
         streamTranscoded(req, res, {
             sourceUrl: found.url,
+            sourceHeaders: found.headers,
             cacheKey,
             seekTime,
             timing: { label: `youtube ${videoId}`, resolveMs: found.ms, resolvedBy: found.from },

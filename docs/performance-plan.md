@@ -326,7 +326,51 @@ empty log: the released v2.2.2 with a yt-dlp that takes 12 s per look-up.
 It plays (after 12 s) and logs the play, so a slow yt-dlp alone is not what
 fails there.
 
+### What the report showed on the owner's Mac (16 Nov 2026)
+
+Every YouTube track: "ffmpeg could not get any audio from the source" after
+3 to 4 s, and nothing in the log. yt-dlp answered (in about 3 s, with the
+folder build: it starts in 0.2 s there instead of 7.3 s), and ffmpeg then
+produced nothing and said nothing the app looked for. Three things followed.
+
+- **yt-dlp had no JavaScript runtime.** Its own source says what that
+  means: it only looks for deno, and with none it uses a single limited
+  YouTube client ("extraction without a JS runtime has been deprecated, and
+  some formats may be missing"). The server now tells it which runtime to
+  use: its own Node, or in the installed app a deno or Node found on the
+  computer (`services/ytdlp.js`, `YTDLP_JS_RUNTIME`). Settings → System
+  shows the runtime, or that there is none.
+- **ffmpeg fetched the address without yt-dlp's request headers.** yt-dlp
+  names the headers it would use (`http_headers`) and passes them on when it
+  runs ffmpeg itself; the app did not. Now it does, for the playlist and for
+  every segment of an HLS rendition. Checked with a real ffmpeg against a
+  source that answers 403 without the right `User-Agent`: no audio before,
+  audio after.
+- **The reason no longer depends on ffmpeg's wording.** The app kept a
+  complaint only when the text contained "Error" or "Invalid". Now the last
+  lines ffmpeg wrote are kept whatever they say, the source's answer first
+  ("HTTP error 403 Forbidden"), with how the process ended (exit code, or
+  the signal that ended it), and the same goes to the log. Each play also
+  shows what yt-dlp chose ("format 234, m3u8_native, mp4a.40.2") and its
+  first warning. Signed addresses are cut down to the host in all of it.
+
+Also: a source that decodes badly used to write thousands of ffmpeg lines to
+the log (megabytes for one SoundCloud track); now the first five per
+conversion and a count of the rest.
+
+Not known yet: whether this is the whole cause on that Mac. It has not been
+run against YouTube here (no access from the build machine). If a track
+still fails, the list now carries ffmpeg's own answer and the rendition.
+
+Cost: with a runtime yt-dlp asks more of YouTube per look-up. The time per
+look-up is in the same list.
+
 ### Still open
+
+- **The installed app carries no JavaScript runtime.** It uses a deno or
+  Node that is on the computer; with neither, YouTube stays limited and
+  Settings → System says so. Carrying deno (or fetching it, as the yt-dlp
+  folder build is fetched) is the way to close this.
 
 - **The flags `yt-dlp` is run with** (the other half of 1.5). Only
   comparable against the real thing. Settings → System → Recent plays now

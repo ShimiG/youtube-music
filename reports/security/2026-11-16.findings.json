@@ -1,0 +1,134 @@
+{
+  "run": {
+    "agent": "exploiter",
+    "date": "2026-11-16",
+    "target": "http://localhost:3999",
+    "labels": [
+      "security"
+    ],
+    "report_url": "reports/security/2026-11-16.md"
+  },
+  "findings": [
+    {
+      "id": "cloud-url-no-ssrf-guard",
+      "title": "Owner-settable cloud sync URL (PUT /api/cloud/url) has no private-network/metadata-address guard before the server makes an outbound request to it",
+      "severity": "medium",
+      "status": "potential",
+      "category": "ssrf",
+      "location": "services/cloud/sync.js:80-102 (checkCloudUrl, saveCloudUrl); controllers/cloudController.js:43-48 (saveUrl)",
+      "description": "PUT /api/cloud/url (requireAuth + settingsController.requireOwner) accepts an arbitrary URL and services/cloud/sync.js's checkCloudUrl() immediately has the server issue an HTTP GET to '<url>/health' (via services/cloud/client.js request()) to see whether it looks like a Music Manager cloud instance, before anything is saved. Unlike services/artworkColors.js (which blocks loopback/private/link-local/CGNAT ranges and IPv4-mapped IPv6 via a net.BlockList, pins DNS resolution to the connecting socket, and caps redirects), this path has no such check: client.normalizeUrl()/request() were not inspected finding any IP-literal or DNS-resolved-address blocklist. The practical impact is scoped to whoever holds the owner account (the first local account on the installation) being able to make the server perform an outbound GET to any address reachable from the host, including loopback, RFC1918 ranges and cloud-metadata-style addresses (e.g. 169.254.169.254), with the response's shape (reachable/'not a Music Manager cloud service' vs. unreachable) observable in the API's error message -- a classic SSRF oracle, even though the response body itself is not relayed.",
+      "evidence": "As the first-registered (owner) throwaway account, PUT /api/cloud/url with body {\"url\":\"http://127.0.0.1:3999\"} (pointed at the test instance's own loopback port, kept strictly local to this sandbox) returned 400 {\"error\":\"That address answered, but it is not a Music Manager cloud service.\",\"code\":\"CLOUD_BAD_URL\"} -- i.e. the server did reach out to and receive a real response from the loopback address, with no 'that address is not allowed' rejection before the request was made, which is the behaviour a pre-connect IP blocklist (like artworkColors.js's isPublicAddress/guardedLookup) would have produced instead. A further probe against a well-known cloud-metadata-style address (169.254.169.254) was not run dynamically: the test harness's own safety classifier declined that specific request as resembling an attack on a metadata endpoint, so this part is marked 'potential' rather than 'confirmed' pending a manual re-check by the owner in an environment where that is clearly authorized.",
+      "suggested_fix": "Confirmed: normalizeUrl() only restricts protocol (https, or http for the literal hostnames 'localhost'/'127.0.0.1') and never checks whether an https hostname/IP is private or link-local. Add a pre-connect address guard to services/cloud/client.js's request(): for an IP-literal hostname call isPublicAddress() directly; for a DNS name, resolve it (dns.lookup with all:true) and reject if any resolved address is private/link-local/CGNAT/loopback/metadata-range, before fetch() is called -- reusing the net.BlockList already written in services/artworkColors.js (extract isPublicAddress()/the blocklist into a small shared services/netGuard.js so both call sites share one list, re-exported from artworkColors.js so its own tests keep passing unchanged). Keep the existing, test-covered 'localhost'/'127.0.0.1' + http exception for local wrangler dev untouched. This closes the proven loopback PoC and ordinary DNS-based SSRF to metadata/RFC1918 addresses. Note: this check-then-connect sequence still has a narrow DNS-rebinding window (a hostname resolving to a public address at check time and a private one moments later); closing that fully means switching the transport from global fetch() to core https.request()/http.request() with a pinned `lookup` option, exactly as services/artworkColors.js's guardedLookup/downloadWith already do -- worth doing as a follow-up, since Node's built-in fetch has no dispatcher/lookup hook reachable without adding the 'undici' package as a new dependency."
+    },
+    {
+      "id": "media-endpoints-unauthenticated-transcode-dos",
+      "title": "/stream and /duration media-token requirement -- re-verified fixed (previously confirmed unauthenticated DoS)",
+      "severity": "medium",
+      "status": "attempted-failed",
+      "category": "dos",
+      "location": "app.js:212-217 (routes); middleware/requireMediaToken.js; services/mediaToken.js",
+      "description": "Re-test of the 2026-11-09 'confirmed' finding (any page could trigger yt-dlp/ffmpeg transcodes via <audio src=\"/stream?...\"> with no auth at all). /stream and /duration are now gated by requireMediaToken, which requires a short-lived (6h) JWT with purpose='media' in the `t` query parameter, obtained only from GET /api/media/token (requireAuth, Bearer-only). A page with no access to the victim's Authorization header/localStorage token can no longer mint a usable media token, closing the original cross-site DoS/quota-exhaustion vector.",
+      "evidence": "GET /stream?source=youtube&videoId=dQw4w9WgXcQ with no `t` param and no Authorization header -> 401 {\"error\":\"A valid media token is required. Log in again if this persists.\",\"code\":\"MEDIA_TOKEN_REQUIRED\"}, before any yt-dlp/ffmpeg process was spawned. Same for GET /duration (401, same code). Supplying the logged-in user's own session JWT as `t` (purpose confusion attempt: session token where a media token is expected) also failed with 401, because verifyMediaToken() rejects any payload whose purpose is not exactly 'media'. A token correctly minted via GET /api/media/token (Bearer session token) was required and worked for /stream and /duration as expected.",
+      "suggested_fix": ""
+    },
+    {
+      "id": "jwt-verify-no-algorithm-pin",
+      "title": "JWT verification algorithm/expiry/purpose pinning -- re-verified fixed",
+      "severity": "low",
+      "status": "attempted-failed",
+      "category": "authentication",
+      "location": "middleware/requireAuth.js:17-31; services/mediaToken.js:30-41",
+      "description": "Re-run of the 2026-11-08/09 coverage. requireAuth pins algorithms to ['HS256'], rejects tokens without a numeric exp, rejects any purpose other than 'session', and rejects a non-integer/non-positive userId. verifyMediaToken applies the equivalent checks for purpose='media'. No regression found.",
+      "evidence": "No Authorization header on GET /history -> 401. alg=none forged token (header {alg:'none'}, payload {userId:1,purpose:'session',exp:9999999999}, empty signature) -> 401. HS256 token signed with a guessed wrong secret -> 401. Expired (real secret, exp in the past) token -> 401. Token signed with the real secret but with no exp claim at all -> 401. A valid media-purpose token presented as a session token on GET /history -> 401 (purpose confusion rejected both directions: a session token on /stream?t=... was also rejected, see media-endpoints-unauthenticated-transcode-dos). x-user-id: 1 header with no Authorization -> 401 (identity cannot be set via a client header at all, confirmed by code reading req.userId exclusively from the verified JWT payload).",
+      "suggested_fix": ""
+    },
+    {
+      "id": "idor-playlists-history-attempted",
+      "title": "IDOR / cross-user access attempts on custom playlists and history",
+      "severity": "info",
+      "status": "attempted-failed",
+      "category": "authorization",
+      "location": "controllers/playlistController.js:141-147 (assertPlaylistOwnership); controllers/historyController.js:61-85",
+      "description": "Re-run of the 2026-11-08/09 coverage with two fresh throwaway accounts (exploiter_alice = owner/user 1, exploiter_bob = user 2). Identity always comes from the verified JWT (req.userId); playlist reads/writes go through assertPlaylistOwnership (WHERE id=? AND user_id=?); history/custom-playlist listings are filtered by req.userId. All cross-user attempts were blocked, no regression.",
+      "evidence": "alice created custom playlist id=1 ('Alice Secret Playlist') and added a track to it. bob GET /api/custom-playlists/1/tracks (valid bob session token) -> 404 {\"error\":\"Playlist not found\"}. bob POST /api/custom-playlists/1/tracks (attempting to add a track to alice's playlist) -> 404, and the playlist's track count was unchanged afterwards. alice POST /history then GET /history (own) -> returned her play; bob GET /history (own, separate account) -> []  (not alice's history). bob GET /api/custom-playlists -> [] (did not list alice's playlist).",
+      "suggested_fix": ""
+    },
+    {
+      "id": "stream-path-traversal-attempted",
+      "title": "Path traversal and argument/command injection attempts against /stream, /duration and local-folder paths",
+      "severity": "info",
+      "status": "attempted-failed",
+      "category": "path-traversal",
+      "location": "controllers/YouTubeController.js:141-143 (isValidVideoId); controllers/transcode.js:122-141 (isValidCacheKey, cachePathFor); services/localLibrary.js (allowedRoots / isInsideRoot)",
+      "description": "Re-run of the 2026-11-08/09 coverage, now against the media-token-gated routes. YouTube ids are constrained to /^[A-Za-z0-9_-]{11}$/, local-source ids to /^[0-9]{1,12}$/, cache keys to /^[A-Za-z0-9_-]{1,80}$/ with a resolve()+prefix check that the final path stays under the cache directory, seek is parsed as a bounded finite non-negative integer, and local folders must resolve (symlinks included) inside the user's home directory, an allowed mount point, or LOCAL_MUSIC_ROOTS. All payloads were rejected before any process could spawn or any filesystem path outside the allowed root was touched; no regression.",
+      "evidence": "With a valid media token: videoId=../../../../etc/passwd (source=youtube and source=local) -> 400 Invalid videoId both times. videoId=;id; and videoId=$(id) -> 400 Invalid videoId (never reached execFile/spawn argv). seek=-1 and seek=abc -> 400 Invalid seek parameter. Separately, as an authenticated user: POST /api/local/folders {path:'/etc'} -> 400 LOCAL_NOT_ALLOWED; {path:'~/../../../../etc'} -> 400 LOCAL_NOT_ALLOWED; {path:'/'} -> 400 LOCAL_NOT_ALLOWED.",
+      "suggested_fix": ""
+    },
+    {
+      "id": "sql-injection-attempted",
+      "title": "SQL injection attempts on database-backed endpoints",
+      "severity": "info",
+      "status": "attempted-failed",
+      "category": "injection",
+      "location": "controllers/UserController.js; controllers/historyController.js; controllers/playlistController.js",
+      "description": "Re-run of the 2026-11-08/09 coverage. All database access uses parameterized queries (db.get/db.run/db.all with ? placeholders); sourceName/source values are validated against a strict regex or an existence lookup before use. The app continues to defend correctly; no regression.",
+      "evidence": "POST /api/register with username \"a' OR '1'='1\" -> 201, created as a literal username (not a bypass); subsequent login with the real exploiter_alice credentials still worked and returned the correct user, confirming the users table was not corrupted. POST /history with trackId \"x'; DROP TABLE history;--\" -> 200 success, and the string was stored verbatim as a track id in a later GET /history (parameterized INSERT, not executed as SQL); the history table remained queryable afterwards (previously-logged rows still present). GET /api/library/<SQL-payload>/playlists (path segment \"'; DROP TABLE users;--\", URL-encoded) -> 400 {\"code\":\"SOURCE_UNKNOWN\"} (name checked against the provider registry, never reaches SQL).",
+      "suggested_fix": ""
+    },
+    {
+      "id": "reflected-xss-search-query-attempted",
+      "title": "Reflected XSS attempt via the search query parameter",
+      "severity": "info",
+      "status": "attempted-failed",
+      "category": "injection",
+      "location": "controllers/libraryController.js (search); app.js (express.json response content-type)",
+      "description": "Every JSON endpoint responds with Content-Type: application/json, and query parameters (q) are never echoed back inside an HTML document, so a script payload in q cannot execute in a browser even if a future bug were to reflect the raw string in a JSON field (a browser only executes markup parsed as HTML/XML, not as application/json).",
+      "evidence": "GET /api/search/youtube?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E (authenticated) -> 400/200 JSON body (SOURCE_NOT_CONNECTED, since no Google credentials in the test environment), Content-Type: application/json; charset=utf-8, X-Content-Type-Options: nosniff. No HTML was returned at any point in the request lifecycle.",
+      "suggested_fix": ""
+    },
+    {
+      "id": "cors-origin-restriction-info",
+      "title": "CORS, security headers and rate limiting behave correctly",
+      "severity": "info",
+      "status": "info",
+      "category": "other",
+      "location": "app.js:32-77 (helmet, cors, rate limiters)",
+      "description": "Re-run of the 2026-11-08/09 hardening checks. helmet sets CSP/HSTS/X-Content-Type-Options/X-Frame-Options/COOP/CORP and no X-Powered-By; CORS rejects an unlisted Origin with 403 and reflects only an allowlisted one; the auth limiter (20/15min) and media limiter (60/min) both fire as configured; settings and system-log endpoints are owner-gated (first local account only).",
+      "evidence": "Origin: http://evil.example.com on GET / -> 403 Forbidden, no Access-Control-Allow-Origin header. Origin: http://localhost:5173 -> 200 with Access-Control-Allow-Origin: http://localhost:5173. 25x POST /api/login with a wrong password -> 401 for the first 16, then 429 for the remaining 9; the authLimiter (20/15min) is shared between /api/register and /api/login, and 4 earlier register/login calls in the same test run (also counted against it) account for the lower switch-over point (16 + 4 = 20, exactly the configured max). 65x GET /duration?source=local&videoId=<n> (DB-only lookups, no external calls) with a valid media token -> 404 for the first 60, then 429 for the remaining 5, exactly matching the configured 60/min media limiter cap. Bob (non-owner, second-registered account) PUT /api/settings/services/youtube and GET /api/system/log -> 403 SETTINGS_OWNER_ONLY both times; Alice (owner, first-registered) GET /api/system/log -> 200 with log lines, none containing any password, JWT, or OAuth token value (services/logFile.js redacts Bearer/Basic auth headers and token=/key=/secret= query values before writing).",
+      "suggested_fix": ""
+    },
+    {
+      "id": "generic-error-handler-masks-status-codes",
+      "title": "Central error handler returns a flat 500 for client errors (oversized body, malformed JSON) instead of their own 413/400",
+      "severity": "info",
+      "status": "info",
+      "category": "other",
+      "location": "app.js:237-244 (central error handler)",
+      "description": "Re-confirmed from the 2026-11-09 note. body-parser already rejects an oversized (>1MB) body and malformed JSON with its own statusCode (413, 400 respectively), and no stack trace or internal detail ever reaches the client either way, but the central error handler always replies with a generic 500 instead of forwarding the originating error's own 4xx status. This is a response-accuracy/monitoring issue (client errors look like server errors in logs/metrics), not an information leak or exploitable weakness.",
+      "evidence": "POST /api/register with a 1-line malformed JSON body ({bad json) -> HTTP 500 {\"error\":\"Internal server error\"}; server log shows the underlying error has statusCode: 400, type: 'entity.parse.failed'. POST /api/register with a ~2MB JSON body (over the 1MB express.json limit) -> HTTP 500 {\"error\":\"Internal server error\"}; server log shows the underlying error has statusCode: 413, type: 'entity.too.large'. In both cases the HTTP response body given to the client contained no stack trace, file path, or other internal detail.",
+      "suggested_fix": "Confirmed: app.js:237-244's handler always replies 500 except for the CORS-message special case. body-parser sets err.status/err.statusCode (and expose:true) on entity.parse.failed/entity.too.large, so forward that when it is a 4xx: `const status = Number(err && (err.status || err.statusCode)); if (status >= 400 && status < 500) return res.status(status).json({ error: status === 413 ? 'Request body too large.' : 'Malformed request.' }); ... res.status(500).json(...)` (keep the existing 500 fallback for anything else). Only affects client-error responses that already carry no internal detail, so this is a monitoring/metrics accuracy fix, not a security fix."
+    },
+    {
+      "id": "health-endpoint-any-authenticated-user",
+      "title": "GET /api/health exposes yt-dlp/ffmpeg versions and cache stats to any authenticated user, not just the installation owner",
+      "severity": "low",
+      "status": "potential",
+      "category": "info-disclosure",
+      "location": "app.js:90-96",
+      "description": "The route comment states the detailed health endpoint is 'Behind our login because binary versions help an attacker pick a known exploit,' which correctly keeps it unreachable by an unauthenticated caller. On a multi-user installation, however, any registered local account (not only the owner/first account, which is the bar used for /api/settings/services and /api/system/log) can read it, including exact yt-dlp/ffmpeg binary versions, Node version, platform, and cache size -- information that could help a second, less-trusted account on the same installation pick a known exploit for an outdated helper binary. This is a design choice that may be intentional (every account is assumed equally trusted on a desktop app), so it is reported as a low-severity, potential hardening gap rather than a confirmed vulnerability.",
+      "evidence": "As bob (second-registered, non-owner account): GET /api/health -> 200 {\"status\":\"degraded\",\"version\":\"2.0.1\",\"node\":\"v22.23.4\",\"platform\":\"linux\",\"binaries\":{\"ytDlp\":{\"available\":false,\"version\":null},\"ffmpeg\":{\"available\":true,\"version\":\"7.0.2-static\"}},\"cache\":{...}}. Compare with /api/settings/services (PUT/DELETE) and /api/system/log, both of which return 403 SETTINGS_OWNER_ONLY for the same bob session.",
+      "suggested_fix": "Confirmed: app.js:90-96 gates /api/health with requireAuth only, and client/src/components/SystemPanel.jsx + client/src/context/MusicContext.jsx both call it for every logged-in account (not just the owner), so making it owner-only (like /api/system/log) would break a documented, used feature. Instead, narrow what is disclosed: in services/health.js's getHealth(), accept an `isOwner` flag and omit exact version strings for non-owners (binaries.ytDlp.version, binaries.ytDlp.startMs, binaries.ffmpeg.version, node), while still returning status/degraded, binaries.*.available, platform and cache -- the client already renders `found.version || 'Found'`, so hiding the version for non-owners degrades gracefully with no client change required. In app.js's GET /api/health handler, compute isOwner the same way controllers/cloudController.js does (`await settings.isOwner(db, req.userId)`) and pass it through."
+    },
+    {
+      "id": "prod-dependency-vulns",
+      "title": "Production dependency audit -- clean; dev-only toolchain findings are low/moderate",
+      "severity": "info",
+      "status": "info",
+      "category": "dependency",
+      "location": "package.json / package-lock.json; client/package.json / client/package-lock.json",
+      "description": "Root project: npm audit reports 18 findings, all moderate/low and all transitive dev dependencies of the Jest test toolchain (glob/test-exclude/deepmerge/babel-plugin-istanbul chains under jest/@jest/*); none are reachable from production code (express, jsonwebtoken, bcryptjs, helmet, cors, express-rate-limit, @googleapis/youtube, ffmpeg-static, music-metadata, dotenv). client/: npm audit reports 0 findings of any severity.",
+      "evidence": "`npm audit --json` at the repo root: {\"info\":0,\"low\":3,\"moderate\":15,\"high\":0,\"critical\":0,\"total\":18}, all under jest/@jest/babel-jest/jest-* and their transitive deps (glob AbortSignal cancellation bypass, deepmerge prototype-poisoning in mergeObject(), etc.) -- none appear in the production dependency list in package.json. `cd client && npm audit --json`: {\"info\":0,\"low\":0,\"moderate\":0,\"high\":0,\"critical\":0,\"total\":0}.",
+      "suggested_fix": ""
+    }
+  ]
+}

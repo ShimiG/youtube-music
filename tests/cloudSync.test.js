@@ -424,3 +424,98 @@ describe('when things go wrong', () => {
         expect(await playlists(B)).toEqual(['Road Trip (0)']);
     });
 });
+
+// docs/performance-plan.md, "Fifth round": a run reads only what was reported
+// as changed. Reading everything takes time in proportion to the library, and
+// used to happen after every play.
+describe('a run reads only what changed', () => {
+    let records;
+    let collect;
+    // What each read covered (a playlist's tracks are always read with the playlists).
+    const scopes = () => collect.mock.calls.map((call) => {
+        const scope = records.scopeOf(call[2]);
+        return scope.length === records.COLLECTIONS.length ? 'everything' : (scope.join('+') || 'nothing');
+    });
+    const quick = (c) => sync.syncNow(c.db, c.userId, { everything: false });
+
+    beforeEach(async () => {
+        const mix = await newPlaylist(A, 'Road Trip');
+        await addTrack(A, mix, 'aaaaaaaaaaa', 'Song One');
+        await linkAs(A, 'correct horse', { registrationCode: 'let-me-in' });
+        await linkAs(B);
+        await settle();
+        records = require('../services/cloud/records');
+        collect = jest.spyOn(records, 'collect');
+        cloud.pushes.length = 0;
+    });
+
+    it('after a play, the history only; the play still reaches the other computer', async () => {
+        await play(A, 'ppppppppppp', 'Just Played');
+        expect(await quick(A)).toMatchObject({ ok: true });
+        expect(scopes()).toEqual(['history']);
+        expect(cloud.pushes.flat().map((change) => change.collection)).toEqual(['history']);
+        await syncNow(B);
+        expect(await history(B)).toContain('Just Played');
+        // The playlists were not looked at, and so not taken for deleted.
+        expect(await A.db.all(`SELECT record_id FROM sync_records WHERE deleted = 1 OR dirty = 1`)).toEqual([]);
+        expect(await playlists(B)).toEqual(['Road Trip (1)']);
+    });
+
+    it('with nothing reported, nothing of the user\'s is read: the run only fetches what others changed', async () => {
+        await newPlaylist(B, 'Made on B');
+        await syncNow(B);
+        collect.mockClear();
+        cloud.pushes.length = 0; // what B sent is not what this is about
+        expect(await quick(A)).toMatchObject({ ok: true, applied: 1 });
+        // Nothing read to find changes; the one read afterwards is for what was just written.
+        expect(scopes()).toEqual(['nothing', 'playlists+playlist_tracks']);
+        expect(await playlists(A)).toEqual(['Made on B (0)', 'Road Trip (1)']);
+        expect(cloud.pushes.flat()).toEqual([]);
+    });
+
+    it('after a change to a playlist, the playlists and their tracks together', async () => {
+        const list = (await on(A).get('/api/custom-playlists')).body[0].id;
+        await addTrack(A, list, 'bbbbbbbbbbb', 'Song Two');
+        await quick(A);
+        expect(scopes()).toEqual(['playlists+playlist_tracks']);
+        expect(cloud.pushes.flat().map((change) => change.collection)).toEqual(['playlist_tracks']);
+        await syncNow(B);
+        expect(await tracksOf(B, 'Road Trip')).toEqual(['Song One', 'Song Two']);
+        expect(records.scopeOf(['playlist_tracks'])).toEqual(['playlists', 'playlist_tracks']);
+        expect(records.scopeOf(['history', 'playlists'])).toEqual(['playlists', 'playlist_tracks', 'history']);
+        expect(records.scopeOf([])).toEqual([]);
+    });
+
+    it('a change that could not be sent is sent by the next run, without being reported again', async () => {
+        await play(A, 'ppppppppppp', 'Played Offline');
+        cloud.down = true;
+        expect(await quick(A)).toMatchObject({ ok: false });
+        cloud.down = false;
+        collect.mockClear();
+        expect(await quick(A)).toMatchObject({ ok: true });
+        expect(scopes()).toEqual(['history']); // because it is still unsent
+        await syncNow(B);
+        expect(await history(B)).toContain('Played Offline');
+    });
+
+    it('a change nobody reported is still found by a run that reads everything', async () => {
+        await A.db.run(`UPDATE playlists SET name = 'Renamed Quietly' WHERE name = 'Road Trip'`);
+        await quick(A);
+        expect(cloud.pushes.flat()).toEqual([]);
+        await syncNow(A); // "Sync now", start-up, once an hour
+        expect(scopes()).toEqual(['nothing', 'everything']);
+        expect(cloud.pushes.flat().map((change) => change.data.name)).toEqual(['Renamed Quietly']);
+    });
+
+    it('what is reported during a run is kept for the next one', async () => {
+        await play(A, 'ppppppppppp', 'First');
+        const run = quick(A);
+        await play(A, 'qqqqqqqqqqq', 'Second, while the run is under way'); // reported now
+        await run;
+        collect.mockClear();
+        await quick(A);
+        expect(scopes()).toEqual(['history']);
+        await syncNow(B);
+        expect(await history(B)).toEqual(expect.arrayContaining(['First', 'Second, while the run is under way']));
+    });
+});

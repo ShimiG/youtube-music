@@ -30,7 +30,28 @@ const keyOf = (collection, id) => `${collection}\n${id}`;
 const httpsOrNull = (value) => (typeof value === 'string' && /^https:\/\//.test(value) && value.length <= 2000 ? value : null);
 
 /** The user's synced records now: Map<key, { collection, id, data, version }>. */
-async function collect(db, userId) {
+/**
+ * The collections that have to be read together with the ones asked for:
+ * a playlist's tracks refer to the playlist, so the two always travel as a
+ * pair. Returned in COLLECTIONS order.
+ */
+function scopeOf(collections = COLLECTIONS) {
+    const wanted = new Set(collections);
+    if (wanted.has('playlists') || wanted.has('playlist_tracks')) {
+        wanted.add('playlists');
+        wanted.add('playlist_tracks');
+    }
+    return COLLECTIONS.filter((name) => wanted.has(name));
+}
+
+/**
+ * The user's records as they are now, keyed by keyOf(): all of them, or only
+ * those of `collections` (see scopeOf). Reading everything costs time in
+ * proportion to the library, so a run that only has a play to report does
+ * not do it (docs/performance-plan.md, "Fifth round").
+ */
+async function collect(db, userId, collections = COLLECTIONS) {
+    const scope = new Set(scopeOf(collections));
     const out = new Map();
     // `firstSeen`: the record's own time, used when the cloud has never heard
     // of it (a playlist's creation, a play). `changed`: its own time for a
@@ -39,6 +60,7 @@ async function collect(db, userId) {
     const add = (collection, id, data, firstSeen = null, changed = null) =>
         out.set(keyOf(collection, id), { collection, id, data, firstSeen, changed });
 
+    if (scope.has('playlists')) {
     // A playlist gets its cross-computer id the first time it is seen.
     const unnamed = await db.all('SELECT id FROM playlists WHERE user_id = ? AND sync_id IS NULL', [userId]);
     for (const row of unnamed) {
@@ -80,7 +102,9 @@ async function collect(db, userId) {
             title: meta.title, artist: meta.artist, thumbnail: meta.thumbnail, position: e.position
         });
     }
+    } // playlists and their tracks
 
+    if (!scope.has('history')) return out;
     const plays = await db.all(
         `SELECT s.name AS source, t.external_id AS externalId,
                 COALESCE(h.title, t.title) AS title, COALESCE(h.artist, t.artist) AS artist,
@@ -229,4 +253,4 @@ async function trimHistory(db, userId) {
     );
 }
 
-module.exports = { COLLECTIONS, collect, apply, trimHistory, hashOf, keyOf, trackKey };
+module.exports = { COLLECTIONS, collect, apply, trimHistory, hashOf, keyOf, trackKey, scopeOf };

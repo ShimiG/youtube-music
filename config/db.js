@@ -281,6 +281,10 @@ async function initDB(filename = path.join(dataDir(), 'database.sqlite')) {
             PRIMARY KEY (user_id, collection, record_id),
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
+        -- Every run asks "is anything still unsent?". Nearly always the answer
+        -- is no; this index holds only the unsent rows, so asking costs nothing
+        -- however many records there are.
+        CREATE INDEX IF NOT EXISTS idx_sync_records_unsent ON sync_records(user_id, collection) WHERE dirty = 1;
     `);
     if (!(await db.all('PRAGMA table_info(playlists)')).some((c) => c.name === 'sync_id')) {
         await db.exec('ALTER TABLE playlists ADD COLUMN sync_id TEXT');

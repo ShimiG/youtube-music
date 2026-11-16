@@ -492,8 +492,14 @@ own code is fast (local requests 1 to 6 ms, conversion's first byte in 50 to
    work while playing 4.2 ms → 1.7 ms per second); timed lyrics render per
    line; list images load lazily and smaller.
 
-Open: only 1.5 (the flags `yt-dlp` is run with), which needs the real
-timings from the owner's log.
+Added after the plan: a cloud sync run no longer reads the whole library
+after every play (102 ms → 2 ms with 6,000 playlist tracks, during which
+the server answered nothing else).
+
+Open: only 1.5 (which `yt-dlp` build the installers carry, and the flags it
+is run with), which needs figures from the owner's computer: "starts in …
+s" under Settings → System in the installed app, and the `Play …` lines in
+the log.
 
 ## Stage 9: Data that survives and follows the user (built; real-account run open)
 

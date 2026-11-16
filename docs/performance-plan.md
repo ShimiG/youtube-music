@@ -1,9 +1,9 @@
 # Performance plan
 
 Status: plan from a code review and measurements (12 Nov 2026). **Built:
-everything except step 1.5** (see "Done so far"). Step 1.5 changes how
-`yt-dlp` is run, and can only be judged with the real `yt-dlp` on the
-owner's computer.
+everything except step 1.5** (see "Done so far"), plus a fifth round on the
+cost of cloud sync, which was added after the plan. Step 1.5 is about
+`yt-dlp` itself and can only be judged on the owner's computer.
 
 ## What was measured
 
@@ -175,7 +175,54 @@ How:
   the listener noticing. Not done for Audius: its streams are not known to
   be MP3 in every case.
 
-Not built: step 1.5.
+### Fifth round: what cloud sync costs
+
+Not in the original plan: cloud sync was built after it. Measured with the
+real sync code against a stand-in cloud that answers at once, so the figures
+are the work done on this computer.
+
+A sync run read every record the user has (all playlists, all their tracks,
+the history), hashed each one and compared it with what the cloud last
+agreed on. That ran after every play (four seconds later) and every five
+minutes. The database is read on the server's only thread, so while it ran
+the server answered nothing else.
+
+| Playlist tracks | Run after a play: before | After | Timed run with nothing to report: before | After |
+|---|---|---|---|---|
+| 200 | 5 ms | under 1 ms | 6 ms | under 1 ms |
+| 6,000 | 102 ms | 2 ms | 84 ms | 1 ms |
+| 30,000 | 497 ms | 3 ms | 478 ms | 2 ms |
+
+How (`services/cloud/sync.js`, `services/cloud/records.js`): whoever
+changes something says in which collection (`touch(userId, ['history'])`
+after a play), and the run that follows reads only that, plus anything
+still waiting to be sent from a run that failed. The timed runs in between
+only fetch what other computers changed. Everything is still read at
+start-up, on "Sync now", on linking, and once an hour, as a safety net for
+a change nobody reported; and during that read the comparing is done in
+pieces, so other requests get a turn. A partial index answers "is anything
+still unsent?" without looking at the records.
+
+Left as it is: a change to a playlist reads all playlists and their tracks
+(about 0.1 s at 6,000 tracks). They are read in one piece on purpose: a
+track missing from the read is taken for deleted and the deletion is sent
+on, so reading them in instalments while they may change would risk data.
+
+### Still open: step 1.5
+
+Two parts, and neither can be settled from the build machine:
+
+- **Which `yt-dlp` the installers carry.** They ship the single-file build
+  (`yt-dlp_macos`, `yt-dlp.exe`), which unpacks itself on every start; every
+  play that is not in the cache waits for that. Settings → System shows the
+  figure ("starts in … s") in the installed app. The folder build does not
+  unpack, but it cannot update itself (`yt-dlp -U`), which the app relies on
+  to keep playback working, so switching means the app downloading and
+  unpacking updates itself, and bundling a folder instead of one file in the
+  installer. Worth doing only if that figure is large, and it has to be
+  tried on a Mac.
+- **The flags `yt-dlp` is run with.** Only comparable against the real
+  thing; the `Play …` lines in the log give the time per look-up.
 
 ## Where the time goes
 

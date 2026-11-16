@@ -190,13 +190,19 @@ and worth doing first whatever is decided about the cloud.
   Accounts → Cloud sync. A user links a computer to their cloud account;
   their custom playlists (with the order of their tracks) and their play
   history are then the same on every linked computer. How it works:
-  - Nothing in the app reports changes. A sync run reads the user's records
-    as they are, compares them with what this computer and the cloud last
-    agreed on (`sync_records`, a hash per record), pushes what differs and
-    pulls what the cloud accepted since. A place that edits data cannot be
-    forgotten, because no place has to do anything.
+  - A sync run reads the user's records as they are, compares them with
+    what this computer and the cloud last agreed on (`sync_records`, a hash
+    per record), pushes what differs and pulls what the cloud accepted
+    since. Correctness does not depend on anything reporting a change: a
+    place that edits data and says nothing is caught by the next full read.
+    Reports only make the runs in between cheap (see below).
   - Runs happen a few seconds after a change, every five minutes, and on
     "Sync now". A failure is shown, retried, and loses nothing.
+  - Reading everything costs time in proportion to the library, so it is
+    done at start-up, on "Sync now", on linking and once an hour. The runs
+    in between read only the collections a change was reported in (a play:
+    the history), which keeps them at a few milliseconds whatever the size
+    of the library.
   - Each computer keeps its own local account; the cloud account is linked
     to it. The cloud session is stored encrypted and renews itself, so the
     password is asked for once per computer.

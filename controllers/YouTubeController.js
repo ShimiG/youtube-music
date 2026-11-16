@@ -2,11 +2,9 @@ const { execFile } = require('child_process');
 const { parseSeek, serveFromCache, streamTranscoded, qualityCacheKey } = require('./transcode');
 const { ytDlpPath } = require('../services/ytdlp');
 const { sendSourceError } = require('../services/errors');
-
-// Small in-memory cache for /duration so we do not spawn yt-dlp for a track we
-// already looked up. Bounded to avoid unbounded growth.
-const durationCache = new Map();
-const DURATION_CACHE_MAX = 500;
+// Lengths are remembered there, across restarts, so /duration does not start
+// yt-dlp for a track that has been seen before.
+const trackLengths = require('../services/trackLengths');
 
 // yt-dlp must never outlive the request that asked for it: bounded by a
 // timeout, and killed as soon as the client disconnects. `runner.execFile` is
@@ -58,8 +56,7 @@ function urlExpiry(url, now = Date.now()) {
 }
 
 function rememberDuration(videoId, seconds) {
-    if (durationCache.size >= DURATION_CACHE_MAX) durationCache.delete(durationCache.keys().next().value);
-    durationCache.set(videoId, seconds);
+    trackLengths.remember('youtube', videoId, seconds);
 }
 
 function startResolving(videoId) {
@@ -202,13 +199,19 @@ const streamTrack = async (req, res) => {
 // client waiting for it has disconnected (security review 2026-11-08).
 function durationOf(videoId, { res } = {}) {
     if (!isValidVideoId(videoId)) return Promise.reject(new Error('Invalid videoId'));
-    if (durationCache.has(videoId)) return Promise.resolve(durationCache.get(videoId));
+    // Seen before (by yt-dlp, in a list, in an earlier run of the app): no
+    // look-up. This is what lets a track replayed from the disk cache start
+    // without yt-dlp running at all.
+    const inMemory = trackLengths.peek('youtube', videoId);
+    if (inMemory) return Promise.resolve(inMemory);
     // The same run that finds the audio address: a play that asks for both
     // at once starts yt-dlp once.
-    return resolveVideo(videoId, { res }).then((found) => found.duration).catch((error) => {
+    const lookUp = () => resolveVideo(videoId, { res }).then((found) => found.duration).catch((error) => {
         console.error(`YouTube ${videoId}: could not read duration: ${error.detail || describeYtDlpFailure(error, '')}`);
         throw error;
     });
+    if (!trackLengths.persistent()) return lookUp();
+    return trackLengths.known('youtube', videoId).then((seconds) => seconds || lookUp());
 }
 
 const getDuration = (req, res) => {
@@ -225,7 +228,7 @@ const getDuration = (req, res) => {
 function _resetResolver() {
     resolved.clear();
     resolving.clear();
-    durationCache.clear();
+    trackLengths._reset();
 }
 
 module.exports = { streamTrack, getDuration, streamVideo, durationOf, resolveVideo, urlExpiry, isValidVideoId, describeYtDlpFailure, runner, YTDLP_TIMEOUT_MS, _resetResolver };

@@ -1,8 +1,9 @@
 # Performance plan
 
-Status: plan from a code review and measurements (12 Nov 2026). **Built so
-far: steps 0, 1.1, 1.3, 1.4, 2.1, 3.1, 3.2 and 4.1** (see "Done so far").
-Open: 1.2, 1.5, 2.2, 3.3, 4.2, 4.3 and 5.
+Status: plan from a code review and measurements (12 Nov 2026). **Built:
+everything except step 1.5** (see "Done so far"). Step 1.5 changes how
+`yt-dlp` is run, and can only be judged with the real `yt-dlp` on the
+owner's computer.
 
 ## What was measured
 
@@ -103,7 +104,78 @@ one whose listener left; at most two such at a time, as before); stopped
 when its source sends nothing for a minute; three hours as a backstop. A
 straight-to-the-response conversion is stopped when its listener leaves.
 
-Not covered yet: step 1.2.
+### Third round: steps 3.3, 4.2, 4.3 and 5.1 to 5.3
+
+Measured in a real browser against the real server, old and new client side
+by side, with a local folder of 3,004 tracks.
+
+| | Before | After |
+|---|---|---|
+| Requests for the list of sources at start-up | 2 | 1 |
+| Search, go to the Library, come back | results and the typed text gone; 3 requests | still there; 1 request (the Library's first load), none on the way back |
+| Library with a playlist open and scrolled, go to Search, come back | playlist closed, back at the top; 3 requests | still open, same scroll position; no request |
+| Script work while a track plays, list on screen | 4.2 to 4.3 ms per second | 1.6 to 1.8 ms per second |
+| Last page of a 50,000-track folder | 79 ms | 0.6 ms |
+| All 250 pages of that folder | 15.1 s | 0.2 s |
+| First page of that folder | 9 ms | 3 ms (no sorting step) |
+
+How:
+
+- **3.3** Search, Library and Recently Played stay alive once opened and are
+  only hidden while another view shows (`client/src/App.jsx`), each with its
+  own scroll position. The list of sources is one shared copy, asked for
+  once (`client/src/hooks/useSources.js`). Recently Played asks the server
+  only when something was played since it last asked. The Library refreshes
+  on its own when a track is added to a playlist or liked elsewhere in the
+  app, and when it is opened after more than five minutes.
+- **4.2** A folder is paged by "the rows after this one" with an index in
+  the listing order (`providers/local.js`, `idx_local_tracks_order`).
+- **4.3** The index on `local_tracks(folder_id)` is dropped: two others
+  start with the same column. (Creating the data folder on every log line
+  was already fixed with the data-folder change.)
+- **5.1** The playback position is kept outside the music context
+  (`client/src/utils/playbackClock.js`); only the seek bar and the timed
+  lyrics follow it.
+- **5.2** Timed lyrics render when the line changes, not on every tick.
+- **5.3** Row and card images load lazily, and lists ask YouTube for the
+  320-pixel cover instead of the 480-pixel one.
+
+### Fourth round: steps 1.2 and 2.2
+
+Measured against the real server and real ffmpeg, with a stand-in `yt-dlp`
+that takes 1 second per look-up and counts its runs.
+
+| | Before | After |
+|---|---|---|
+| `yt-dlp` runs to replay a cached track after the app was restarted | 1 (for the length alone) | 0 |
+| The length of a track seen before | a `yt-dlp` run (1 s here, 1 to 3 s in reality) | 3 ms, from the database |
+| A YouTube playlist page of 50 tracks | no lengths: one `/duration` request per track played | lengths on the page; one extra API call the first time, none afterwards |
+| A Deezer track matched before | one Deezer request per play | none |
+| A 4-minute SoundCloud MP3, ready in the cache | 2.26 s (decoded and encoded again) | 0.26 s (passed through), and no second round of lossy compression |
+
+How:
+
+- **1.2** `services/trackLengths.js` keeps track lengths in the database
+  (`track_lengths`) as they are learned: from a `yt-dlp` look-up, from the
+  lists the services send, from the YouTube API, from the match engine.
+  `/duration` reads it before starting `yt-dlp`. Lists are completed from
+  it before they are sent (Recently Played, custom playlists, YouTube
+  playlists), so the player usually does not ask at all; for a YouTube
+  playlist page the lengths still missing come from one `videos.list` call
+  (one quota unit) and are remembered. Deezer plays a track that was
+  matched before straight from the stored match. Only YouTube and
+  SoundCloud lengths are stored: a Deezer track may play as a 30-second
+  preview, so its catalogue length says nothing.
+- **2.2** A source that is MP3 already (SoundCloud's `http_mp3` and
+  `hls_mp3` renditions) is passed through with `-c:a copy`
+  (`controllers/transcode.js`), at standard and high quality; `low` still
+  converts, since it exists to make the audio smaller. Should ffmpeg be
+  unable to pass a source through (it was not MP3 after all), it gives up
+  before writing anything and the track is converted instead, once, without
+  the listener noticing. Not done for Audius: its streams are not known to
+  be MP3 in every case.
+
+Not built: step 1.5.
 
 ## Where the time goes
 
@@ -244,10 +316,12 @@ calls in the match engine, lyrics and cover colours (cached, de-duplicated).
 
 ## Order
 
-0 → 1.1 → 1.4 → 1.3 → 2.1 → 3.1 → 4.1 (all done), then the rest by what
-the numbers from step 0 show on the owner's computer: 1.2 and 1.5 if the
-`yt-dlp` time in the log is the larger part of the wait, 3.3 for moving
-around the app.
+0 → 1.1 → 1.4 → 1.3 → 2.1 → 3.1 → 4.1, then 3.3, 4.2, 5, 1.2 and 2.2 (all
+done). What is left is 1.5, which needs the `Play …` lines from the owner's
+log: they show how long the real `yt-dlp` takes, and the flags in 1.5 can
+only be compared against that. One of them, `--ignore-config`, would also
+switch off a `yt-dlp` configuration the owner may rely on (cookies, a
+proxy), so it is not something to add unseen.
 
 ## With cloud sync (Stage 9)
 

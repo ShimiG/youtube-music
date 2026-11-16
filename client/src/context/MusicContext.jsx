@@ -5,6 +5,7 @@ import { apiFetch } from '../utils/api';
 import { DEFAULT_SOURCE } from '../utils/services';
 import { mediaUrl, mediaUrlSync, warmMediaToken } from '../utils/media';
 import { artOf } from '../utils/artwork';
+import { setPlaybackTime } from '../utils/playbackClock';
 
 
 const PREPARE_AFTER_SEC = 15;
@@ -18,7 +19,11 @@ export const MusicProvider = ({ children }) => {
     const [queueIndex, setQueueIndex] = useState(0);
     const [isShuffle, setIsShuffle] = useState(false);
     const originalQueueRef = useRef([]);
-    const [currentTime, setCurrentTime] = useState(0);
+    // The position itself lives in utils/playbackClock.js, not here: it
+    // changes four times a second and would re-render everything that reads
+    // this context. All this context keeps is whether the track is far enough
+    // in for the next one to be prepared.
+    const [reachedPrepare, setReachedPrepare] = useState(false);
     const [duration, setDuration] = useState(0);
     const setOffset = useRef(0);
     const [volume, setVolume] = useState(1);
@@ -69,7 +74,8 @@ export const MusicProvider = ({ children }) => {
         setCurrentTrack(track);
         setIsLoading(true); 
         setOffset.current = 0; 
-        setCurrentTime(0);
+        setPlaybackTime(0);
+        setReachedPrepare(false);
         setDuration(0);
         const safeId = track.id || track.videoId;
         // Tracks carry their source; rows from before that default to DEFAULT_SOURCE.
@@ -114,7 +120,10 @@ export const MusicProvider = ({ children }) => {
                     thumbnail: track.thumbnail || track.image,
                     source
                 })
-            }).catch(err => console.error("Failed to log history:", err));
+            })
+                // Recently Played shows it without being asked to look again.
+                .then(res => { if (res.ok) window.dispatchEvent(new Event('history-changed')); })
+                .catch(err => console.error("Failed to log history:", err));
         }
         
         startStream({ videoId: safeId, source }, () => seq === loadSeq.current, "Playback failed:");
@@ -263,9 +272,9 @@ const seek = useCallback((time) => {
 
         if (isBuffered || isFile) {
             audio.currentTime = targetInternalTime; 
-            setCurrentTime(cleanTime);
+            setPlaybackTime(cleanTime);
         } else {
-            setCurrentTime(cleanTime);
+            setPlaybackTime(cleanTime);
             setOffset.current = cleanTime; 
             setIsLoading(true);
 
@@ -277,6 +286,9 @@ const seek = useCallback((time) => {
         }
     }, [currentTrack, startStream]);
 
+
+    // When the next track is asked for (see the effect further down).
+    const prepareFrom = duration > 0 ? Math.min(PREPARE_AFTER_SEC, Math.max(0, duration - PREPARE_BEFORE_END_SEC)) : PREPARE_AFTER_SEC;
 
     useEffect(() => {
         const audio = audioRef.current;
@@ -300,7 +312,10 @@ const seek = useCallback((time) => {
             const time = audio.currentTime;
             if (!isNaN(time)) {
                 const offset = setOffset.current || 0
-                setCurrentTime(offset + time);
+                const position = offset + time;
+                setPlaybackTime(position);
+                // The same value most of the time, which React ignores.
+                setReachedPrepare(position >= prepareFrom);
             }
         };
         const handleLoadedMetadata = () => {
@@ -366,7 +381,7 @@ const seek = useCallback((time) => {
             audio.removeEventListener('durationchange', handleLoadedMetadata);
             audio.removeEventListener('error', handleError);
         };
-    }, [playNext, setOffset, seek, queue, queueIndex, duration, currentTrack]);
+    }, [playNext, setOffset, seek, queue, queueIndex, duration, currentTrack, prepareFrom]);
 
     // Get the next track ready while this one plays, so a track change does
     // not wait for the server to find and convert the audio. The server is
@@ -377,8 +392,7 @@ const seek = useCallback((time) => {
     const nextTrack = queueIndex < queue.length - 1 ? queue[queueIndex + 1] : null;
     const nextKey = nextTrack && nextTrack.playable !== false
         ? `${nextTrack.source || DEFAULT_SOURCE}:${nextTrack.id || nextTrack.videoId}` : null;
-    const prepareFrom = duration > 0 ? Math.min(PREPARE_AFTER_SEC, Math.max(0, duration - PREPARE_BEFORE_END_SEC)) : PREPARE_AFTER_SEC;
-    const timeToPrepare = Boolean(currentTrack) && isPlaying && currentTime >= prepareFrom;
+    const timeToPrepare = Boolean(currentTrack) && isPlaying && reachedPrepare;
     useEffect(() => {
         if (!timeToPrepare || !nextKey || preparedNext.current === nextKey) return;
         preparedNext.current = nextKey;
@@ -436,7 +450,6 @@ const seek = useCallback((time) => {
         togglePlay,
         playNext,
         playPrev,
-        currentTime,
         duration,
         seek,
         volume,

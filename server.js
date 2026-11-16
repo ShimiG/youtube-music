@@ -62,6 +62,8 @@ initDB()
         app.locals.db = db;
         // Service credentials entered in the app (Settings -> Accounts).
         await require('./services/appSettings').applyStored(db);
+        // Track lengths learned in earlier runs (services/trackLengths.js).
+        require('./services/trackLengths').use(db);
         app.listen(PORT, HOST, () => {
             console.log(`Server running on http://${HOST}:${PORT}`);
             console.log(`Data folder: ${require('./services/paths').dataDir()}`);
@@ -83,6 +85,8 @@ initDB()
                 // Best-effort: a stale yt-dlp is the usual reason YouTube or
                 // SoundCloud playback stops working. Looked for once a day.
                 updateYtDlpIfDue();
+                require('./services/trackLengths').trim()
+                    .catch((err) => console.warn('Track lengths: trimming failed:', err.message));
             }, BACKGROUND_START_DELAY_MS);
             later.unref();
         });

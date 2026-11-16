@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useLayoutEffect, useRef } from 'react';
 import LibraryView from './components/LibraryView';
 import SearchView from './components/SearchView';
 import HistoryView from './components/HistoryView';
@@ -18,6 +18,7 @@ import { isDesktopApp, onOAuthResult, openExternal } from './utils/desktop';
 import { SERVICE_LIST } from './utils/services';
 import { warmMediaToken } from './utils/media';
 import { apiFetch } from './utils/api';
+import { resetSources } from './hooks/useSources';
 import './App.css';
 
 // Services whose OAuth callback reports back as #<callbackParam>=connected|error.
@@ -48,15 +49,39 @@ function reportConnectResult(fragment) {
 }
 
 function App() {
-    const [view, setView] = useState('search'); 
+    const [view, setView] = useState('search');
+    // Search, Library and Recently Played stay alive once opened and are only
+    // hidden while another view shows. Switching used to throw the view away:
+    // the search results and the open playlist were gone, and coming back
+    // asked the server for everything again (docs/performance-plan.md, 3.3).
+    const [opened, setOpened] = useState(() => new Set(['search']));
+    // They share one scrolling column, so each remembers where it was.
+    const contentRef = useRef(null);
+    const scrollOf = useRef({});
+    const openView = useCallback((next) => {
+        if (next === view) return;
+        if (contentRef.current) scrollOf.current[view] = contentRef.current.scrollTop;
+        setOpened((known) => (known.has(next) ? known : new Set(known).add(next)));
+        setView(next);
+    }, [view]);
+    useLayoutEffect(() => {
+        const content = contentRef.current;
+        if (!content) return;
+        // Settings is built anew each time, so it starts at the top.
+        content.scrollTop = view === 'settings' ? 0 : (scrollOf.current[view] || 0);
+        // Long lists work out which rows to draw from their place on screen;
+        // a list that was hidden has to look again.
+        window.dispatchEvent(new Event('resize'));
+    }, [view]);
+
     // Any screen can send the user to Settings, optionally at a section
     // (utils/navigation.js): the connect banner, a greyed-out service tab.
     const [settingsSection, setSettingsSection] = useState(null);
     useEffect(() => onOpenSettings((section) => {
         // A new object each time, so asking for the same section twice scrolls again.
         setSettingsSection(section ? { id: section } : null);
-        setView('settings');
-    }), []);
+        openView('settings');
+    }), [openView]);
 
     // The expanded Now Playing drawer; only meaningful while a track is loaded.
     const { currentTrack } = useMusic();
@@ -112,6 +137,7 @@ function App() {
         localStorage.setItem('authToken', token);
         localStorage.setItem('localUserId', userId);
         localStorage.setItem('localUserName', username);
+        resetSources(); // whatever was known belonged to someone else
         setLocalUser({ id: userId, username });
         warmMediaToken(); // so the first play can start straight from the click
     };
@@ -122,6 +148,10 @@ function App() {
         localStorage.removeItem('localUserName');
         localStorage.removeItem('googleExpiresAt'); // legacy key from the pre-refresh auto-logout
         localStorage.removeItem('userToken'); // legacy key from the old client-held-token flow
+        resetSources();
+        setOpened(new Set(['search']));
+        setView('search');
+        scrollOf.current = {};
         setLocalUser(null);
     };
 
@@ -164,23 +194,21 @@ function App() {
                 <AuthScreen onLoginSuccess={handleLoginSuccess} />
             ) : (
                 <>
-                    <Sidebar view={view} setView={setView} handleLogout={handleLogout} />
+                    <Sidebar view={view} setView={openView} handleLogout={handleLogout} />
 
                     {/* Room at the bottom for the player bar, which lies over the
                         page: without it the end of a list ("Load more") was
                         hidden behind the bar. */}
-                    <main className="content" style={{ padding: '20px', paddingBottom: currentTrack ? 'calc(var(--player-height, 96px) + 20px)' : '20px' }}>
+                    <main ref={contentRef} className="content" style={{ padding: '20px', paddingBottom: currentTrack ? 'calc(var(--player-height, 96px) + 20px)' : '20px' }}>
                         {view !== 'settings' && <ConnectServices />}
-                        {(view === 'search' || view === 'history') && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', width: '100%', boxSizing: 'border-box' }}> 
-                                <div>
-                                    {view === 'search' && <SearchView />}
-                                    {view === 'history' && <HistoryView />}
-                                </div>
-                                <Queue />
+                        <div style={{ display: view === 'search' || view === 'history' ? 'grid' : 'none', gridTemplateColumns: '2fr 1fr', gap: '20px', width: '100%', boxSizing: 'border-box' }}>
+                            <div>
+                                {opened.has('search') && <div hidden={view !== 'search'}><SearchView /></div>}
+                                {opened.has('history') && <div hidden={view !== 'history'}><HistoryView active={view === 'history'} /></div>}
                             </div>
-                        )}
-                        {view === 'library' && <LibraryView />}
+                            <Queue />
+                        </div>
+                        {opened.has('library') && <div hidden={view !== 'library'}><LibraryView active={view === 'library'} /></div>}
                         {view === 'settings' && <SettingsView section={settingsSection} />}
                     </main>
 

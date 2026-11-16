@@ -17,6 +17,7 @@
 const { execFile } = require('child_process');
 const { SOURCE_NAME, isValidId } = require('./client');
 const { ytDlpPath } = require('../../services/ytdlp');
+const trackLengths = require('../../services/trackLengths');
 
 const SEARCH_LIMIT = 30;
 const EXEC_TIMEOUT_MS = 60 * 1000;
@@ -180,6 +181,8 @@ async function lookup(id) {
                 if (remembered.size >= REMEMBER_MAX) remembered.delete(remembered.keys().next().value);
                 remembered.set(id, found);
             }
+            // The length outlives the address (and the app being closed).
+            if (!found.isPreview) trackLengths.remember(SOURCE_NAME, id, found.duration);
             return found;
         })
         .finally(() => looking.delete(id));

@@ -38,6 +38,7 @@ const googleError = (code, reason) => Object.assign(new Error(`google ${code}`),
 
 beforeEach(() => {
     jest.clearAllMocks();
+    require('../services/trackLengths')._reset(); // lengths learned from one test's lists must not fill another's
     app.locals.db = { get: jest.fn(), all: jest.fn(), run: jest.fn().mockResolvedValue({}) };
     scTokens._resetCaches();
     scClient.http.fetch = jest.fn();
@@ -271,6 +272,39 @@ describe('YouTube library through the generic routes', () => {
         expect(yt.playlistItems.list.mock.calls[0][0]).toMatchObject({ playlistId: 'PL1' });
         expect(res.body.items).toEqual([expect.objectContaining({ id: 'aaaaaaaaaaa', artist: 'Owner', thumbnail: 'a.jpg', durationSec: null })]);
         expect(res.body.nextCursor).toBeNull();
+    });
+
+    // docs/performance-plan.md, step 1.2.
+    it('adds the lengths to a playlist page in one call, and only for the tracks it does not know yet', async () => {
+        const yt = fakeYouTube();
+        const item = (id, title) => ({ snippet: { title, videoOwnerChannelTitle: 'Owner', resourceId: { videoId: id }, thumbnails: {} } });
+        const pageOf = (...items) => ({ data: { items } });
+        yt.playlistItems.list.mockResolvedValue(pageOf(item('aaaaaaaaaaa', 'A'), item('bbbbbbbbbbb', 'B'), item('ccccccccccc', 'C')));
+        yt.videos.list.mockResolvedValueOnce({ data: { items: [
+            { id: 'aaaaaaaaaaa', contentDetails: { duration: 'PT3M25S' } },
+            { id: 'bbbbbbbbbbb', contentDetails: { duration: 'PT1H2M3S' } }
+            // ccccccccccc: YouTube returned nothing for it (a private video)
+        ] } });
+
+        const first = await request(app).get('/api/library/youtube/playlists/PL1/tracks').set(auth);
+        expect(first.body.items.map((t) => t.durationSec)).toEqual([205, 3723, null]);
+        expect(yt.videos.list).toHaveBeenCalledTimes(1);
+        expect(yt.videos.list.mock.calls[0][0]).toMatchObject({ part: 'contentDetails', id: 'aaaaaaaaaaa,bbbbbbbbbbb,ccccccccccc' });
+
+        // The same page again: only the one still unknown is asked for.
+        yt.videos.list.mockResolvedValueOnce({ data: { items: [] } });
+        const second = await request(app).get('/api/library/youtube/playlists/PL1/tracks').set(auth);
+        expect(second.body.items.map((t) => t.durationSec)).toEqual([205, 3723, null]);
+        expect(yt.videos.list.mock.calls[1][0].id).toBe('ccccccccccc');
+
+        // The extra call failing costs the lengths, not the page.
+        yt.playlistItems.list.mockResolvedValueOnce(pageOf(item('ddddddddddd', 'D')));
+        yt.videos.list.mockRejectedValueOnce(new Error('quotaExceeded'));
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const third = await request(app).get('/api/library/youtube/playlists/PL1/tracks').set(auth);
+        warn.mockRestore();
+        expect(third.statusCode).toBe(200);
+        expect(third.body.items).toEqual([expect.objectContaining({ id: 'ddddddddddd', durationSec: null })]);
     });
 
     it('likes and unlikes through videos.rate', async () => {

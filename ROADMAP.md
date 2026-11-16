@@ -455,7 +455,7 @@ Everything around playback that is not a new source.
   code shown on the desktop) and an authenticated WebSocket, rather than
   "same Google account" as the issue suggests. Two to three days.
 
-## Stage 8: Performance (in progress)
+## Stage 8: Performance (done, except one step that needs real timings)
 
 From a code review and measurements; the full plan, with the numbers and how
 each step is checked, is in
@@ -471,23 +471,31 @@ own code is fast (local requests 1 to 6 ms, conversion's first byte in 50 to
    SoundCloud without API credentials); the next track is prepared while the
    current one plays (2.3 s became 0.17 s in the test run); seeking inside
    cached tracks happens in the player (also fixes seeking restarting the
-   sound). **Open:** stop looking up lengths already known (1.2); how
-   `yt-dlp` is run (1.5).
+   sound); track lengths are remembered in the database and sent with the
+   lists, so a track seen before needs no look-up for its length (1.2: a
+   cached track replayed after a restart starts `yt-dlp` 0 times instead
+   of once). **Open:** how `yt-dlp` is run (1.5).
 2. **Done (2.1).** ffmpeg converts to disk at full speed and the response
    reads from the growing file: a 30-minute track is fully cached about 20 s
    after it starts (before: only as fast as the player read, and cut off
    after ten minutes); a second request for a track being converted follows
-   the same conversion. **Open:** MP3 sources copied instead of re-encoded
-   (2.2).
-3. Start-up. **Done:** the window waits for the server (3.1); the rescan of
-   local folders and the `yt-dlp` update wait 45 s, and the update is looked
-   for once a day (3.2). **Open:** the interface re-asking for the same
-   data (3.3).
-4. Database. **Done:** batched writes (4.1): transactions for the scan, a
-   play and cloud sync, and no disk sync per write. **Open:** deep paging of
-   large folders (4.2), small things (4.3).
-5. Low priority: keep the playback clock from re-rendering the whole app
-   (measured at about 1% of a processor core).
+   the same conversion. A source that is MP3 already (SoundCloud) is passed
+   through instead of converted (2.2: 0.26 s instead of 2.26 s for four
+   minutes, and no second lossy compression).
+3. Start-up and moving around. **Done:** the window waits for the server
+   (3.1); the rescan of local folders and the `yt-dlp` update wait 45 s, and
+   the update is looked for once a day (3.2); Search, Library and Recently
+   Played keep what they show when you switch between them, and the list of
+   sources is asked for once (3.3).
+4. Database. **Done:** batched writes (4.1); a large local folder is paged
+   through an index (4.2: all 250 pages of a 50,000-track folder in 0.2 s
+   instead of 15 s); a redundant index dropped (4.3).
+5. **Done.** The playback clock no longer re-renders the whole app (script
+   work while playing 4.2 ms → 1.7 ms per second); timed lyrics render per
+   line; list images load lazily and smaller.
+
+Open: only 1.5 (the flags `yt-dlp` is run with), which needs the real
+timings from the owner's log.
 
 ## Stage 9: Data that survives and follows the user (built; real-account run open)
 

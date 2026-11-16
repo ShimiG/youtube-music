@@ -185,6 +185,26 @@ describe('/duration?source=deezer', () => {
         expect(res.body).toEqual({ duration: 30, preview: true });
     });
 
+    // docs/performance-plan.md, step 1.2.
+    it('a track matched before plays from that match, without asking Deezer again', async () => {
+        jest.spyOn(matcher, 'getMatch').mockResolvedValue({ source: 'deezer', externalId: '3135556', status: 'matched', videoId: 'gAjR4_CbPpQ' });
+        const stream = await request(app).get(withMedia('/stream?source=deezer&videoId=3135556'));
+        const duration = await request(app).get(withMedia('/duration?source=deezer&videoId=3135556'));
+        expect(stream.statusCode).toBe(200);
+        expect(streamVideoSpy.mock.calls[0][2]).toBe('gAjR4_CbPpQ');
+        expect(duration.body).toEqual({ duration: 226, preview: false });
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(resolveSpy).not.toHaveBeenCalled();
+
+        // No match on record (or "not found", which may have changed since): the full way.
+        matcher.getMatch.mockResolvedValue({ status: 'not_found', videoId: null });
+        fetchMock.mockResolvedValueOnce(json(200, dzTrack()));
+        resolveSpy.mockResolvedValueOnce({ status: 'not_found', videoId: null });
+        await request(app).get(withMedia('/stream?source=deezer&videoId=3135556'));
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(mockStreamTranscoded).toHaveBeenCalledTimes(1); // the preview
+    });
+
     it('one play (stream + duration) is one Deezer request', async () => {
         fetchMock.mockResolvedValue(json(200, dzTrack()));
         resolveSpy.mockResolvedValue({ status: 'not_found', videoId: null });

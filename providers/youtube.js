@@ -7,6 +7,7 @@ const { getYouTubeClient } = require('../controllers/youtubeClient');
 const { SourceError, fromConnectionError } = require('./errors');
 const { getSourceToken } = require('../services/connections');
 const cloudGoogle = require('../services/cloud/google');
+const trackLengths = require('../services/trackLengths');
 const { makePlaylist, makeTrack, page } = require('./normalize');
 
 const SOURCE = 'youtube';
@@ -103,8 +104,8 @@ function normalizePlaylist(item) {
     });
 }
 
-// playlistItems.list gives the video id and owner but no duration; the player
-// fetches /duration on demand for that.
+// playlistItems.list gives the video id and owner but no duration; the
+// lengths are added afterwards (fillLengths below).
 function normalizePlaylistItem(item) {
     const snippet = item.snippet || {};
     return makeTrack({
@@ -128,6 +129,28 @@ function normalizeVideo(video) {
         thumbnail: bestThumbnail(snippet.thumbnails),
         durationSec: parseDuration(video.contentDetails && video.contentDetails.duration)
     });
+}
+
+// A playlist page comes without lengths. Without them the player asks the
+// server for each track's length as it plays, which used to mean a yt-dlp
+// run. The lengths already known are filled in from the database; the rest
+// of the page is asked for in one videos.list call (one quota unit, at most
+// PAGE_SIZE ids) and remembered, so the same page costs nothing next time.
+// A failure here only leaves the lengths out: the page itself is fine.
+async function fillLengths(youtube, items) {
+    await trackLengths.complete(items);
+    const unknown = items.filter((track) => !track.durationSec).map((track) => track.id);
+    if (unknown.length === 0) return;
+    try {
+        const response = await youtube.videos.list({ part: 'contentDetails', id: unknown.join(','), maxResults: PAGE_SIZE });
+        const lengths = new Map((response.data.items || []).map((video) => [video.id, parseDuration(video.contentDetails && video.contentDetails.duration)]));
+        for (const track of items) {
+            if (!track.durationSec && lengths.get(track.id)) track.durationSec = lengths.get(track.id);
+        }
+        await trackLengths.complete(items);
+    } catch (err) {
+        console.warn(`YouTube: could not fetch the lengths of a playlist page: ${err && err.message}`);
+    }
 }
 
 // --- Library ---------------------------------------------------------------------
@@ -162,6 +185,7 @@ async function getPlaylistTracks({ token }, playlistId, { cursor } = {}) {
         });
         // Deleted / private videos come back without a resourceId; drop them.
         const items = (response.data.items || []).map(normalizePlaylistItem).filter(t => t.id);
+        await fillLengths(youtube, items);
         return page(items, response.data.nextPageToken);
     } catch (err) {
         throw mapError(err);

@@ -18,6 +18,7 @@ const { listProviders } = require('../providers');
 const { SourceError } = require('../providers/errors');
 const { likedPlaylist, LIKED_PLAYLIST_ID } = require('../providers/normalize');
 const matcher = require('../services/matcher');
+const trackLengths = require('../services/trackLengths');
 
 const MAX_CURSOR_LENGTH = 2000;
 
@@ -167,6 +168,10 @@ const getPlaylistTracks = async (req, res, next) => {
     // not the service's, so it must not be reported as SOURCE_UPSTREAM.
     try {
         const page = await withMatching(req.app.locals.db, result);
+        // Lengths this list carries are remembered; tracks that come without
+        // one (a custom playlist, a YouTube playlist) get it if it is known,
+        // so the player does not have to ask for it.
+        await trackLengths.complete(page.items);
         res.json({
             items: page.items,
             nextCursor: result.nextCursor || null,
@@ -233,6 +238,7 @@ const search = async (req, res, next) => {
     // See getPlaylistTracks: match-table failures are ours, not the service's.
     try {
         const page = await withMatching(req.app.locals.db, result);
+        await trackLengths.complete(page.items);
         res.json({ ...page, items: page.items, nextCursor: result.nextCursor || null });
     } catch (err) {
         next(err);

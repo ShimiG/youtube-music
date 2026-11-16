@@ -264,7 +264,13 @@ function serveFromCache(res, cacheKey, { req, seekTime = 0, timing } = {}) {
     return true;
 }
 
-function ffmpegArgsFor(req, sourceUrl, seekTime) {
+// A source that is MP3 already (SoundCloud's own streams) is passed through
+// as it is instead of being decoded and encoded again: no processor time, and
+// no second round of lossy compression (docs/performance-plan.md, step 2.2).
+// Not for the `low` setting, which exists to make the audio smaller.
+const canCopy = (req, sourceCodec) => sourceCodec === 'mp3' && qualityOf(req) !== 'low';
+
+function ffmpegArgsFor(req, sourceUrl, seekTime, { copy = false } = {}) {
     // The reconnect options only exist for network inputs; ffmpeg refuses to
     // open a local file (`file:` input, local files) when they are given.
     const isNetworkInput = /^https?:\/\//i.test(sourceUrl);
@@ -273,8 +279,8 @@ function ffmpegArgsFor(req, sourceUrl, seekTime) {
         '-ss', seekTime.toString(),
         '-i', sourceUrl,
         '-vn',
-        '-c:a', 'libmp3lame',
-        '-b:a', QUALITIES[qualityOf(req)].bitrate,
+        // Copying keeps the source's frames; its tags stay behind.
+        ...(copy ? ['-c:a', 'copy', '-map_metadata', '-1'] : ['-c:a', 'libmp3lame', '-b:a', QUALITIES[qualityOf(req)].bitrate]),
         '-f', 'mp3',
         '-'
     ];
@@ -296,7 +302,14 @@ function logFfmpegErrors(child) {
 function enterBackground(job) {
     job.inBackground = true;
     backgroundTranscodes++;
-    job.unattendedTimer = setTimeout(() => job.child.kill('SIGKILL'), MAX_TRANSCODE_MS);
+    job.unattendedTimer = setTimeout(() => stopJob(job), MAX_TRANSCODE_MS);
+}
+
+// Ends a job's ffmpeg for good (as opposed to ffmpeg failing by itself, after
+// which a pass-through job is tried again as a conversion).
+function stopJob(job) {
+    job.stopped = true;
+    job.child.kill('SIGKILL');
 }
 
 function leaveBackground(job) {
@@ -332,7 +345,7 @@ function settle(job) {
 }
 
 /** Starts ffmpeg writing `<cacheKey>_<time>.part`. Null when no job could be started. */
-function startJob(req, { sourceUrl, cacheKey, finalFilePath, timing, onSourceFailed, prepare }) {
+function startJob(req, { sourceUrl, cacheKey, finalFilePath, timing, onSourceFailed, prepare, sourceCodec }) {
     const partPath = path.resolve(cacheDir, `${cacheKey}_${Date.now()}.part`);
     if (!partPath.startsWith(resolvedCacheDir + path.sep)) return null;
     let fd;
@@ -344,11 +357,11 @@ function startJob(req, { sourceUrl, cacheKey, finalFilePath, timing, onSourceFai
         return null;
     }
 
-    // windowsHide: the desktop app has no console; without it every transcode
-    // would flash a console window on Windows.
-    const child = spawn(ffmpegPath, ffmpegArgsFor(req, sourceUrl, 0), { windowsHide: true });
     const job = {
-        cacheKey, partPath, finalFilePath, child,
+        cacheKey, partPath, finalFilePath,
+        child: null,
+        stopped: false,      // ended by us (a limit, nobody listening), not by ffmpeg
+        copied: canCopy(req, sourceCodec), // passing the source's MP3 through as it is
         events: new EventEmitter(),
         startedAt: Date.now(),
         failedToStart: false,
@@ -377,31 +390,15 @@ function startJob(req, { sourceUrl, cacheKey, finalFilePath, timing, onSourceFai
     const file = fs.createWriteStream(partPath, { fd });
     file.on('error', (err) => {
         console.error(`Cache: writing ${path.basename(partPath)} failed: ${err.message}`);
-        child.kill('SIGKILL');
+        stopJob(job);
     });
 
     // The backstops: a source that has gone quiet, and a ceiling.
-    const stallTimer = setTimeout(() => child.kill('SIGKILL'), STALL_MS);
-    const ceilingTimer = setTimeout(() => child.kill('SIGKILL'), MAX_ATTENDED_MS);
+    const stallTimer = setTimeout(() => stopJob(job), STALL_MS);
+    const ceilingTimer = setTimeout(() => stopJob(job), MAX_ATTENDED_MS);
 
-    child.stdout.on('data', (chunk) => {
-        job.producedAudio = true;
-        stallTimer.refresh();
-        // Counted once it is in the file, so a reader never waits for bytes
-        // that are not there yet.
-        const flowing = file.write(chunk, () => {
-            job.bytes += chunk.length;
-            job.events.emit('grow');
-        });
-        if (!flowing) {
-            child.stdout.pause();
-            file.once('drain', () => child.stdout.resume());
-        }
-    });
-    logFfmpegErrors(child);
-
-    // Runs once, when the process is gone (or never started: a failed spawn
-    // emits 'error' and may not emit 'close').
+    // Runs once, when the last process is gone (or never started: a failed
+    // spawn emits 'error' and may not emit 'close').
     let ended = false;
     const finish = (code) => {
         if (ended) return;
@@ -424,12 +421,46 @@ function startJob(req, { sourceUrl, cacheKey, finalFilePath, timing, onSourceFai
         });
     };
 
-    child.on('error', (err) => {
-        console.error('Failed to start FFmpeg:', err.message);
-        job.failedToStart = true;
-        finish(-1);
-    });
-    child.once('close', finish);
+    // Starts ffmpeg. Once, except when a pass-through turns out not to be
+    // possible (the source was not the MP3 it was said to be): ffmpeg then
+    // gives up before writing anything, and the track is converted instead.
+    const launch = () => {
+        // windowsHide: the desktop app has no console; without it every
+        // transcode would flash a console window on Windows.
+        const child = spawn(ffmpegPath, ffmpegArgsFor(req, sourceUrl, 0, { copy: job.copied }), { windowsHide: true });
+        job.child = child;
+        child.stdout.on('data', (chunk) => {
+            job.producedAudio = true;
+            stallTimer.refresh();
+            // Counted once it is in the file, so a reader never waits for
+            // bytes that are not there yet.
+            const flowing = file.write(chunk, () => {
+                job.bytes += chunk.length;
+                job.events.emit('grow');
+            });
+            if (!flowing) {
+                child.stdout.pause();
+                file.once('drain', () => child.stdout.resume());
+            }
+        });
+        logFfmpegErrors(child);
+        child.on('error', (err) => {
+            console.error('Failed to start FFmpeg:', err.message);
+            job.failedToStart = true;
+            finish(-1);
+        });
+        // once: the counters must move exactly one step per process.
+        child.once('close', (code) => {
+            if (code !== 0 && job.copied && !job.producedAudio && !job.stopped && !job.failedToStart) {
+                console.warn(`${timing && timing.label ? timing.label : cacheKey}: the source could not be passed through as MP3; converting it instead.`);
+                job.copied = false;
+                stallTimer.refresh();
+                return launch();
+            }
+            return finish(code);
+        });
+    };
+    launch();
 
     if (prepare) enterBackground(job); // a prepared track has no listener from the start
     return job;
@@ -475,7 +506,7 @@ function follow(job, req, res, timing) {
             // Nobody is listening any more. Let it finish for the cache if
             // there is room for one more unattended conversion; otherwise stop it.
             if (backgroundTranscodes < MAX_BACKGROUND_TRANSCODES) enterBackground(job);
-            else job.child.kill('SIGKILL'); // exits non-zero, so the .part file is dropped
+            else stopJob(job); // exits non-zero, so the .part file is dropped
         }
         return true;
     };
@@ -530,10 +561,12 @@ function follow(job, req, res, timing) {
 
 // --- Straight from ffmpeg to the response ---------------------------------------------
 
-function streamDirect(req, res, { sourceUrl, seekTime, timing, onSourceFailed }) {
+function streamDirect(req, res, { sourceUrl, seekTime, timing, onSourceFailed, sourceCodec }) {
     const spawnedAt = Date.now();
-    const ffmpegProcess = spawn(ffmpegPath, ffmpegArgsFor(req, sourceUrl, seekTime), { windowsHide: true });
+    let copied = canCopy(req, sourceCodec);
+    let ffmpegProcess = null;
     let finished = false;
+    let stopped = false; // ended by us: the listener left, or the ceiling
     let producedAudio = false;
 
     activeTranscodes++;
@@ -543,42 +576,61 @@ function streamDirect(req, res, { sourceUrl, seekTime, timing, onSourceFailed })
         slotReleased = true;
         activeTranscodes--;
     };
+    const stop = () => {
+        stopped = true;
+        ffmpegProcess.kill('SIGKILL');
+    };
 
     // ffmpeg only works as fast as the listener reads here, so this is a
     // ceiling on listening time, not on conversion time.
     const cleanupTimer = setTimeout(() => {
-        if (!finished) ffmpegProcess.kill('SIGKILL');
+        if (!finished) stop();
     }, MAX_ATTENDED_MS);
-
-    ffmpegProcess.on('error', (err) => {
-        releaseSlot();
-        console.error('Failed to start FFmpeg:', err.message);
-        if (!res.headersSent) res.status(500).json({ error: 'Audio processor unavailable' });
-    });
-
-    ffmpegProcess.stdout.once('data', () => {
-        producedAudio = true;
-        logPlay(req, timing, `first audio ${Date.now() - spawnedAt} ms after starting ffmpeg${seekTime ? ` (seek to ${seekTime} s)` : ''}`);
-    });
 
     setMediaHeaders(res);
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Transfer-Encoding', 'chunked');
-    ffmpegProcess.stdout.pipe(res);
-    logFfmpegErrors(ffmpegProcess);
+
+    // Started once, or twice when a pass-through is not possible after all
+    // (see startJob): the response is therefore ended here, not by the pipe.
+    const launch = () => {
+        ffmpegProcess = spawn(ffmpegPath, ffmpegArgsFor(req, sourceUrl, seekTime, { copy: copied }), { windowsHide: true });
+        const child = ffmpegProcess;
+        child.on('error', (err) => {
+            releaseSlot();
+            console.error('Failed to start FFmpeg:', err.message);
+            if (!res.headersSent) res.status(500).json({ error: 'Audio processor unavailable' });
+        });
+        child.stdout.once('data', () => {
+            producedAudio = true;
+            logPlay(req, timing, `first audio ${Date.now() - spawnedAt} ms after starting ffmpeg${seekTime ? ` (seek to ${seekTime} s)` : ''}`);
+        });
+        child.stdout.pipe(res, { end: false });
+        logFfmpegErrors(child);
+        child.once('close', (code) => {
+            if (code !== 0 && copied && !producedAudio && !stopped) {
+                console.warn(`${timing && timing.label ? timing.label : 'A stream'}: the source could not be passed through as MP3; converting it instead.`);
+                copied = false;
+                child.stdout.unpipe(res);
+                return launch();
+            }
+            releaseSlot();
+            finished = true;
+            clearTimeout(cleanupTimer);
+            if (code !== 0 && !producedAudio && typeof onSourceFailed === 'function') onSourceFailed();
+            // 'close' comes after ffmpeg's output has ended, so everything it
+            // produced has been handed to the response by now.
+            if (!res.writableEnded && !res.destroyed) res.end();
+            return undefined;
+        });
+    };
+    launch();
 
     // Client went away: nothing is being kept, so stop the conversion.
     res.on('close', () => {
         if (res.writableFinished || finished) return;
         ffmpegProcess.stdout.unpipe(res);
-        ffmpegProcess.kill('SIGKILL');
-    });
-
-    ffmpegProcess.once('close', (code) => {
-        releaseSlot();
-        finished = true;
-        clearTimeout(cleanupTimer);
-        if (code !== 0 && !producedAudio && typeof onSourceFailed === 'function') onSourceFailed();
+        stop();
     });
 }
 
@@ -594,9 +646,10 @@ function streamDirect(req, res, { sourceUrl, seekTime, timing, onSourceFailed })
  *
  * `timing` ({ label, resolveMs, resolvedBy }) adds a line to the log when the
  * first audio is ready. `onSourceFailed` is called when ffmpeg could not get
- * any audio out of `sourceUrl`.
+ * any audio out of `sourceUrl`. `sourceCodec: 'mp3'` says the source is MP3
+ * already, which lets it be passed through instead of converted.
  */
-function streamTranscoded(req, res, { sourceUrl, cacheKey, seekTime = 0, allowCache = true, timing, onSourceFailed }) {
+function streamTranscoded(req, res, { sourceUrl, cacheKey, seekTime = 0, allowCache = true, timing, onSourceFailed, sourceCodec }) {
     const finalFilePath = cachePathFor(cacheKey);
     const prepare = isPrepare(req);
     const cacheable = Boolean(allowCache && finalFilePath && seekTime === 0);
@@ -621,10 +674,10 @@ function streamTranscoded(req, res, { sourceUrl, cacheKey, seekTime = 0, allowCa
         return res.status(503).json({ error: 'Too many streams in progress. Try again in a moment.', code: 'SERVER_BUSY' });
     }
 
-    const job = cacheable ? startJob(req, { sourceUrl, cacheKey, finalFilePath, timing, onSourceFailed, prepare }) : null;
+    const job = cacheable ? startJob(req, { sourceUrl, cacheKey, finalFilePath, timing, onSourceFailed, prepare, sourceCodec }) : null;
     if (prepare) return answerPrepare(res, job ? 'started' : 'skipped');
     if (job) return follow(job, req, res, timing);
-    return streamDirect(req, res, { sourceUrl, seekTime, timing, onSourceFailed });
+    return streamDirect(req, res, { sourceUrl, seekTime, timing, onSourceFailed, sourceCodec });
 }
 
 module.exports = {

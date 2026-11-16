@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useMusic } from '../context/hook';
 import useLyrics from '../hooks/useLyrics';
 import useOnlineLyrics from '../hooks/useOnlineLyrics';
+import { usePlaybackTime } from '../utils/playbackClock';
 import { setOnlineLyrics } from '../utils/settings';
 
 // The Lyrics tab of the Now Playing view (issue #30). Timed lyrics follow the
@@ -35,10 +36,11 @@ function lineAt(lines, time) {
     return found;
 }
 
-function TimedLyrics({ lines, time, onSeek }) {
+function TimedLyrics({ lines, onSeek }) {
     const boxRef = useRef(null);
     const touchedAt = useRef(0);
-    const current = lineAt(lines, time + LEAD_SEC);
+    // Renders when the line changes, not on every tick of the clock.
+    const current = usePlaybackTime((time) => lineAt(lines, time + LEAD_SEC));
 
     useEffect(() => {
         const box = boxRef.current;
@@ -111,7 +113,7 @@ function Credit({ result }) {
 }
 
 export default function Lyrics({ active }) {
-    const { currentTrack, currentTime, duration, seek } = useMusic();
+    const { currentTrack, duration, seek } = useMusic();
     const choice = useOnlineLyrics();
     const { loading, result, retry } = useLyrics(currentTrack, { enabled: active, online: choice === 'on' });
 
@@ -127,7 +129,7 @@ export default function Lyrics({ active }) {
         body = (
             <>
                 {timed
-                    ? <TimedLyrics key={`${currentTrack.source}:${currentTrack.id}`} lines={lines} time={currentTime} onSeek={seek} />
+                    ? <TimedLyrics key={`${currentTrack.source}:${currentTrack.id}`} lines={lines} onSeek={seek} />
                     : (
                         <div className="lyrics-scroll">
                             <p className="lyrics-plain">{result.plain || lines.map(line => line.text).join('\n')}</p>

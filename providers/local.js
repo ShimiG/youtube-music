@@ -52,17 +52,58 @@ async function getPlaylists({ db, userId }) {
     })), null);
 }
 
+// A folder is paged by "the rows after this one", not "skip N rows": skipping
+// reads every row it skips, so the last page of a 50,000-track folder took
+// fifteen times as long as the first (docs/performance-plan.md, step 4.2).
+// The cursor names the last row sent, "k<track id>.<rows so far>"; its place
+// in the order is looked up, and the index idx_local_tracks_order (the same
+// expressions as TRACK_ORDER, see config/db.js) leads straight to what follows.
+// The row count is only a fallback for when that row has gone meanwhile (a
+// rescan removed the file): the page is then found by skipping, as before.
+const ORDER_KEY = `COALESCE(t.artist, '') COLLATE NOCASE, COALESCE(t.album, '') COLLATE NOCASE,
+                   COALESCE(t.track_no, 0), t.title COLLATE NOCASE, t.id`;
+
+function parseFolderCursor(cursor) {
+    if (cursor === undefined || cursor === null || cursor === '') return null;
+    const m = /^k(\d{1,15})\.(\d{1,7})$/.exec(String(cursor));
+    if (!m || Number(m[2]) > MAX_OFFSET) throw new SourceError('BAD_CURSOR', 'Invalid cursor.', { source: SOURCE });
+    return { afterId: Number(m[1]), sent: Number(m[2]) };
+}
+
 async function getPlaylistTracks({ db, userId }, folderId, { cursor } = {}) {
     if (!/^[0-9]{1,12}$/.test(String(folderId))) throw new SourceError('NOT_FOUND', 'Folder not found.', { source: SOURCE });
     const owned = await db.get(`SELECT id FROM local_folders WHERE id = ? AND user_id = ?`, [Number(folderId), userId]);
     if (!owned) throw new SourceError('NOT_FOUND', 'Folder not found.', { source: SOURCE });
-    const offset = parseOffset(cursor);
-    const rows = await db.all(
-        `SELECT ${TRACK_COLUMNS} FROM local_tracks t WHERE t.folder_id = ? ${TRACK_ORDER} LIMIT ? OFFSET ?`,
-        [Number(folderId), PAGE_SIZE + 1, offset]
+    const folder = Number(folderId);
+    const from = parseFolderCursor(cursor);
+
+    const last = from && await db.get(
+        `SELECT COALESCE(t.artist, '') AS artist, COALESCE(t.album, '') AS album, COALESCE(t.track_no, 0) AS no, t.title AS title, t.id AS id
+         FROM local_tracks t WHERE t.id = ? AND t.folder_id = ?`,
+        [from.afterId, folder]
     );
+    let rows;
+    if (last) {
+        rows = await db.all(
+            `SELECT ${TRACK_COLUMNS} FROM local_tracks t
+             WHERE t.folder_id = ? AND COALESCE(t.artist, '') COLLATE NOCASE >= ?
+               AND (${ORDER_KEY}) > (?, ?, ?, ?, ?)
+             ${TRACK_ORDER} LIMIT ?`,
+            // The artist is given twice: SQLite does not use an index for a
+            // comparison of whole rows over expressions, but it does for the
+            // first of them on its own, which gets it to the right artist.
+            [folder, last.artist, last.artist, last.album, last.no, last.title, last.id, PAGE_SIZE + 1]
+        );
+    } else {
+        rows = await db.all(
+            `SELECT ${TRACK_COLUMNS} FROM local_tracks t WHERE t.folder_id = ? ${TRACK_ORDER} LIMIT ? OFFSET ?`,
+            [folder, PAGE_SIZE + 1, from ? from.sent : 0]
+        );
+    }
     const hasMore = rows.length > PAGE_SIZE;
-    return page(rows.slice(0, PAGE_SIZE).map(toTrack), hasMore ? String(offset + PAGE_SIZE) : null);
+    const items = rows.slice(0, PAGE_SIZE);
+    const sent = (from ? from.sent : 0) + items.length;
+    return page(items.map(toTrack), hasMore ? `k${items[items.length - 1].id}.${sent}` : null);
 }
 
 // LIKE with the wildcards in the user's text taken literally.

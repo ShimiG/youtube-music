@@ -6,3 +6,15 @@ export const PLACEHOLDER_ART = `data:image/svg+xml,${encodeURIComponent(svg)}`;
 
 /** A track's cover URL, or null. Older rows carry `image` instead of `thumbnail`. */
 export const artOf = (track) => (track && (track.thumbnail || track.image)) || null;
+
+// YouTube serves each cover in several sizes under the same address. The
+// catalogue gives the 480x360 one; a list row is 60 pixels wide and a card at
+// most 200, so lists ask for the 320x180 one instead: about a third of the
+// bytes, and no black bars above and below (docs/performance-plan.md, 5.3).
+const YOUTUBE_LARGE = /^(https:\/\/i\d*\.ytimg\.com\/vi(?:_webp)?\/[\w-]{11}\/)(?:hq|sd|maxres)default(\.(?:jpg|webp))/;
+
+/** A track's (or playlist's) cover at a size fit for a list, or null. */
+export const listArtOf = (item) => {
+    const url = artOf(item);
+    return url ? url.replace(YOUTUBE_LARGE, '$1mqdefault$2') : null;
+};

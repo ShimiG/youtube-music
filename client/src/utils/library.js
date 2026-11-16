@@ -8,6 +8,9 @@ import { paths, CODES, serviceOf } from './services';
 export async function likeTrack(source, trackId) {
     try {
         await apiFetch(paths.like(source), { method: 'POST', body: { trackId } });
+        // The Library may be showing that source's liked list (it stays alive
+        // while another view is on screen).
+        window.dispatchEvent(new CustomEvent('liked-changed', { detail: { source } }));
         return { ok: true };
     } catch (err) {
         if (err.code === CODES.SCOPE_REQUIRED) {

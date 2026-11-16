@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Turns an agent's findings JSON into GitHub Issues, one issue per finding.
 //
-// Used by the scheduled workflows (.github/workflows/security-review.yml and
-// product-discovery.yml). Each agent writes a findings file alongside its
+// Used by the weekly workflows (.github/workflows/security-review.yml and
+// product-discovery.yml) and by report-to-issues.yml. Each agent writes a findings file alongside its
 // Markdown report; this script opens a tracked issue for every finding that
 // passes the status/priority filter.
 //
@@ -41,7 +41,9 @@ function parseArgs(argv) {
     return args;
 }
 
-const DRY_RUN = process.env.DRY_RUN === '1' || process.env.DRY_RUN === 'true';
+// The flag was parsed and then ignored: only the environment variable counted,
+// so `--dry-run` filed real issues.
+const DRY_RUN = process.argv.includes('--dry-run') || process.env.DRY_RUN === '1' || process.env.DRY_RUN === 'true';
 
 // Findings whose status/priority is below this are reported but not turned into
 // tasks. Exploiter statuses: confirmed | potential | attempted-failed | info;

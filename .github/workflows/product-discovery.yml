@@ -1,0 +1,117 @@
+name: Product Discovery (weekly)
+
+# The product-discovery agent (.claude/agents/product-discovery.md), once a
+# week: it reads the repository, looks at comparable products on the web and
+# writes a prioritized roadmap. The report goes to a branch and a pull request,
+# and each roadmap item becomes an issue (scripts/report-to-issues.mjs, which
+# never files one twice and leaves out the low-priority ones).
+#
+# Setup is the same as for security-review.yml: one secret
+# (CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY), and for the pull request the
+# setting that lets Actions create one.
+
+on:
+  schedule:
+    - cron: '23 5 * * 3' # Wednesdays 05:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: product-discovery
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      HAS_CLAUDE_AUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' }}
+    steps:
+      - name: Check that Claude can sign in
+        if: env.HAS_CLAUDE_AUTH != 'true'
+        run: |
+          echo "::error::Set the repository secret CLAUDE_CODE_OAUTH_TOKEN (from 'claude setup-token') or ANTHROPIC_API_KEY."
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Date of this run
+        id: date
+        run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: Product discovery
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: >-
+            --max-turns 120
+            --allowedTools "Read,Grep,Glob,Bash,Write,WebSearch,WebFetch"
+          prompt: |
+            You are running as the scheduled WEEKLY product-discovery pass for the Music
+            Manager repository (a Node/Express + React desktop music app, checked out in
+            the working directory). Read `.claude/agents/product-discovery.md` and act
+            exactly as that agent: scan this repository and its docs (README.md,
+            ROADMAP.md, CHANGELOG.md, app.js, controllers/, client/src/) and research 4
+            to 6 comparable products on the web, then produce a prioritized,
+            evidence-backed feature roadmap. Earlier reports are in docs/ and
+            reports/product-discovery/: do not repeat an item that is already there or
+            already built; say what changed since the last one.
+
+            <DATE> is ${{ steps.date.outputs.date }}.
+
+            Write two files:
+            - docs/product-discovery-<DATE>.md - the full report in the persona's Output format.
+            - reports/product-discovery/<DATE>.findings.json - exactly the findings-file
+              schema in the persona (run.agent = "product-discovery", run.labels =
+              ["enhancement"], one entry per roadmap item, stable slug ids, priority
+              high/medium/low, size S/M/L). Only items you would actually put on the roadmap.
+
+            Change no other file. Do NOT commit, push, open a pull request or open
+            issues: the workflow does that with the two files.
+
+            Finish by stating the two file paths and the number of roadmap items.
+
+      - name: Publish the report (branch, pull request, issues)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATE: ${{ steps.date.outputs.date }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          FILES=("docs/product-discovery-$DATE.md" "reports/product-discovery/$DATE.findings.json")
+          for f in "${FILES[@]}"; do
+            [ -f "$f" ] || { echo "::error::The agent did not write $f"; exit 1; }
+          done
+          node -e "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'))" "reports/product-discovery/$DATE.findings.json"
+
+          BRANCH="automation/product-discovery-$DATE"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add -- "${FILES[@]}"          # the report and nothing else
+          git commit -m "Product discovery $DATE"
+          git push --force-with-lease origin "$BRANCH"
+          SHA=$(git rev-parse HEAD)
+
+          gh pr create --base "${{ github.event.repository.default_branch }}" --head "$BRANCH" \
+            --title "Product discovery $DATE" \
+            --body "Weekly run of the product-discovery agent. Report: \`docs/product-discovery-$DATE.md\`. One issue per roadmap item (not the low-priority ones) has been filed by this run." \
+            || echo "::warning::No pull request was opened (it exists already, or Actions may not create pull requests in this repository). The report is on the branch $BRANCH."
+
+          # A push made with this token starts no other workflow, so the issues
+          # are filed here and not by "Report to Issues".
+          node scripts/report-to-issues.mjs \
+            --input "reports/product-discovery/$DATE.findings.json" \
+            --report-url "$REPO_URL/blob/$SHA/reports/product-discovery/$DATE.findings.json"

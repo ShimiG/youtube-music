@@ -548,3 +548,10 @@
 .player-track-button[aria-expanded="true"] .chevron { transform: rotate(180deg); }
 .player-track-text { min-width: 0; }
 .player-track-text > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Settings -> System: what happened to the last plays. */
+.system-plays { margin-top: 18px; padding-top: 14px; border-top: 1px solid #2c2c2c; }
+.system-plays .system-list { margin-top: 8px; }
+.system-plays .system-list li { align-items: flex-start; }
+.system-plays .system-list li > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.system-plays .accounts-status { white-space: nowrap; flex-shrink: 0; }

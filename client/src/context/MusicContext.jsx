@@ -373,11 +373,21 @@ const seek = useCallback((time) => {
             failuresInARow.current += 1;
             // A missing helper program stops every streamed track, so say that
             // (once) instead of skipping through the whole queue.
-            apiFetch('/api/health')
+            // Two things are asked of the server: whether a helper program
+            // is missing altogether, and what it noted about this very play
+            // (the reason yt-dlp or ffmpeg gave: services/playReport.js).
+            const failedSource = currentTrack ? (currentTrack.source || DEFAULT_SOURCE) : '';
+            const failedId = currentTrack ? (currentTrack.id || currentTrack.videoId) : '';
+            const missingHelpers = apiFetch('/api/health')
                 .then(health => ['ytDlp', 'ffmpeg'].filter(name => health.binaries && health.binaries[name] && !health.binaries[name].available))
-                .catch(() => [])
-                .then(missing => {
+                .catch(() => []);
+            const whatWentWrong = apiFetch(`/api/system/plays?limit=1&source=${encodeURIComponent(failedSource)}&id=${encodeURIComponent(failedId)}`)
+                .then(data => { const last = data.plays && data.plays[0]; return last && last.status === 'failed' ? last.reason : null; })
+                .catch(() => null);
+            Promise.all([missingHelpers, whatWentWrong])
+                .then(([missing, why]) => {
                     if (loadSeq.current !== failedLoad) return; // another track was started meanwhile
+                    const because = why ? ` (${why})` : '';
                     if (missing.length) {
                         const names = missing.map(name => (name === 'ytDlp' ? 'yt-dlp' : name)).join(' and ');
                         toast(`Nothing can play: ${names} was not found on this computer. See Settings, System.`, { kind: 'error', timeoutMs: 12000 });
@@ -386,12 +396,12 @@ const seek = useCallback((time) => {
                         // these tracks: running on through the queue would only
                         // burn through it (and through the server's request
                         // limit, after which nothing at all can play for a while).
-                        toast(`${failuresInARow.current} tracks in a row could not be played, so playback has stopped. The reason is in the server's log (Settings, System).`, { kind: 'error', timeoutMs: 15000 });
+                        toast(`${failuresInARow.current} tracks in a row could not be played, so playback has stopped${because}. Settings, System lists what happened to each.`, { kind: 'error', timeoutMs: 20000 });
                     } else if (canSkip) {
-                        toast(`${title} is unavailable. Skipping to the next track.`, { kind: 'warning' });
+                        toast(`${title} could not be played${because}. Skipping to the next track.`, { kind: 'warning', timeoutMs: why ? 10000 : undefined });
                         playNext();
                     } else {
-                        toast(`${title} could not be played. Settings, System has the details.`, { kind: 'warning' });
+                        toast(`${title} could not be played${because}. Settings, System has the details.`, { kind: 'warning', timeoutMs: why ? 12000 : undefined });
                     }
                 });
         };

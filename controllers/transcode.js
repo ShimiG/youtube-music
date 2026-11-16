@@ -21,6 +21,7 @@ const path = require('path');
 const { EventEmitter } = require('events');
 const { spawn } = require('child_process');
 const { dataDir, resolveFfmpeg } = require('../services/paths');
+const playReport = require('../services/playReport');
 
 const ffmpegPath = resolveFfmpeg();
 const cacheDir = path.join(dataDir(), 'cache');
@@ -219,7 +220,9 @@ const answerPrepare = (res, prepared) => {
 // One line per play in the log (step 0 of the performance plan): what the
 // wait before the first sound was made of. `req.playStartedAt` is set when the
 // request arrives (controllers/streamingController.js).
-function logPlay(req, timing, detail) {
+function logPlay(req, timing, detail, how = 'conversion') {
+    // The same facts, kept for the app to show (services/playReport.js).
+    if (req && req.res) playReport.playing(req.res, { addressMs: timing && timing.resolvedBy ? timing.resolveMs : null, addressFrom: timing && timing.resolvedBy, how });
     if (!timing || !timing.label) return;
     const total = req && req.playStartedAt ? `, ${Date.now() - req.playStartedAt} ms after the request` : '';
     const resolve = timing.resolvedBy ? `address ${timing.resolveMs} ms (${timing.resolvedBy}), ` : '';
@@ -258,7 +261,7 @@ function serveFromCache(res, cacheKey, { req, seekTime = 0, timing } = {}) {
         streamTranscoded(req, res, { sourceUrl: finalFilePath, cacheKey, seekTime, allowCache: false, timing: { label: `${cacheKey} (seek in cached file)` } });
         return true;
     }
-    logPlay(req, timing || { label: cacheKey }, 'from the disk cache');
+    logPlay(req, timing || { label: cacheKey }, 'from the disk cache', 'cache');
     setMediaHeaders(res);
     res.sendFile(finalFilePath);
     return true;
@@ -286,14 +289,19 @@ function ffmpegArgsFor(req, sourceUrl, seekTime, { copy = false } = {}) {
     ];
 }
 
-function logFfmpegErrors(child) {
+// Logs what ffmpeg complains about; `onError` gets each complaint too (the
+// last one is the reason shown when a conversion produced nothing).
+function logFfmpegErrors(child, onError) {
     child.stderr.on('data', (data) => {
         const msg = data.toString();
         if (msg.includes('Error') || msg.includes('Invalid')) {
             console.error(`FFmpeg: ${msg.trim()}`);
+            if (onError) onError(msg.trim().split('\n').pop());
         }
     });
 }
+
+const NO_AUDIO = 'ffmpeg could not get any audio from the source';
 
 // --- Conversion jobs: ffmpeg -> cache file, responses read the growing file ------
 
@@ -365,6 +373,7 @@ function startJob(req, { sourceUrl, cacheKey, finalFilePath, timing, onSourceFai
         events: new EventEmitter(),
         startedAt: Date.now(),
         failedToStart: false,
+        complaint: null,     // the last thing ffmpeg complained about
         bytes: 0,            // written to the file so far
         producedAudio: false,
         done: false,         // ffmpeg has exited and the file is complete
@@ -443,10 +452,11 @@ function startJob(req, { sourceUrl, cacheKey, finalFilePath, timing, onSourceFai
                 file.once('drain', () => child.stdout.resume());
             }
         });
-        logFfmpegErrors(child);
+        logFfmpegErrors(child, (line) => { job.complaint = line; });
         child.on('error', (err) => {
             console.error('Failed to start FFmpeg:', err.message);
             job.failedToStart = true;
+            job.complaint = `ffmpeg could not be started: ${err.message}`;
             finish(-1);
         });
         // once: the counters must move exactly one step per process.
@@ -532,7 +542,7 @@ function follow(job, req, res, timing) {
                     res.setHeader('Transfer-Encoding', 'chunked');
                     logPlay(req, timing, joined
                         ? `joined a conversion started ${joinedAfterMs} ms earlier`
-                        : `first audio ${Date.now() - job.startedAt} ms after starting ffmpeg`);
+                        : `first audio ${Date.now() - job.startedAt} ms after starting ffmpeg`, joined ? 'joined' : 'conversion');
                 }
                 if (res.write(bytesRead === buffer.length ? buffer : buffer.subarray(0, bytesRead))) return pump();
                 blocked = true;
@@ -542,6 +552,8 @@ function follow(job, req, res, timing) {
             if (job.bytes > position) return pump(); // more arrived while this read was under way
             if (job.done) {
                 leave();
+                // Nothing came out of the conversion: say why, for the app to show.
+                if (position === 0 && !job.ok) playReport.reason(res, job.complaint ? `ffmpeg: ${job.complaint}` : NO_AUDIO, { failed: true });
                 if (job.failedToStart && position === 0 && !res.headersSent) {
                     return res.status(500).json({ error: 'Audio processor unavailable' });
                 }
@@ -568,6 +580,7 @@ function streamDirect(req, res, { sourceUrl, seekTime, timing, onSourceFailed, s
     let finished = false;
     let stopped = false; // ended by us: the listener left, or the ceiling
     let producedAudio = false;
+    let complaint = null; // the last thing ffmpeg complained about
 
     activeTranscodes++;
     let slotReleased = false;
@@ -606,7 +619,7 @@ function streamDirect(req, res, { sourceUrl, seekTime, timing, onSourceFailed, s
             logPlay(req, timing, `first audio ${Date.now() - spawnedAt} ms after starting ffmpeg${seekTime ? ` (seek to ${seekTime} s)` : ''}`);
         });
         child.stdout.pipe(res, { end: false });
-        logFfmpegErrors(child);
+        logFfmpegErrors(child, (line) => { complaint = line; });
         child.once('close', (code) => {
             if (code !== 0 && copied && !producedAudio && !stopped) {
                 console.warn(`${timing && timing.label ? timing.label : 'A stream'}: the source could not be passed through as MP3; converting it instead.`);
@@ -618,6 +631,7 @@ function streamDirect(req, res, { sourceUrl, seekTime, timing, onSourceFailed, s
             finished = true;
             clearTimeout(cleanupTimer);
             if (code !== 0 && !producedAudio && typeof onSourceFailed === 'function') onSourceFailed();
+            if (code !== 0 && !producedAudio && !stopped) playReport.reason(res, complaint ? `ffmpeg: ${complaint}` : NO_AUDIO, { failed: true });
             // 'close' comes after ffmpeg's output has ended, so everything it
             // produced has been handed to the response by now.
             if (!res.writableEnded && !res.destroyed) res.end();

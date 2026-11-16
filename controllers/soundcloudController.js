@@ -20,6 +20,7 @@ const LIKED_PLAYLIST_ID = 'liked';
 // Lengths are remembered there, across restarts, so repeated plays do not
 // fetch metadata (or start yt-dlp) again.
 const trackLengths = require('../services/trackLengths');
+const playReport = require('../services/playReport');
 
 // --- Provider selection (shared with providers/soundcloud.js) -----------------
 // See controllers/soundcloud/fallback.js for how api / ytdlp / auto is chosen.
@@ -27,6 +28,7 @@ const { providerMode, activeProvider, withFallback } = require('./soundcloud/fal
 
 function sendYtdlpError(res, err, fallbackMessage) {
     console.error(`SoundCloud (yt-dlp): ${fallbackMessage}:`, err.message);
+    playReport.reason(res, err.message);
     if (err.code === 'YTDLP_NO_URL') {
         return sendSourceError(res, 'TRACK_UNAVAILABLE', 'soundcloud', { status: 404, reason: 'blocked' });
     }

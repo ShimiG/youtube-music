@@ -5,6 +5,7 @@ const deezerController = require('./deezerController');
 const localController = require('./localController');
 const { handlersFor } = require('./matchedStream');
 const { isValidQuality } = require('./transcode');
+const playReport = require('../services/playReport');
 
 // Every source that plays through the server. Adding one means adding its
 // stream and duration handlers here; app.js never learns service details.
@@ -40,6 +41,8 @@ class StreamingController {
         const provider = resolveSource(req, res);
         // For the per-play line in the log (controllers/transcode.js logPlay).
         req.playStartedAt = Date.now();
+        // And for what the app itself shows about recent plays (services/playReport.js).
+        if (provider) playReport.begin(req, res, { source: String(req.query.source || 'youtube').toLowerCase(), id: req.query.videoId });
         if (provider) return provider.stream(req, res);
     }
 

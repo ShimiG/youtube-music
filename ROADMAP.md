@@ -499,6 +499,11 @@ music carries on down the list and the next track is prepared in ordinary
 use, not only after "Play All" (the next track in 0.3 s instead of a click
 and 2.4 s).
 
+And: the app now says what each play did. A track that cannot be played is
+reported with the reason (yt-dlp's or ffmpeg's own words), and Settings →
+System lists the recent plays with the time each took and what the wait was
+made of. That is also where the figures for the last open step come from.
+
 Step 1.5, the larger half: on the owner's Mac yt-dlp took 7.8 s to start
 (the single-file build unpacks itself on every run), and every uncached
 track waited for that. The app now fetches yt-dlp's folder build when the

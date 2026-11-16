@@ -278,11 +278,41 @@ copy that works with no connection on the first start; the folder build
 replaces it within the first minute. Carrying the folder build in the
 installer itself would save that minute and needs trying on a Mac.
 
+### Eighth round: the app says what each play did
+
+The timings were in the log since step 0, and so was the reason when a track
+failed. In practice neither reached anyone: a log has to be found and
+copied, and what the app itself said was "Failed to load audio. Skipping to
+next track." with nothing to tell a video YouTube refuses from a yt-dlp that
+is out of date, a full disk or a server that is busy.
+
+Now the server keeps the last 60 plays in memory (`services/playReport.js`):
+when each was asked for, how long until the first sound, how much of that
+was finding the audio address and where the address came from (a yt-dlp
+run, one already under way, memory), whether it came from the cache, and
+for a failure the words of whatever failed (yt-dlp's `ERROR:` line, ffmpeg's
+complaint, the rate limit). Requests that only prepare the next track and a
+browser's follow-up requests for a later part of a file are left out.
+
+- `GET /api/system/plays` hands them out, newest first. An account sees its
+  own plays, the first account everyone's.
+- The message when a track cannot be played carries the reason, for example
+  `"…" could not be played (yt-dlp: ERROR: [youtube] …: Sign in to confirm
+  you're not a bot). Skipping to the next track.`
+- **Settings → System → Recent plays** lists them with the time each took.
+
+Checked in the browser against a stand-in yt-dlp (2 s per look-up) with a
+playlist of four: one refused by "YouTube", one whose audio address was dead
+(ffmpeg: `Server returned 404 Not Found`), two that play. Both reasons
+appeared in the messages and in the list; the two that played show "Finding
+the audio took 2.0 s … Sound after 2.1 s".
+
 ### Still open
 
 - **The flags `yt-dlp` is run with** (the other half of 1.5). Only
-  comparable against the real thing; the `Play …` lines in the log give the
-  time per look-up, now without the start-up time hiding everything else.
+  comparable against the real thing. Settings → System → Recent plays now
+  shows the time per look-up on the computer that matters, without the
+  start-up time hiding everything else and without reading a log.
 
 ## Where the time goes
 

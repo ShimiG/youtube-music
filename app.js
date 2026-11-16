@@ -25,6 +25,7 @@ const artworkController = require('./controllers/artworkController');
 const settingsController = require('./controllers/settingsController');
 const cloudController = require('./controllers/cloudController');
 const logFile = require('./services/logFile');
+const playReport = require('./services/playReport');
 
 const app = express();
 
@@ -60,7 +61,16 @@ app.use(express.json({ limit: '1mb' }));
 // their sensitive endpoints.
 const apiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 });
 // yt-dlp + ffmpeg are expensive, so the media endpoints get their own cap.
-const mediaLimiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
+const mediaLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 60,
+    // A turned-away request is not seen by any handler: note it, so that
+    // "nothing plays" can be told apart from a track that is unavailable.
+    handler: (req, res, next, options) => {
+        playReport.rejected(req, 'too many requests for audio in one minute; wait a moment');
+        res.status(options.statusCode).json({ error: 'Too many requests for audio. Wait a moment.', code: 'RATE_LIMITED' });
+    }
+});
 // Login/register are brute-force targets, so they get a tighter cap.
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
 // Each resolve may spend up to 100 YouTube Music searches (and yt-dlp time);
@@ -94,6 +104,19 @@ app.get('/api/health', requireAuth, async (req, res, next) => {
         // Cannot tell who the owner is (no database yet): the answer without versions.
         const detailed = await isOwner(req.app.locals.db, req.userId).catch(() => false);
         res.json(await getHealth({ fresh: req.query.fresh === '1', detailed }));
+    } catch (err) {
+        next(err);
+    }
+});
+
+// What happened to the last few plays (services/playReport.js): how long
+// each took and why any failed. Each account sees its own; the owner sees all.
+app.get('/api/system/plays', requireAuth, async (req, res, next) => {
+    try {
+        const all = await isOwner(req.app.locals.db, req.userId).catch(() => false);
+        const pick = (value) => (typeof value === 'string' && value.length <= 64 ? value : undefined);
+        res.set('Cache-Control', 'no-store');
+        res.json({ plays: playReport.recent({ userId: all ? null : req.userId, limit: req.query.limit, source: pick(req.query.source), id: pick(req.query.id) }) });
     } catch (err) {
         next(err);
     }

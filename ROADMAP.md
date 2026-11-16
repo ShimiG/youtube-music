@@ -222,8 +222,6 @@ Tests: PKCE challenge, token grants, single-use refresh handling, app-token cach
 - Versions in `package.json`, `client/package.json`, `src-tauri/tauri.conf.json`
   and `src-tauri/Cargo.toml` still say 2.0.1 although v2.1.0 was released;
   bump them with the next release.
-- Run from source, yt-dlp is not fetched automatically (`bin/` is not in the
-  repository): it must be installed or placed in `bin/` by hand.
 
 ## Stage 2: Spotify and the match engine (on hold)
 
@@ -453,7 +451,7 @@ Everything around playback that is not a new source.
   code shown on the desktop) and an authenticated WebSocket, rather than
   "same Google account" as the issue suggests. Two to three days.
 
-## Stage 8: Performance (done, except one step that needs real timings)
+## Stage 8: Performance (done; one tuning step left for real timings)
 
 From a code review and measurements; the full plan, with the numbers and how
 each step is checked, is in
@@ -501,10 +499,15 @@ music carries on down the list and the next track is prepared in ordinary
 use, not only after "Play All" (the next track in 0.3 s instead of a click
 and 2.4 s).
 
-Open: only 1.5 (which `yt-dlp` build the installers carry, and the flags it
-is run with), which needs figures from the owner's computer: "starts in …
-s" under Settings → System in the installed app, and the `Play …` lines in
-the log.
+Step 1.5, the larger half: on the owner's Mac yt-dlp took 7.8 s to start
+(the single-file build unpacks itself on every run), and every uncached
+track waited for that. The app now fetches yt-dlp's folder build when the
+one in use is slow or missing, checks it, tries it, and switches to it only
+if it runs and starts faster; it keeps it up to date itself. Not yet run on
+a Mac.
+
+Open: the flags `yt-dlp` is run with, to be judged from the `Play …` lines
+in the owner's log.
 
 ## Stage 9: Data that survives and follows the user (built; real-account run open)
 

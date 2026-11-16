@@ -1,19 +1,29 @@
 // Shared yt-dlp binary location and its self-update.
 //
 // yt-dlp breaks whenever YouTube or SoundCloud change their sites, and the fix
-// is nearly always "run the latest release", so the server refreshes the
-// binary in the background, once a day, shortly after it starts. Startup never
-// waits on it: the update only logs its outcome. Disable with
+// is nearly always "run the latest release", so the server refreshes it in
+// the background, once a day, shortly after it starts. Startup never waits on
+// it: the update only logs its outcome. Disable with
 // YTDLP_AUTO_UPDATE=false (tests and CI, or offline machines).
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 
 const { resolveYtDlp, dataDir } = require('./paths');
+const folder = require('./ytdlpFolder');
 
-// See services/paths.js: bin/ in the project during development; the data
-// folder when packaged (so `-U` can rewrite it); else a system install.
-const ytDlpPath = resolveYtDlp();
+// The yt-dlp found at start-up. See services/paths.js: bin/ in the project
+// during development; the data folder when packaged (so `-U` can rewrite
+// it); else a system install.
+const foundAtStart = resolveYtDlp();
+
+// The folder build, when the app has fetched one and it proved faster
+// (services/ytdlpFolder.js). It can arrive while the server runs, so the
+// yt-dlp to use is asked for each time (ytDlpPath()), not kept in a constant.
+let folderBuild = folder.currentExe();
+
+/** The yt-dlp to run, now. */
+const ytDlpPath = () => process.env.YTDLP_PATH || folderBuild || foundAtStart;
 
 const UPDATE_TIMEOUT_MS = 2 * 60 * 1000;
 
@@ -25,7 +35,7 @@ function autoUpdateEnabled() {
 // Wrapped so tests can stub the process call.
 const runner = {
     exec: (args, options = {}) => new Promise((resolve, reject) => {
-        execFile(ytDlpPath, args, { timeout: UPDATE_TIMEOUT_MS, windowsHide: true, ...options }, (error, stdout, stderr) => {
+        execFile(foundAtStart, args, { timeout: UPDATE_TIMEOUT_MS, windowsHide: true, ...options }, (error, stdout, stderr) => {
             if (error) {
                 error.stdout = stdout ? stdout.toString() : '';
                 error.stderr = stderr ? stderr.toString() : '';
@@ -55,8 +65,8 @@ async function updateYtDlp({ log = console } = {}) {
     if (!autoUpdateEnabled()) {
         return { skipped: true, message: 'yt-dlp auto-update disabled (YTDLP_AUTO_UPDATE=false)' };
     }
-    if (!fs.existsSync(ytDlpPath)) {
-        const message = `yt-dlp binary not found at ${ytDlpPath}; skipping update`;
+    if (!fs.existsSync(foundAtStart)) {
+        const message = `yt-dlp binary not found at ${foundAtStart}; skipping update`;
         log.warn(message);
         return { skipped: true, message };
     }
@@ -89,10 +99,32 @@ function updateDue(stampFile = defaultStampFile(), now = Date.now()) {
     }
 }
 
-/** updateYtDlp(), unless it already ran in the last day. A failed run is tried again next time. */
+/**
+ * The daily look at yt-dlp, unless it already happened in the last day. A
+ * failed look is tried again at the next start.
+ *
+ * First the folder build (services/ytdlpFolder.js): brought up to date when
+ * it is in use, fetched when the yt-dlp in use is slow to start or missing.
+ * When it is in use afterwards there is nothing else to update. Otherwise
+ * the single-file yt-dlp updates itself with `yt-dlp -U`, as before.
+ */
 async function updateYtDlpIfDue({ log = console, stampFile = defaultStampFile() } = {}) {
-    if (!updateDue(stampFile)) return { skipped: true, message: 'yt-dlp was checked for updates less than a day ago' };
-    const result = await updateYtDlp({ log });
+    const due = updateDue(stampFile);
+    // Whether to fetch the folder build at all is settled at the first start
+    // where it could help, not a day later (it then settles in a moment,
+    // from what was found last time).
+    const undecided = !folderBuild && !folder.notManaged();
+    if (!due && !undecided) return { skipped: true, message: 'yt-dlp was checked for updates less than a day ago' };
+    const fast = await folder.ensure({ currentPath: foundAtStart, log });
+    if (fast.status === 'installed') {
+        folderBuild = fast.exe;
+        // Settings -> System shows the new one at once.
+        require('./health')._resetMemo();
+    }
+    if (!due) return { skipped: fast.status !== 'installed', updated: fast.status === 'installed', message: fast.message };
+    const result = folderBuild && !process.env.YTDLP_PATH
+        ? { skipped: false, updated: fast.status === 'installed', failed: fast.status === 'failed', message: fast.message }
+        : await updateYtDlp({ log });
     if (!result.skipped && !result.failed) {
         try {
             fs.writeFileSync(stampFile, `${new Date().toISOString()}\n`);
@@ -101,4 +133,7 @@ async function updateYtDlpIfDue({ log = console, stampFile = defaultStampFile() 
     return result;
 }
 
-module.exports = { ytDlpPath, runner, autoUpdateEnabled, summarizeUpdateOutput, updateYtDlp, updateYtDlpIfDue, updateDue, CHECK_EVERY_MS };
+// Tests only.
+function _useFolderBuild(exe) { folderBuild = exe || null; }
+
+module.exports = { ytDlpPath, runner, autoUpdateEnabled, summarizeUpdateOutput, updateYtDlp, updateYtDlpIfDue, updateDue, CHECK_EVERY_MS, _useFolderBuild };

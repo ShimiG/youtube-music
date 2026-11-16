@@ -72,12 +72,21 @@ and the SoundCloud tab in the Library always need the official API, because yt-d
 no user session. Note that yt-dlp reads SoundCloud's internal web API, which is outside
 the API Terms of Use and can break when SoundCloud changes its site.
 
-### yt-dlp self-update
+### Keeping yt-dlp working, and quick
 
-`yt-dlp` breaks whenever YouTube or SoundCloud change their sites, so the server runs
-`yt-dlp -U` in the background shortly after it starts, at most once a day
-(`services/ytdlp.js`). Startup never waits on it and a failed update just logs a warning. Set `YTDLP_AUTO_UPDATE=false` to
-turn it off (CI and tests do).
+`yt-dlp` breaks whenever YouTube or SoundCloud change their sites, so the server looks
+after it in the background, shortly after it starts and at most once a day
+(`services/ytdlp.js`). Startup never waits on it and a failure just logs a warning.
+
+- The single-file yt-dlp (the one the installers carry) updates itself with `yt-dlp -U`.
+  It also unpacks itself on every run, which on macOS can take several seconds per track.
+- So when the yt-dlp in use is slow to start, or there is none, the app downloads
+  yt-dlp's **folder build** into the data folder (`services/ytdlpFolder.js`), checks it
+  against the release's checksums, and switches to it only if it runs and starts faster.
+  From then on it fetches new releases itself. Settings → System shows how long the
+  yt-dlp in use takes to start.
+- `YTDLP_PATH` names the yt-dlp to use and switches all of this off for it;
+  `YTDLP_AUTO_UPDATE=false` turns the updates and the download off (CI and tests do).
 
 ## Library API (one shape for every source)
 
@@ -207,7 +216,7 @@ Required environment variables (see `.env.example`):
 | `LOG_FILE` | `off` stops the server writing `logs/server.log` (default: on) |
 | `SOUNDCLOUD_REDIRECT_URI` | SoundCloud OAuth callback registered on the app, default `http://localhost:3000/auth/soundcloud/callback` |
 | `SOUNDCLOUD_PROVIDER` | `auto` (default), `api` or `ytdlp`; see "SoundCloud without API credentials" |
-| `YTDLP_AUTO_UPDATE` | Run `yt-dlp -U` shortly after the server starts, once a day (default `true`) |
+| `YTDLP_AUTO_UPDATE` | Keep yt-dlp up to date (and fetch its faster folder build when the one in use is slow), shortly after the server starts, once a day (default `true`) |
 | `CLIENT_ORIGIN` | Allowed browser origin(s), comma-separated (default `http://localhost:5173`) |
 | `MATCH_DURATION_TOLERANCE_SEC` | Largest duration difference, in seconds, between a track and its YouTube match (default `5`) |
 | `MATCH_CONCURRENCY` | Concurrent YouTube Music searches (default `4`); the yt-dlp fallback always runs one at a time |

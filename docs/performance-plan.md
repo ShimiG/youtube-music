@@ -1,9 +1,10 @@
 # Performance plan
 
 Status: plan from a code review and measurements (12 Nov 2026). **Built:
-everything except step 1.5** (see "Done so far"), plus a fifth round on the
-cost of cloud sync, which was added after the plan. Step 1.5 is about
-`yt-dlp` itself and can only be judged on the owner's computer.
+every step** (see "Done so far"), plus rounds on what came up afterwards
+(the cost of cloud sync, the next track in ordinary use). Of step 1.5 the
+larger half is done (a yt-dlp that starts quickly); the flags it is run with
+are left, to be judged on the owner's computer.
 
 ## What was measured
 
@@ -234,21 +235,54 @@ started (warm disk). A V8 code cache made that 0.16 s, but it does not work
 together with the two dynamic imports in the bundle, and 40 ms is not worth
 that risk. Minifying the bundle made no difference to the start.
 
-### Still open: step 1.5
+### Seventh round: step 1.5, a yt-dlp that starts quickly
 
-Two parts, and neither can be settled from the build machine:
+The figure from the owner's Mac (Settings → System, 16 Nov 2026): **yt-dlp
+starts in 7.8 s**. Every track that is not in the cache waited at least that
+long before anything else happened; it is the largest delay there was left.
 
-- **Which `yt-dlp` the installers carry.** They ship the single-file build
-  (`yt-dlp_macos`, `yt-dlp.exe`), which unpacks itself on every start; every
-  play that is not in the cache waits for that. Settings → System shows the
-  figure ("starts in … s") in the installed app. The folder build does not
-  unpack, but it cannot update itself (`yt-dlp -U`), which the app relies on
-  to keep playback working, so switching means the app downloading and
-  unpacking updates itself, and bundling a folder instead of one file in the
-  installer. Worth doing only if that figure is large, and it has to be
-  tried on a Mac.
-- **The flags `yt-dlp` is run with.** Only comparable against the real
-  thing; the `Play …` lines in the log give the time per look-up.
+The cause is the build, not the Mac. Both the installers and a copy placed
+in `bin/` use yt-dlp's single-file build (`yt-dlp_macos`, `yt-dlp.exe`),
+which unpacks itself into a new temporary folder on every run, and macOS
+scans what was unpacked each time. yt-dlp also publishes a folder build of
+every release, which is unpacked once and then simply starts.
+
+What the app does now (`services/ytdlpFolder.js`, `services/unzip.js`):
+
+- 45 seconds after start it measures how long the yt-dlp in use takes to
+  start. Within 1.5 s (a Homebrew or pip install): nothing is done. Slower,
+  or no yt-dlp at all: it downloads the folder build of the latest release
+  into the data folder (`bin/yt-dlp-folder/`).
+- The download is checked against the checksums the release publishes,
+  unpacked by the app's own code (which refuses names that leave the
+  folder, symbolic links, and anything larger than it claims to be), and
+  then **tried**: it must run, and start faster than what is there. Only
+  then is it used, from the next look-up on, without a restart. If it is
+  not faster, nothing changes and it is not tried again for a week.
+- The folder build cannot update itself, so the daily look compares the
+  release's checksum with the installed one (a one-kilobyte request) and
+  fetches a new release the same way. A release that does not run leaves
+  the working one in use.
+- Not done when `YTDLP_PATH` names a yt-dlp, or `YTDLP_AUTO_UPDATE=false`.
+  Downloads come from GitHub's own hosts only.
+
+Measured: on the build machine (Linux) the whole path ran against the real
+release once: downloaded, checksum matched, unpacked, tried; that folder
+build started in 0.56 s. It has **not** been run on a Mac. What to expect
+there is the difference between 7.8 s and well under a second per look-up;
+Settings → System shows the real figure after the switch, and the log has a
+line `yt-dlp: now using the folder build …: starts in … ms instead of … ms`.
+
+Left as it is: the installers still carry the single-file build, as the
+copy that works with no connection on the first start; the folder build
+replaces it within the first minute. Carrying the folder build in the
+installer itself would save that minute and needs trying on a Mac.
+
+### Still open
+
+- **The flags `yt-dlp` is run with** (the other half of 1.5). Only
+  comparable against the real thing; the `Play …` lines in the log give the
+  time per look-up, now without the start-up time hiding everything else.
 
 ## Where the time goes
 

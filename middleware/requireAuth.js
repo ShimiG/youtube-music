@@ -20,9 +20,12 @@ module.exports = (req, res, next) => {
         // jsonwebtoken only checks `exp` when present; a session must expire.
         if (typeof payload.exp !== 'number') throw new Error('no expiry');
         // Other tokens signed with the same secret (the OAuth `state`, which
-        // travels through the browser URL) carry a different `purpose` and
-        // must never work as a login session.
-        if (payload.purpose !== undefined && payload.purpose !== 'session') throw new Error('wrong token purpose');
+        // travels through the browser URL; the media token in audio URLs)
+        // carry a different `purpose` and must never work as a login session.
+        // Every session says so itself. Until 16 Nov 2026 a token with no
+        // purpose at all was still accepted, for sessions issued before the
+        // field existed; those have all expired (sessions last 7 days).
+        if (payload.purpose !== 'session') throw new Error('wrong token purpose');
         if (!Number.isInteger(payload.userId) || payload.userId <= 0) throw new Error('bad subject');
         req.userId = payload.userId;
         next();

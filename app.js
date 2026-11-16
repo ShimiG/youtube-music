@@ -16,6 +16,7 @@ const playlistController = require('./controllers/playlistController');
 const historyController = require('./controllers/historyController');
 const streamingController = require('./controllers/streamingController');
 const { getHealth } = require('./services/health');
+const { isOwner } = require('./services/appSettings');
 const soundcloudController = require('./controllers/soundcloudController');
 const libraryController = require('./controllers/libraryController');
 const matchController = require('./controllers/matchController');
@@ -85,11 +86,15 @@ app.get('/', (req, res) => {
     res.json({ status: 'Running', message: 'Music Backend is active' });
 });
 app.get('/test', (req, res) => res.send('Server is working!'));
-// Detailed health (app + yt-dlp/ffmpeg versions + cache usage). Behind our
-// login because binary versions help an attacker pick a known exploit.
+// Health (app version, whether yt-dlp and ffmpeg were found, cache usage) for
+// every account; the exact versions of the helper programs and of Node only
+// for the installation's owner, because they help an attacker pick a known
+// exploit (services/health.js).
 app.get('/api/health', requireAuth, async (req, res, next) => {
     try {
-        res.json(await getHealth({ fresh: req.query.fresh === '1' }));
+        // Cannot tell who the owner is (no database yet): the answer without versions.
+        const detailed = await isOwner(req.app.locals.db, req.userId).catch(() => false);
+        res.json(await getHealth({ fresh: req.query.fresh === '1', detailed }));
     } catch (err) {
         next(err);
     }
@@ -238,9 +243,20 @@ app.use((err, req, res, next) => {
     if (err && err.message === 'Not allowed by CORS') {
         return res.status(403).json({ error: 'Origin not allowed' });
     }
+    // A request the server could not read (a body over the size limit, JSON
+    // that does not parse) is the client's mistake, not a failure here: say
+    // so with its own status instead of a 500. Only for errors the HTTP layer
+    // itself marks as safe to show (`expose`), never for one of ours that
+    // happens to carry a status; and with a fixed message either way.
+    const status = Number(err && (err.status || err.statusCode));
+    if (err && err.expose === true && status >= 400 && status < 500) {
+        console.warn(`Rejected request: ${req.method} ${req.path} (${status}${err.type ? `, ${err.type}` : ''})`);
+        if (res.headersSent) return undefined;
+        return res.status(status).json({ error: status === 413 ? 'Request body too large.' : 'Malformed request.' });
+    }
     console.error('Unhandled error:', err);
-    if (res.headersSent) return;
-    res.status(500).json({ error: 'Internal server error' });
+    if (res.headersSent) return undefined;
+    return res.status(500).json({ error: 'Internal server error' });
 });
 
 module.exports = app;

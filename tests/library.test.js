@@ -16,7 +16,7 @@ const scClient = require('../controllers/soundcloud/client');
 const scTokens = require('../controllers/soundcloud/tokens');
 const ytdlp = require('../controllers/soundcloud/ytdlp');
 
-const validToken = jwt.sign({ userId: 1 }, process.env.JWT_SECRET, { expiresIn: '1h' });
+const validToken = jwt.sign({ userId: 1, purpose: 'session' }, process.env.JWT_SECRET, { expiresIn: '1h' });
 const auth = { Authorization: `Bearer ${validToken}` };
 
 const FRESH = { access_token: 'yt-token', expires_at: Date.now() + 60 * 60 * 1000 };

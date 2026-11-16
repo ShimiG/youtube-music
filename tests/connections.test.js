@@ -8,7 +8,7 @@ const app = require('../app');
 const connections = require('../services/connections');
 const { encrypt, decrypt } = require('../services/tokenCrypto');
 
-const authHeader = { Authorization: `Bearer ${jwt.sign({ userId: 1 }, process.env.JWT_SECRET, { expiresIn: '1h' })}` };
+const authHeader = { Authorization: `Bearer ${jwt.sign({ userId: 1, purpose: 'session' }, process.env.JWT_SECRET, { expiresIn: '1h' })}` };
 
 const googleResponse = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
 

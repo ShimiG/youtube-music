@@ -246,6 +246,17 @@ and worth doing first whatever is decided about the cloud.
     and a packaged server with a built-in address. Google itself could not
     be reached from the build machine, so the exchange with Google is
     covered by the Worker's tests against a stand-in, not by a real login.
+- **The cloud address is only ever a public https address** (security
+  review 2026-11-16). It is typed in by a person, so the app's server must
+  not be made to call this computer, the network behind it, or a cloud
+  provider's metadata address through it. An address that is private as
+  written is refused before anything is sent, on every route that takes one
+  (Settings, and the login screen of a computer with no accounts, which
+  needs no login). A name is checked when the connection is made, against
+  the address the socket really connects to (`services/netGuard.js`, shared
+  with the cover-image fetch), so it cannot pass a check and then lead
+  somewhere else. `CLOUD_ALLOW_LOCAL=1` lifts this for developing the Worker
+  with `wrangler dev`; it is off unless set.
 - Not built: SoundCloud's login through the cloud, changing the cloud
   password, deleting the cloud account from the app.
 

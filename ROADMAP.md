@@ -216,8 +216,6 @@ Tests: PKCE challenge, token grants, single-use refresh handling, app-token cach
 - The Repeat button in the player bar does nothing yet.
 - Remove the legacy `/search`, `/playlists` and `/api/soundcloud/*` aliases
   (deprecated in v2.0.0).
-- From 16 Nov 2026: require `purpose: 'session'` on every login token (old
-  tokens without it have expired by then).
 - YouTube playback in the installed app is not yet confirmed on a real Mac.
   Settings → System now shows whether yt-dlp and ffmpeg were found
   and the server keeps a log file, so the next failure can be diagnosed.

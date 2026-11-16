@@ -20,7 +20,7 @@ const client = require('../controllers/soundcloud/client');
 const soundcloudController = require('../controllers/soundcloudController');
 const { parseReturnTarget } = require('../services/oauthReturn');
 
-const authHeader = { Authorization: `Bearer ${jwt.sign({ userId: 1 }, process.env.JWT_SECRET, { expiresIn: '1h' })}` };
+const authHeader = { Authorization: `Bearer ${jwt.sign({ userId: 1, purpose: 'session' }, process.env.JWT_SECRET, { expiresIn: '1h' })}` };
 const stateFrom = (url) => new URL(url).searchParams.get('state');
 
 beforeEach(() => {

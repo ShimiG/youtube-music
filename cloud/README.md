@@ -273,6 +273,12 @@ npm run migrate:local
 npm run dev
 ```
 
+Music Manager refuses a cloud address on this computer unless it is started
+with `CLOUD_ALLOW_LOCAL=1` (in the environment, or in the `.env` file of its
+data folder). With it, enter `http://localhost:8787` as the cloud address.
+Leave it off otherwise: it is what keeps the app's server from being pointed
+at something inside your own network.
+
 ## Limits it is built around (Cloudflare's free plan)
 
 - 10 ms of processor time per request: passwords are stretched on the

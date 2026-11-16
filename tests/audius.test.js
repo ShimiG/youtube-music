@@ -15,7 +15,7 @@ const app = require('../app');
 const audius = require('../providers/audius');
 const { withMedia } = require('./helpers/media');
 
-const auth = { Authorization: `Bearer ${jwt.sign({ userId: 1 }, process.env.JWT_SECRET, { expiresIn: '1h' })}` };
+const auth = { Authorization: `Bearer ${jwt.sign({ userId: 1, purpose: 'session' }, process.env.JWT_SECRET, { expiresIn: '1h' })}` };
 
 const track = (over = {}) => ({
     id: 'D7KyD',

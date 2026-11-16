@@ -4,7 +4,7 @@ const app = require('../app');
 const { withMedia } = require('./helpers/media');
 
 // A valid token the app will accept (JWT_SECRET is set in tests/setup.js).
-const validToken = jwt.sign({ userId: 1 }, process.env.JWT_SECRET, { expiresIn: '1h' });
+const validToken = jwt.sign({ userId: 1, purpose: 'session' }, process.env.JWT_SECRET, { expiresIn: '1h' });
 const authHeader = { Authorization: `Bearer ${validToken}` };
 
 describe('Health & routing', () => {
@@ -150,22 +150,64 @@ describe('Session token hardening', () => {
     });
 
     it('rejects an alg=none token', async () => {
-        const none = jwt.sign({ userId: 1 }, null, { algorithm: 'none' });
+        const none = jwt.sign({ userId: 1, purpose: 'session' }, null, { algorithm: 'none' });
         const res = await request(app).get('/api/user/connections').set('Authorization', `Bearer ${none}`);
         expect(res.statusCode).toBe(401);
     });
 
+    // Security review 2026-11-16, generic-error-handler-masks-status-codes.
+    it('answers a request it cannot read with the client\'s own status, and says nothing about the inside', async () => {
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+        const big = await request(app).post('/api/register').send({ username: 'someone', password: 'x'.repeat(2 * 1024 * 1024) });
+        expect(big.statusCode).toBe(413);
+        expect(big.body).toEqual({ error: 'Request body too large.' });
+
+        const broken = await request(app).post('/api/login').set('Content-Type', 'application/json').send('{"username": "a", ');
+        expect(broken.statusCode).toBe(400);
+        expect(broken.body).toEqual({ error: 'Malformed request.' });
+        expect(JSON.stringify(broken.body)).not.toMatch(/JSON|position|Unexpected|at /);
+        // Not logged as a failure of the server.
+        expect(error).not.toHaveBeenCalled();
+        expect(warn.mock.calls.map(([line]) => line)).toEqual([
+            expect.stringMatching(/^Rejected request: POST \/api\/register \(413, entity\.too\.large\)$/),
+            expect.stringMatching(/^Rejected request: POST \/api\/login \(400, entity\.parse\.failed\)$/)
+        ]);
+        warn.mockRestore();
+        error.mockRestore();
+    });
+
+    it('still answers 500, with no detail, for a failure of its own, whatever status that error carries', async () => {
+        const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+        // An internal error that happens to have a 4xx status and a message: neither reaches the client.
+        const inner = Object.assign(new Error('SELECT secret FROM users failed at /home/me/app.js'), { status: 404 });
+        app.locals.db = { all: jest.fn().mockRejectedValue(inner), get: jest.fn(), run: jest.fn() };
+        const res = await request(app).get('/api/user/connections').set('Authorization', `Bearer ${validToken}`);
+        expect(res.statusCode).toBe(500);
+        expect(res.body).toEqual({ error: 'Internal server error' });
+        expect(error).toHaveBeenCalled();
+        error.mockRestore();
+    });
+
     it('rejects a token without a valid numeric userId', async () => {
-        const bad = jwt.sign({ userId: '1 OR 1=1' }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        const bad = jwt.sign({ userId: '1 OR 1=1', purpose: 'session' }, process.env.JWT_SECRET, { expiresIn: '1h' });
         const res = await request(app).get('/api/user/connections').set('Authorization', `Bearer ${bad}`);
         expect(res.statusCode).toBe(401);
     });
 
-    it('accepts both new session tokens and legacy tokens without a purpose', async () => {
-        for (const payload of [{ userId: 1, purpose: 'session' }, { userId: 1 }]) {
-            const t = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
-            const res = await request(app).get('/api/user/connections').set('Authorization', `Bearer ${t}`);
-            expect(res.statusCode).toBe(200);
+    // Tokens from before the `purpose` field were accepted until 16 Nov 2026;
+    // sessions last 7 days, so none of them is still valid.
+    it('accepts a session token, and nothing that does not say it is one', async () => {
+        const call = (payload) => request(app).get('/api/user/connections')
+            .set('Authorization', `Bearer ${jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' })}`);
+        expect((await call({ userId: 1, purpose: 'session' })).statusCode).toBe(200);
+        for (const payload of [{ userId: 1 }, { userId: 1, purpose: 'media' }, { userId: 1, purpose: 'google_oauth' }, { userId: 1, purpose: '' }, { userId: 1, purpose: null }, { userId: 1, purpose: ['session'] }]) {
+            expect((await call(payload)).statusCode).toBe(401);
         }
+    });
+
+    it('the tokens the app itself hands out at login and registration are sessions', async () => {
+        const { issueToken } = require('../controllers/UserController');
+        expect(jwt.verify(issueToken(7), process.env.JWT_SECRET)).toMatchObject({ userId: 7, purpose: 'session', exp: expect.any(Number) });
     });
 });

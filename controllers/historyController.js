@@ -52,7 +52,7 @@ const logHistory = async (req, res, next) => {
             `, [userId, userId]);
         });
 
-        cloudSync.touch(userId); // synced shortly, when this user is linked to the cloud
+        cloudSync.touch(userId, ['history']); // synced shortly, when this user is linked to the cloud
         res.status(200).json({ success: true });
     } catch (error) {
         next(error);

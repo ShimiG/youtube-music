@@ -30,6 +30,11 @@ const RENEW_BEFORE_MS = 7 * 24 * 60 * 60 * 1000;
 const TOUCH_DELAY_MS = 4000;
 const INTERVAL_MS = 5 * 60 * 1000;
 const START_DELAY_MS = 30 * 1000;
+const FULL_EVERY_RUNS = 12; // every twelfth timed run (once an hour) reads everything
+const COMPARE_CHUNK = 1000; // records compared before other requests get a turn
+
+// Lets whatever else is waiting in the server run (a request, a piece of audio).
+const breathe = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 // --- Installation-wide values -------------------------------------------------
 
@@ -206,6 +211,7 @@ async function localUserFor(db, cloudName) {
 /** Stops syncing this user. Their data stays here and in the cloud. */
 async function unlink(db, userId) {
     linked.delete(userId);
+    pending.delete(userId);
     // A YouTube login that came from the cloud account goes with it (it is a
     // short-lived token with nothing here to renew it). One connected on this
     // computer with its own credentials stays.
@@ -233,10 +239,18 @@ function cloudWins(change, known, ourDeviceId) {
     return false; // what we already agreed on
 }
 
-async function detectLocalChanges(db, userId, local) {
+async function detectLocalChanges(db, userId, local, scope = records.COLLECTIONS) {
     const now = Date.now();
     const known = new Map();
-    for (const row of await db.all('SELECT collection, record_id, hash, updated_at, deleted, dirty FROM sync_records WHERE user_id = ?', [userId])) {
+    if (scope.length === 0) return;
+    // Only the collections that were read: a record of another collection is
+    // missing from `local` because it was not looked at, not because it is gone.
+    const rows = await db.all(
+        `SELECT collection, record_id, hash, updated_at, deleted, dirty FROM sync_records
+         WHERE user_id = ? AND collection IN (${scope.map(() => '?').join(',')})`,
+        [userId, ...scope]
+    );
+    for (const row of rows) {
         known.set(records.keyOf(row.collection, row.record_id), row);
     }
     const upsert = (collection, id, hash, updatedAt, deleted) => db.run(
@@ -244,27 +258,38 @@ async function detectLocalChanges(db, userId, local) {
          ON CONFLICT(user_id, collection, record_id) DO UPDATE SET hash = excluded.hash, updated_at = excluded.updated_at, deleted = excluded.deleted, dirty = 1`,
         [userId, collection, id, hash, updatedAt, deleted ? 1 : 0]
     );
-    // One transaction: linking a computer with a full library marks every
-    // record at once.
-    await db.transaction(async () => {
+    // Working out what changed means hashing every record that was read. For
+    // a large library that is a noticeable stretch of work, so it is done in
+    // pieces, with the server free to answer other requests in between.
+    const changes = [];
+    let done = 0;
     for (const [key, record] of local) {
         const hash = records.hashOf(record.data);
         const row = known.get(key);
-        if (row && !row.deleted && row.hash === hash) continue; // unchanged
-        // New to the cloud: dated by the record itself where it can be (when
-        // the playlist was made, when the track was played), so that data from
-        // before linking merges by its real age. Changed since: dated by the
-        // record where it carries its own time (a play), otherwise now. Never
-        // older than the version it replaces, or the change would be ignored.
-        const updatedAt = row
-            ? Math.max(record.changed || now, row.updated_at + 1)
-            : (record.firstSeen || now);
-        await upsert(record.collection, record.id, hash, updatedAt, false);
+        if (!(row && !row.deleted && row.hash === hash)) {
+            // New to the cloud: dated by the record itself where it can be
+            // (when the playlist was made, when the track was played), so that
+            // data from before linking merges by its real age. Changed since:
+            // dated by the record where it carries its own time (a play),
+            // otherwise now. Never older than the version it replaces, or the
+            // change would be ignored.
+            const updatedAt = row
+                ? Math.max(record.changed || now, row.updated_at + 1)
+                : (record.firstSeen || now);
+            changes.push([record.collection, record.id, hash, updatedAt, false]);
+        }
+        done += 1;
+        if (done % COMPARE_CHUNK === 0) await breathe();
     }
     for (const [key, row] of known) {
         if (row.deleted || local.has(key)) continue;
-        await upsert(row.collection, row.record_id, row.hash, Math.max(now, row.updated_at + 1), true); // deleted here
+        changes.push([row.collection, row.record_id, row.hash, Math.max(now, row.updated_at + 1), true]); // deleted here
     }
+    if (changes.length === 0) return;
+    // One transaction (database calls only inside it): linking a computer
+    // with a full library marks every record at once.
+    await db.transaction(async () => {
+        for (const change of changes) await upsert(...change);
     });
 }
 
@@ -339,7 +364,8 @@ async function pullChanges(db, userId, url, token, device, cursor) {
 async function settleHashes(db, userId, appliedKeys) {
     const keys = new Set(appliedKeys.filter(Boolean));
     if (keys.size === 0) return;
-    const local = await records.collect(db, userId);
+    const written = [...new Set([...keys].map((key) => key.split('\n')[0]))];
+    const local = await records.collect(db, userId, written);
     for (const [key, record] of local) {
         if (!keys.has(key)) continue;
         await db.run(
@@ -366,12 +392,33 @@ async function renewSession(db, userId, url, linkRow, token) {
     return token;
 }
 
-async function runSync(db, userId) {
+// What a run has to read of the user's own data. Everything, when asked to;
+// otherwise the collections something was changed in since the last run
+// (touch), plus any that still hold a change that has not reached the cloud
+// (a run that failed half-way).
+async function scopeFor(db, userId, everything, touched) {
+    if (everything) return records.COLLECTIONS;
+    const unsent = await db.all('SELECT DISTINCT collection FROM sync_records WHERE user_id = ? AND dirty = 1', [userId]);
+    return records.scopeOf([...touched, ...unsent.map((row) => row.collection)]);
+}
+
+async function runSync(db, userId, { everything = true } = {}) {
     const linkRow = await getLink(db, userId);
     if (!linkRow) return { ok: false, reason: 'not_linked' };
     if (linkRow.state === 'signin_required') return { ok: false, reason: 'signin_required' };
     const { url } = await cloudUrl(db);
     if (!url) return { ok: false, reason: 'not_configured' };
+
+    // Taken now: what changes while this run is under way is for the next one.
+    const touched = pending.get(userId) || new Set();
+    pending.delete(userId);
+    let noted = false; // the changes are recorded in sync_records, so a later run sends them
+    const putBack = () => {
+        if (noted || touched.size === 0) return;
+        const again = pending.get(userId) || new Set();
+        for (const name of touched) again.add(name);
+        pending.set(userId, again);
+    };
 
     try {
         let token = decrypt(linkRow.session);
@@ -379,8 +426,13 @@ async function runSync(db, userId) {
         token = await renewSession(db, userId, url, linkRow, token);
         const device = await deviceId(db);
 
-        const local = await records.collect(db, userId);
-        await detectLocalChanges(db, userId, local);
+        // Reading the user's records takes time in proportion to the library,
+        // and nothing else in the server runs meanwhile. A run that follows a
+        // play therefore reads the history only, not every playlist.
+        const scope = await scopeFor(db, userId, everything, touched);
+        const local = await records.collect(db, userId, scope);
+        await detectLocalChanges(db, userId, local, scope);
+        noted = true;
         await pushChanges(db, userId, url, token, device, local);
         const applied = await pullChanges(db, userId, url, token, device, linkRow.cursor);
         if (applied.length > 0) {
@@ -395,6 +447,7 @@ async function runSync(db, userId) {
         } catch { /* asked again on the next run */ }
         return { ok: true, applied: applied.length };
     } catch (err) {
+        putBack();
         if (!(err instanceof CloudError)) throw err;
         // The cloud no longer accepts the session (expired, or the account is
         // gone): stop trying until the user signs in again.
@@ -411,12 +464,18 @@ async function runSync(db, userId) {
 const running = new Map(); // userId -> Promise of the run in progress
 const linked = new Set(); // users worth scheduling runs for
 const timers = new Map(); // userId -> timer of the run that is due
+const pending = new Map(); // userId -> Set of collections changed since a run last looked
 let started = null; // { db, interval, startTimer } once start() was called
 
-/** One run for a user; a call during a run joins it. */
-function syncNow(db, userId) {
+/**
+ * One run for a user; a call during a run joins it. By default the run reads
+ * everything the user has (linking, "Sync now", start-up). With
+ * `everything: false` it reads only what was reported as changed (touch),
+ * which is what the runs between those use.
+ */
+function syncNow(db, userId, { everything = true } = {}) {
     if (running.has(userId)) return running.get(userId);
-    const run = runSync(db, userId)
+    const run = runSync(db, userId, { everything })
         .catch((err) => {
             console.error(`Cloud sync failed for user ${userId}: ${err.message}`);
             return { ok: false, reason: 'failed', error: 'Sync failed on this computer.' };
@@ -426,12 +485,19 @@ function syncNow(db, userId) {
     return run;
 }
 
-/** Call after something of the user's changed: a run follows shortly. */
-function touch(userId) {
-    if (!started || !linked.has(userId) || timers.has(userId)) return;
+/**
+ * Call after something of the user's changed, saying in which collections
+ * (all of them when not said): a run follows shortly, and reads only those.
+ */
+function touch(userId, collections = records.COLLECTIONS) {
+    if (!linked.has(userId)) return;
+    const changed = pending.get(userId) || new Set();
+    for (const name of collections) changed.add(name);
+    pending.set(userId, changed);
+    if (!started || timers.has(userId)) return;
     const timer = setTimeout(() => {
         timers.delete(userId);
-        syncNow(started.db, userId);
+        syncNow(started.db, userId, { everything: false });
     }, TOUCH_DELAY_MS);
     if (timer.unref) timer.unref();
     timers.set(userId, timer);
@@ -443,9 +509,13 @@ async function start(db) {
     await require('./google').load(db);
     const rows = await db.all(`SELECT user_id FROM cloud_links WHERE state = 'ok'`);
     for (const row of rows) linked.add(row.user_id);
-    const all = () => { for (const userId of linked) syncNow(db, userId); };
-    const interval = setInterval(all, INTERVAL_MS);
-    const startTimer = setTimeout(all, START_DELAY_MS);
+    // The first run after start-up reads everything, and so does one run an
+    // hour: a safety net for a change nobody reported. The runs in between
+    // fetch what other computers changed and send what was reported here.
+    let runs = 0;
+    const all = (everything) => { for (const userId of linked) syncNow(db, userId, { everything }); };
+    const interval = setInterval(() => { runs += 1; all(runs % FULL_EVERY_RUNS === 0); }, INTERVAL_MS);
+    const startTimer = setTimeout(() => all(true), START_DELAY_MS);
     if (interval.unref) interval.unref();
     if (startTimer.unref) startTimer.unref();
     started = { db, interval, startTimer };
@@ -459,6 +529,7 @@ function _reset() {
     }
     for (const timer of timers.values()) clearTimeout(timer);
     timers.clear();
+    pending.clear();
     running.clear();
     linked.clear();
     started = null;

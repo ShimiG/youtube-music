@@ -112,7 +112,7 @@ const createCustomPlaylist = async (req, res, next) => {
             `INSERT INTO playlists (user_id, name, thumbnail) VALUES (?, ?, ?)`,
             [req.userId, name.trim(), (typeof thumbnail === 'string' ? thumbnail : null)]
         );
-        cloudSync.touch(req.userId);
+        cloudSync.touch(req.userId, ['playlists', 'playlist_tracks']);
         res.status(201).json({ id: result.lastID, name: name.trim(), thumbnail });
     } catch (error) {
         next(error);
@@ -193,7 +193,7 @@ const addTrackToPlaylist = async (req, res, next) => {
             `INSERT INTO playlist_tracks (playlist_id, track_id, title, artist, thumbnail, sort_order) VALUES (?, ?, ?, ?, ?, ?)`,
             [playlistId, track.id, meta.title, meta.artist, meta.thumbnail, Date.now()]
         );
-        cloudSync.touch(req.userId);
+        cloudSync.touch(req.userId, ['playlists', 'playlist_tracks']);
         res.status(201).json({ success: true, message: 'Track added to playlist' });
     } catch (error) {
         next(error);

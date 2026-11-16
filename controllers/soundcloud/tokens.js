@@ -16,6 +16,10 @@
 
 const client = require('./client');
 const { encrypt, decrypt } = require('../../services/tokenCrypto');
+// Where the credentials are when this computer has none of its own: the cloud
+// service keeps them and hands out tokens (services/cloud/soundcloud.js).
+const cloudSoundcloud = require('../../services/cloud/soundcloud');
+const { CloudError } = require('../../services/cloud/client');
 
 const SOURCE_SOUNDCLOUD = 3; // sources.id, see config/db.js
 const PROVIDER_KEY = 'soundcloud';
@@ -75,8 +79,27 @@ async function acquireAppToken(db) {
     return fresh.accessToken;
 }
 
-/** Returns a valid app-level access token, fetching or renewing it if needed. */
+// The cloud is unreachable (or SoundCloud behind it): not a reason to send
+// anyone through the connect flow again.
+function cloudUnavailable(err) {
+    return new client.SoundCloudError(`SoundCloud could not be reached through the cloud account (${err.message})`, { status: 503, code: 'SOUNDCLOUD_UNAVAILABLE' });
+}
+
+/**
+ * Returns a valid app-level access token, fetching or renewing it if needed.
+ * From the cloud service when it has SoundCloud's credentials; with this
+ * computer's own credentials when it has some and the cloud does not.
+ */
 async function getAppToken(db) {
+    if (cloudSoundcloud.available()) {
+        let token = null;
+        try {
+            token = await cloudSoundcloud.appToken(db);
+        } catch (err) {
+            if (!(err instanceof CloudError) || !client.isConfigured()) throw err instanceof CloudError ? cloudUnavailable(err) : err;
+        }
+        if (token) return token;
+    }
     if (appTokenMemo && isFresh(appTokenMemo.expiresAt)) return appTokenMemo.accessToken;
     if (appTokenInFlight) return appTokenInFlight;
 
@@ -131,14 +154,12 @@ async function refreshUserConnection(db, userId, refreshToken) {
  */
 async function getUserToken(db, userId) {
     const row = await getUserConnection(db, userId);
-    if (!row || !row.access_token) {
-        throw new client.SoundCloudError('No SoundCloud account connected', { status: 401, code: 'SOUNDCLOUD_NOT_CONNECTED' });
-    }
+    if (!row || !row.access_token) return fromCloudAccount(db, userId, null);
     if (isFresh(row.expires_at)) return row.access_token;
 
-    if (!row.refresh_token) {
-        throw new client.SoundCloudError('SoundCloud session expired', { status: 401, code: 'SOUNDCLOUD_TOKEN_EXPIRED' });
-    }
+    // No refresh token here: the login is kept with the cloud account, which
+    // renews it and hands out the next short-lived token.
+    if (!row.refresh_token) return fromCloudAccount(db, userId, row);
 
     if (userRefreshInFlight.has(userId)) return userRefreshInFlight.get(userId);
 
@@ -162,8 +183,55 @@ async function getUserToken(db, userId) {
     return pending;
 }
 
-/** Removes the stored connection and best-effort invalidates the session. */
+// The account's SoundCloud login as the cloud account holds it. What comes
+// back is stored here without a refresh token: the cloud keeps that.
+const cloudInFlight = new Map(); // userId -> Promise<accessToken>
+function fromCloudAccount(db, userId, row) {
+    if (cloudInFlight.has(userId)) return cloudInFlight.get(userId);
+    const none = () => new client.SoundCloudError(
+        row ? 'SoundCloud session expired' : 'No SoundCloud account connected',
+        { status: 401, code: row ? 'SOUNDCLOUD_TOKEN_EXPIRED' : 'SOUNDCLOUD_NOT_CONNECTED' }
+    );
+    const pending = (async () => {
+        if (!(await cloudSoundcloud.connected(db, userId))) throw none();
+        let token;
+        try {
+            token = await cloudSoundcloud.accessToken(db, userId);
+        } catch (err) {
+            if (err instanceof CloudError) throw cloudUnavailable(err);
+            throw err;
+        }
+        if (!token) {
+            // Disconnected on another computer: the token kept here is of no use.
+            await db.run(
+                `DELETE FROM user_connections WHERE user_id = ? AND source_id = ? AND refresh_token IS NULL`,
+                [userId, SOURCE_SOUNDCLOUD]
+            );
+            throw new client.SoundCloudError('No SoundCloud account connected', { status: 401, code: 'SOUNDCLOUD_NOT_CONNECTED' });
+        }
+        await storeUserTokens(db, userId, { accessToken: token.accessToken, refreshToken: null, expiresAt: token.expiresAt });
+        return token.accessToken;
+    })().finally(() => cloudInFlight.delete(userId));
+    cloudInFlight.set(userId, pending);
+    return pending;
+}
+
+/**
+ * Removes the stored connection and best-effort invalidates the session.
+ * A login kept with the cloud account is disconnected there, for every
+ * computer; that has to work, or the account would still be connected.
+ */
 async function disconnectUser(db, userId) {
+    if (await cloudSoundcloud.connected(db, userId)) {
+        try {
+            await cloudSoundcloud.disconnect(db, userId);
+        } catch (err) {
+            if (err instanceof CloudError) throw cloudUnavailable(err);
+            throw err;
+        }
+        await db.run(`DELETE FROM user_connections WHERE user_id = ? AND source_id = ?`, [userId, SOURCE_SOUNDCLOUD]);
+        return;
+    }
     const row = await getUserConnection(db, userId);
     await db.run(`DELETE FROM user_connections WHERE user_id = ? AND source_id = ?`, [userId, SOURCE_SOUNDCLOUD]);
     if (row && row.access_token) {
@@ -176,6 +244,7 @@ function _resetCaches() {
     appTokenMemo = null;
     appTokenInFlight = null;
     userRefreshInFlight.clear();
+    cloudInFlight.clear();
 }
 
 module.exports = {

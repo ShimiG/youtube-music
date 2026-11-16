@@ -17,6 +17,7 @@
 //
 // The library (favorites, playlists) needs a user: a public handle or "Log in
 // with Audius". Not in this first version; capabilities say so.
+const cloudSettings = require('../services/cloud/settings');
 const { SourceError } = require('./errors');
 const { makeTrack, page } = require('./normalize');
 
@@ -143,7 +144,8 @@ async function resolveStream(id) {
     const body = await apiGet(`/tracks/${encodeURIComponent(id)}/stream`, {
         no_redirect: 'true',
         preview: isPreview ? 'true' : undefined,
-        api_key: process.env.AUDIUS_API_KEY || undefined
+        // This computer's own setting, else the one the cloud service has.
+        api_key: cloudSettings.audiusApiKey()
     });
     const url = httpsOrNull(body && body.data);
     if (!url) throw new SourceError('UPSTREAM', `${LABEL} returned no stream URL.`, { source: SOURCE });

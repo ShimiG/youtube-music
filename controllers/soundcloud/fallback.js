@@ -9,17 +9,24 @@
 // might survive (rate limit, outage, network). `api` and `ytdlp` force one.
 // The library (/me/*) is API-only either way: yt-dlp has no user session.
 const client = require('./client');
+const cloudSoundcloud = require('../../services/cloud/soundcloud');
 
 function providerMode() {
     const mode = String(process.env.SOUNDCLOUD_PROVIDER || 'auto').toLowerCase();
     return ['api', 'ytdlp', 'auto'].includes(mode) ? mode : 'auto';
 }
 
+/**
+ * Whether the official API can be used at all: with credentials on this
+ * computer, or through the cloud service, which then holds them.
+ */
+const apiAvailable = () => client.isConfigured() || cloudSoundcloud.available();
+
 function activeProvider() {
     const mode = providerMode();
     if (mode === 'ytdlp') return 'ytdlp';
     if (mode === 'api') return 'api';
-    return client.isConfigured() ? 'api' : 'ytdlp';
+    return apiAvailable() ? 'api' : 'ytdlp';
 }
 
 // Errors where trying yt-dlp instead is worthwhile. Auth failures on the user's
@@ -27,7 +34,7 @@ function activeProvider() {
 function shouldFallBack(err) {
     if (providerMode() !== 'auto') return false;
     if (!(err instanceof client.SoundCloudError)) return true; // network / unexpected
-    return err.code === 'SOUNDCLOUD_NOT_CONFIGURED' || err.status === 429 || err.status >= 500;
+    return err.code === 'SOUNDCLOUD_NOT_CONFIGURED' || err.code === 'SOUNDCLOUD_UNAVAILABLE' || err.status === 429 || err.status >= 500;
 }
 
 // Runs `viaApi`, and on a recoverable failure runs `viaYtdlp` instead.
@@ -43,4 +50,4 @@ async function withFallback(label, viaApi, viaYtdlp) {
     }
 }
 
-module.exports = { providerMode, activeProvider, shouldFallBack, withFallback };
+module.exports = { providerMode, activeProvider, apiAvailable, shouldFallBack, withFallback };

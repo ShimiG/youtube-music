@@ -216,6 +216,7 @@ app.delete('/api/cloud/url', requireAuth, settingsLimiter, settingsController.re
 app.post('/api/cloud/link', requireAuth, authLimiter, requireExistingUser, cloudController.link);
 app.post('/api/cloud/sync', requireAuth, cloudSyncLimiter, cloudController.syncNow);
 app.get('/api/cloud/google/status', requireAuth, cloudSyncLimiter, cloudController.googleStatus);
+app.get('/api/cloud/services', requireAuth, cloudSyncLimiter, cloudController.servicesStatus);
 // Before anyone is logged in: signing in to the app with the cloud account,
 // which also sets this computer up for it (controllers/cloudController.js).
 app.get('/api/cloud/info', cloudController.getInfo);

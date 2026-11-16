@@ -308,6 +308,11 @@ async function initDB(filename = path.join(dataDir(), 'database.sqlite')) {
         await db.exec('ALTER TABLE cloud_links ADD COLUMN google_connected INTEGER NOT NULL DEFAULT 0');
     }
 
+    // The same for SoundCloud (services/cloud/soundcloud.js).
+    if (!(await db.all('PRAGMA table_info(cloud_links)')).some((c) => c.name === 'soundcloud_connected')) {
+        await db.exec('ALTER TABLE cloud_links ADD COLUMN soundcloud_connected INTEGER NOT NULL DEFAULT 0');
+    }
+
     // Tokens written before encryption at rest existed are rewritten encrypted.
     await migratePlaintextTokens(db);
 

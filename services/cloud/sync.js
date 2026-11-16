@@ -140,6 +140,11 @@ async function status(db, userId, { canConfigure = false } = {}) {
         youtube: {
             available: Boolean(link) && require('./google').available(),
             connected: Boolean(link && link.state === 'ok' && link.google_connected)
+        },
+        // And SoundCloud (services/cloud/soundcloud.js).
+        soundcloud: {
+            available: Boolean(link) && require('./soundcloud').available(),
+            connected: Boolean(link && link.state === 'ok' && link.soundcloud_connected)
         }
     };
 }
@@ -426,6 +431,15 @@ async function runSync(db, userId, { everything = true } = {}) {
         try {
             await require('./google').refreshStatus(db, userId);
         } catch { /* asked again on the next run */ }
+        // The same for SoundCloud, and what the installation's services are
+        // set up with: on the runs that read everything (start-up, sign-in,
+        // once an hour, "Sync now"), not after every play.
+        if (everything) {
+            try {
+                await require('./soundcloud').refreshStatus(db, userId);
+                await require('./settings').refresh(db, userId);
+            } catch { /* asked again on the next full run */ }
+        }
         return { ok: true, applied: applied.length };
     } catch (err) {
         putBack();
@@ -488,6 +502,8 @@ function touch(userId, collections = records.COLLECTIONS) {
 async function start(db) {
     if (started) return;
     await require('./google').load(db);
+    await require('./soundcloud').load(db);
+    await require('./settings').load(db);
     const rows = await db.all(`SELECT user_id FROM cloud_links WHERE state = 'ok'`);
     for (const row of rows) linked.add(row.user_id);
     // The first run after start-up reads everything, and so does one run an
@@ -515,6 +531,8 @@ function _reset() {
     linked.clear();
     started = null;
     require('./google')._reset();
+    require('./soundcloud')._reset();
+    require('./settings')._reset();
 }
 
 module.exports = {

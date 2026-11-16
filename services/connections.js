@@ -165,6 +165,14 @@ async function getSoundCloudToken(db, userId) {
     } catch (err) {
         if (err.code === 'SOUNDCLOUD_NOT_CONNECTED') throw new SourceError('SOURCE_NOT_CONNECTED', 'soundcloud', { cause: err });
         if (err.code === 'SOUNDCLOUD_TOKEN_EXPIRED') throw new SourceError('SOURCE_TOKEN_EXPIRED', 'soundcloud', { cause: err });
+        // The login is fine; the cloud account that holds it could not be reached.
+        if (err.code === 'SOUNDCLOUD_UNAVAILABLE') {
+            throw new SourceError('SOURCE_UNAVAILABLE', 'soundcloud', {
+                status: 502,
+                message: 'SoundCloud could not be reached through your cloud account. Try again in a moment.',
+                cause: err
+            });
+        }
         throw err;
     }
 }

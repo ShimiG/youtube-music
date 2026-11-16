@@ -7,7 +7,7 @@
 const client = require('../controllers/soundcloud/client');
 const tokens = require('../controllers/soundcloud/tokens');
 const ytdlp = require('../controllers/soundcloud/ytdlp');
-const { withFallback, activeProvider } = require('../controllers/soundcloud/fallback');
+const { withFallback, activeProvider, apiAvailable } = require('../controllers/soundcloud/fallback');
 const { SourceError, fromConnectionError } = require('./errors');
 const { getSourceToken } = require('../services/connections');
 const { makePlaylist, makeTrack, page } = require('./normalize');
@@ -175,7 +175,8 @@ module.exports = {
     searchRequiresToken: false,
     // Connecting an account (and so the library) needs the official API; search
     // and playback still work through yt-dlp without it.
-    isAvailable: () => client.isConfigured(),
+    // (With credentials on this computer, or through the cloud service.)
+    isAvailable: () => apiAvailable(),
     activeProvider,
     getToken,
     getPlaylists,

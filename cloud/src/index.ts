@@ -8,6 +8,8 @@
 //   POST   /sync/push              { deviceId, changes: [...] } (signed in)
 //   GET    /sync/pull?since=&limit=                             (signed in)
 //   /google/...                    YouTube sign-in through the cloud (src/google.ts)
+//   /soundcloud/...                SoundCloud through the cloud (src/soundcloud.ts)
+//   GET    /services               what the installation's services are set up with (signed in)
 //
 // The callers are Music Manager's own desktop servers, never a web page, so no
 // cross-origin access is granted. The Worker is the only thing that touches D1.
@@ -16,12 +18,13 @@ import { bodyLimit } from 'hono/body-limit';
 import { secureHeaders } from 'hono/secure-headers';
 import { deleteAccount, login, refresh, register, requireSession } from './auth';
 import * as google from './google';
+import * as soundcloud from './soundcloud';
 import { pull, push } from './sync';
 import { ApiError, type AppEnv } from './types';
 
 // Nothing but the handler may be exported from this file: the Workers runtime
 // treats every export of the entry module as an entrypoint.
-const VERSION = '0.3.0';
+const VERSION = '0.4.0';
 const MAX_BODY_BYTES = 1024 * 1024;
 
 const app = new Hono<AppEnv>();
@@ -85,6 +88,34 @@ app.delete('/google', async (c) => {
     await google.disconnect(c.env, c.get('userId'));
     return c.body(null, 204);
 });
+
+// SoundCloud through the cloud (src/soundcloud.ts), the same way.
+app.get('/soundcloud/callback', async (c) => soundcloud.callback(c.env, new URL(c.req.url).origin, {
+    code: c.req.query('code'), state: c.req.query('state'), error: c.req.query('error')
+}));
+app.use('/soundcloud', requireSession);
+app.use('/soundcloud/status', requireSession);
+app.use('/soundcloud/start', requireSession);
+app.use('/soundcloud/token', requireSession);
+app.use('/soundcloud/app-token', requireSession);
+app.get('/soundcloud/status', async (c) => c.json(await soundcloud.status(c.env, c.get('userId'))));
+app.post('/soundcloud/start', async (c) => c.json(await soundcloud.start(c.env, c.get('userId'), new URL(c.req.url).origin, await jsonBody(c.req.raw))));
+app.post('/soundcloud/token', async (c) => c.json(await soundcloud.accessToken(c.env, c.get('userId'))));
+app.post('/soundcloud/app-token', async (c) => c.json(await soundcloud.appToken(c.env)));
+app.delete('/soundcloud', async (c) => {
+    await soundcloud.disconnect(c.env, c.get('userId'));
+    return c.body(null, 204);
+});
+
+// What this installation's services are set up with, for a signed-in
+// computer: which sign-ins the Worker can do, and the settings that are not
+// secrets. The secrets themselves are never sent anywhere.
+app.use('/services', requireSession);
+app.get('/services', async (c) => c.json({
+    google: { configured: Boolean(c.env.GOOGLE_CLIENT_ID && c.env.GOOGLE_CLIENT_SECRET) },
+    soundcloud: { configured: Boolean(c.env.SOUNDCLOUD_CLIENT_ID && c.env.SOUNDCLOUD_CLIENT_SECRET) },
+    audius: { apiKey: c.env.AUDIUS_API_KEY || null }
+}));
 
 app.notFound((c) => c.json({ error: 'There is nothing at this address.', code: 'NOT_FOUND' }, 404));
 

@@ -18,7 +18,10 @@ export default defineConfig(async () => {
                         REGISTRATION_CODE: 'let-me-in',
                         AUTH_PEPPER: 'test-pepper',
                         GOOGLE_CLIENT_ID: 'test-client-id.apps.googleusercontent.com',
-                        GOOGLE_CLIENT_SECRET: 'test-google-client-secret'
+                        GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+                        SOUNDCLOUD_CLIENT_ID: 'test-soundcloud-client-id',
+                        SOUNDCLOUD_CLIENT_SECRET: 'test-soundcloud-client-secret',
+                        AUDIUS_API_KEY: 'test-audius-key'
                     }
                 }
             })

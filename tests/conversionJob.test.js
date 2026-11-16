@@ -17,6 +17,7 @@ jest.mock('child_process', () => ({
         const { EventEmitter } = require('events');
         const { PassThrough } = require('stream');
         const child = new EventEmitter();
+        child.stdin = new PassThrough();
         child.stdout = new PassThrough();
         child.stderr = new PassThrough();
         child.kill = jest.fn(() => { child.killed = true; });
@@ -54,7 +55,8 @@ function fakeRes({ stuck = false } = {}) {
     res.setHeader = jest.fn((name, value) => { res.headers[name] = value; });
     res.set = jest.fn();
     res.status = jest.fn((code) => { res.statusCode = code; return res; });
-    res.json = jest.fn();
+    // An answer in JSON is the whole answer: the response ends with it.
+    res.json = jest.fn(() => { res.end(); });
     res.sendFile = jest.fn();
     return res;
 }
@@ -427,5 +429,133 @@ describe('a source that is MP3 already is passed through, not converted again', 
         retry.emit('close', 0);
         await until(() => seek.writableEnded, 'the response to end');
         warn.mockRestore();
+    });
+});
+
+// YouTube's servers refuse ffmpeg (403), so there yt-dlp downloads the audio
+// and ffmpeg is handed the bytes: `feed` instead of `sourceUrl`.
+describe('a source that yt-dlp downloads is piped into ffmpeg', () => {
+    const { fakeProcess } = require('./helpers/fakeProcess');
+    const playReport = require('../services/playReport');
+
+    // A downloader the test drives. It fails with `words` unless it ended well or was ended by the conversion.
+    function downloader(words = 'yt-dlp: ERROR: [youtube] x: Sign in to confirm you are not a bot') {
+        const child = fakeProcess();
+        const feed = jest.fn(() => ({ child, failure: (code, signal, { endedByUs }) => (endedByUs || (code === 0 && !signal) ? null : words) }));
+        return { child, feed };
+    }
+    const argsOf = (child) => spawn.mock.calls[mockChildren.indexOf(child)][1];
+
+    it('gives ffmpeg its standard input as the source, and everything the downloader writes', async () => {
+        const { child: ytDlp, feed } = downloader();
+        const res = play('youtube_pipedaaaaaa', fakeRes(), { sourceUrl: undefined, feed });
+        const ffmpeg = lastChild();
+        expect(feed).toHaveBeenCalledTimes(1);
+        const args = argsOf(ffmpeg);
+        expect(args[args.indexOf('-i') + 1]).toBe('pipe:0');
+        // Nothing that belongs to an address ffmpeg would fetch itself.
+        expect(args).not.toContain('-reconnect_streamed');
+        expect(args).not.toContain('-headers');
+        expect(args).not.toContain('-ss');
+
+        const received = [];
+        ffmpeg.stdin.on('data', (chunk) => received.push(chunk));
+        ytDlp.stdout.write(audio(5000));
+        ytDlp.stdout.write(audio(7000, 3));
+        ytDlp.exit(0);
+        await until(() => Buffer.concat(received).length === 12000, 'the audio to reach ffmpeg');
+        expect(Buffer.concat(received)).toEqual(Buffer.concat([audio(5000), audio(7000, 3)]));
+
+        await convert(ffmpeg, audio(150000));
+        ffmpeg.closed = true;
+        await until(() => res.writableEnded, 'the response to end');
+        expect(res.body().length).toBe(150000);
+        expect(ytDlp.kill).not.toHaveBeenCalled(); // it had finished by itself
+        await until(() => fs.existsSync(cacheFile('youtube_pipedaaaaaa')), 'the cache file');
+    });
+
+    it('ends the downloader when ffmpeg ends first, and blames ffmpeg', async () => {
+        const reasons = jest.spyOn(playReport, 'reason').mockImplementation(() => {});
+        const { child: ytDlp, feed } = downloader();
+        const res = play('youtube_pipedbbbbbb', fakeRes(), { sourceUrl: undefined, feed });
+        lastChild().stderr.write('pipe:0: Invalid data found when processing input\n');
+        await wait(20);
+        lastChild().closed = true;
+        lastChild().emit('close', 1, null);
+        await until(() => res.writableEnded, 'the response to end');
+        expect(ytDlp.kill).toHaveBeenCalledWith('SIGKILL');
+        expect(reasons).toHaveBeenLastCalledWith(res, 'ffmpeg: pipe:0: Invalid data found when processing input (exit code 1)', { failed: true });
+        reasons.mockRestore();
+    });
+
+    it("gives the downloader's own words when it was the download that failed", async () => {
+        const reasons = jest.spyOn(playReport, 'reason').mockImplementation(() => {});
+        const { child: ytDlp, feed } = downloader();
+        const res = play('youtube_pipedcccccc', fakeRes(), { sourceUrl: undefined, feed });
+        const ffmpeg = lastChild();
+        ytDlp.exit(1); // refused by YouTube: no audio, its own error
+        await wait(20);
+        // ffmpeg, given nothing, gives up in its own words; those are not the reason.
+        ffmpeg.stderr.write('pipe:0: Invalid data found when processing input\n');
+        await wait(20);
+        ffmpeg.closed = true;
+        ffmpeg.emit('close', 1, null);
+        await until(() => res.writableEnded, 'the response to end');
+        expect(ytDlp.kill).not.toHaveBeenCalled();
+        expect(reasons).toHaveBeenLastCalledWith(res, 'yt-dlp: ERROR: [youtube] x: Sign in to confirm you are not a bot', { failed: true });
+        expect(errorSpy.mock.calls.map((c) => c[0])).toContain('youtube_pipedcccccc: no audio. yt-dlp: ERROR: [youtube] x: Sign in to confirm you are not a bot');
+        expect(transcode._jobs.size).toBe(0);
+        reasons.mockRestore();
+    });
+
+    it('says so when the downloader could not be started at all', async () => {
+        const reasons = jest.spyOn(playReport, 'reason').mockImplementation(() => {});
+        const { child: ytDlp, feed } = downloader();
+        const res = play('youtube_pipeddddddd', fakeRes(), { sourceUrl: undefined, feed });
+        const ffmpeg = lastChild();
+        let inputEnded = false;
+        ffmpeg.stdin.on('finish', () => { inputEnded = true; });
+        ytDlp.emit('error', new Error('spawn yt-dlp ENOENT'));
+        await until(() => inputEnded, "ffmpeg's input to be closed"); // it must not wait for audio for ever
+        ffmpeg.closed = true;
+        ffmpeg.emit('close', 1, null);
+        await until(() => res.writableEnded, 'the response to end');
+        expect(reasons).toHaveBeenLastCalledWith(res, 'it could not be started: spawn yt-dlp ENOENT', { failed: true });
+        reasons.mockRestore();
+    });
+
+    it('a seek reads from the start and drops what comes before, and both end when the listener leaves', async () => {
+        const { child: ytDlp, feed } = downloader();
+        const res = fakeRes();
+        transcode.streamTranscoded({ query: { seek: '120' }, playStartedAt: Date.now() }, res, { feed, cacheKey: 'youtube_pipedeeeeee', seekTime: 120, timing: { label: 'seek' } });
+        const ffmpeg = lastChild();
+        const args = argsOf(ffmpeg);
+        // A pipe cannot be searched: -ss comes after the input here.
+        expect(args.slice(args.indexOf('-i'), args.indexOf('-i') + 4)).toEqual(['-i', 'pipe:0', '-ss', '120']);
+        expect(args.indexOf('-ss')).toBeGreaterThan(args.indexOf('-i'));
+
+        res.emit('close'); // the listener moved on
+        expect(ytDlp.kill).toHaveBeenCalledWith('SIGKILL');
+        expect(ffmpeg.kill).toHaveBeenCalledWith('SIGKILL');
+        ffmpeg.closed = true;
+        ffmpeg.emit('close', null, 'SIGKILL');
+        await until(() => transcode._activeTranscodes() === 0, 'the slot to be released');
+    });
+
+    it('ends the downloader with a conversion that nobody waits for and that goes quiet', async () => {
+        jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick', 'queueMicrotask'] });
+        try {
+            const { child: ytDlp, feed } = downloader();
+            transcode.streamTranscoded({ query: { prepare: '1' } }, fakeRes(), { feed, cacheKey: 'youtube_pipedffffff', seekTime: 0, timing: { label: 'prepared' } });
+            const ffmpeg = lastChild();
+            expect(ytDlp.kill).not.toHaveBeenCalled();
+            jest.advanceTimersByTime(transcode.STALL_MS + 1000); // nothing arrived from the source
+            expect(ytDlp.kill).toHaveBeenCalledWith('SIGKILL');
+            expect(ffmpeg.kill).toHaveBeenCalledWith('SIGKILL');
+            ffmpeg.closed = true;
+            ffmpeg.emit('close', null, 'SIGKILL');
+        } finally {
+            jest.useRealTimers();
+        }
     });
 });

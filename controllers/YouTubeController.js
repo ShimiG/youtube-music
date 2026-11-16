@@ -1,7 +1,6 @@
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const { parseSeek, serveFromCache, streamTranscoded, qualityCacheKey } = require('./transcode');
 const { ytDlpPath, jsRuntimeArgs } = require('../services/ytdlp');
-const { sendSourceError } = require('../services/errors');
 // Lengths are remembered there, across restarts, so /duration does not start
 // yt-dlp for a track that has been seen before.
 const trackLengths = require('../services/trackLengths');
@@ -11,7 +10,13 @@ const playReport = require('../services/playReport');
 // timeout, and killed as soon as the client disconnects. `runner.execFile` is
 // wrapped so tests can stub the process.
 const YTDLP_TIMEOUT_MS = 60 * 1000;
-const runner = { execFile };
+// Tests replace `runner.spawn` with a stand-in; one that forgot to must not
+// start a real download from YouTube.
+const notInTests = (...args) => {
+    if (process.env.NODE_ENV === 'test') throw new Error('yt-dlp downloads are not run in tests: stub runner.spawn');
+    return spawn(...args);
+};
+const runner = { execFile, spawn: notInTests };
 
 // Turns a failed yt-dlp run into one log line that says what to do. Its own
 // last error line is the useful part ("Sign in to confirm you're not a bot",
@@ -163,9 +168,80 @@ function resolveVideo(videoId, { res } = {}) {
     return job.promise.then((found) => ({ ...found, from: running ? 'shared' : 'yt-dlp', ms: Date.now() - startedAt }));
 }
 
-/** Forgets a remembered address (it stopped working before its stated time). */
-function forgetVideo(videoId) {
-    resolved.delete(videoId);
+// --- Downloading ---------------------------------------------------------------
+//
+// Until November 2026 the app asked yt-dlp for the audio's address and gave
+// that to ffmpeg. YouTube's media servers now answer such a request with 403
+// Forbidden: the audio has to be asked for the way yt-dlp does it (in ranged
+// pieces, and whatever YouTube requires next). So yt-dlp fetches the audio
+// itself and writes it to its standard output, and ffmpeg reads it from
+// there (controllers/transcode.js, connectFeed). What yt-dlp can download,
+// the app can play; when YouTube changes again, a new yt-dlp is the fix, and
+// the app updates yt-dlp by itself.
+//
+// With `-o -` yt-dlp keeps its standard output for the audio and writes
+// everything else to its standard error: the lines asked for with --print
+// (the length, what it chose), warnings and errors.
+const FEED_TAIL_CHARS = 4000;
+
+/** For transcode's `feed`: starts yt-dlp downloading the audio of `videoId`. */
+function downloadFeed(videoId, { res, timing } = {}) {
+    return () => {
+        const startedAt = Date.now();
+        const args = [
+            '-f', 'bestaudio/best', '--no-playlist', ...jsRuntimeArgs(),
+            '--no-part', '--no-simulate',
+            '--print', 'length: %(duration)s',
+            '--print', 'chosen: format %(format_id)s, %(protocol)s, %(acodec)s',
+            '-o', '-',
+            `https://www.youtube.com/watch?v=${videoId}`
+        ];
+        const child = runner.spawn(ytDlpPath(), args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+        // How long it took yt-dlp to start delivering: the look-up, in effect.
+        child.stdout.once('data', () => {
+            if (timing && timing.resolveMs === null) {
+                timing.resolveMs = Date.now() - startedAt;
+                timing.resolvedBy = 'yt-dlp';
+            }
+        });
+        let tail = '';
+        let pending = '';
+        let lastError = null;
+        child.stderr.on('data', (data) => {
+            const text = data.toString();
+            tail = (tail + text).slice(-FEED_TAIL_CHARS);
+            pending += text;
+            const lines = pending.split(/\r?\n/);
+            pending = lines.pop().slice(-FEED_TAIL_CHARS); // an unfinished line waits for its end
+            for (const raw of lines) {
+                const line = raw.trim();
+                if (!line) continue;
+                const length = /^length: (\d+(?:\.\d+)?)$/.exec(line);
+                if (length) {
+                    const seconds = Math.round(Number(length[1]));
+                    if (seconds > 0) rememberDuration(videoId, seconds);
+                } else if (line.startsWith('chosen: ')) {
+                    if (res) playReport.note(res, `yt-dlp ${line.slice(0, 140)}`.replace('chosen:', 'chose'));
+                } else if (/^WARNING:/.test(line)) {
+                    const warning = firstWarning(line);
+                    if (res && warning) playReport.note(res, `yt-dlp: ${warning}`);
+                } else if (/^ERROR:/.test(line)) {
+                    // eslint-disable-next-line no-control-regex
+                    lastError = line.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 300);
+                }
+            }
+        });
+        return {
+            child,
+            // Its own account of a failure; null when it did not fail.
+            failure(code, signal, { endedByUs = false } = {}) {
+                if (lastError) return `yt-dlp: ${lastError}`;
+                if (endedByUs || (code === 0 && !signal)) return null;
+                if (code === -1) return `yt-dlp not found at "${ytDlpPath()}". Install it (brew install yt-dlp) or set YTDLP_PATH.`;
+                return `yt-dlp: ${describeYtDlpFailure({}, tail)} (${signal ? `ended by ${signal}` : `exit code ${code}`})`;
+            }
+        };
+    };
 }
 
 // YouTube video ids are always exactly 11 URL-safe characters. Being strict
@@ -192,39 +268,17 @@ function streamVideo(req, res, videoId) {
     const cacheKey = qualityCacheKey(req, `youtube_${videoId}`);
     if (serveFromCache(res, cacheKey, { req, seekTime })) return undefined;
 
-    // The client may leave while yt-dlp runs: never answer a dead response,
-    // and never start ffmpeg for one.
-    let clientGone = false;
-    res.on('close', () => { if (!res.writableFinished) clientGone = true; });
-
-    return resolveVideo(videoId, { res }).then((found) => {
-        if (clientGone) return;
-        if (!found.url) {
-            console.error(`YouTube ${videoId}: yt-dlp returned no audio URL.`);
-            playReport.reason(res, 'yt-dlp found no audio for this video');
-            if (!res.headersSent) sendSourceError(res, 'TRACK_UNAVAILABLE', 'youtube', { reason: 'no_audio_url' });
-            return;
-        }
-        // What yt-dlp handed over, for the report: when ffmpeg then gets no
-        // audio out of it, this is what says why.
-        if (found.chosen) playReport.note(res, `yt-dlp chose ${found.chosen}`);
-        if (found.warning) playReport.note(res, `yt-dlp: ${found.warning}`);
-        streamTranscoded(req, res, {
-            sourceUrl: found.url,
-            sourceHeaders: found.headers,
-            cacheKey,
-            seekTime,
-            timing: { label: `youtube ${videoId}`, resolveMs: found.ms, resolvedBy: found.from },
-            // ffmpeg could not open the address: do not hand it out again.
-            onSourceFailed: () => forgetVideo(videoId)
-        });
-    }).catch((error) => {
-        if (clientGone) return;
-        const detail = error.detail || describeYtDlpFailure(error, '');
-        console.error(`YouTube ${videoId}: could not resolve audio: ${detail}`);
-        playReport.reason(res, `yt-dlp: ${detail}`);
-        if (!res.headersSent) sendSourceError(res, 'TRACK_UNAVAILABLE', 'youtube', { reason: 'resolve_failed' });
+    // yt-dlp downloads the audio and ffmpeg converts what it is handed (see
+    // downloadFeed). There is no look-up beforehand any more: the first
+    // thing yt-dlp does in that one run is the look-up.
+    const timing = { label: `youtube ${videoId}`, resolveMs: null, resolvedBy: null };
+    streamTranscoded(req, res, {
+        feed: downloadFeed(videoId, { res, timing }),
+        cacheKey,
+        seekTime,
+        timing
     });
+    return undefined;
 }
 
 const streamTrack = async (req, res) => {

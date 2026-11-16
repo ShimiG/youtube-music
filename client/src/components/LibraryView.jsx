@@ -63,7 +63,7 @@ const REFRESH_AFTER_MS = 5 * 60 * 1000;
 // whether they are connected come from useSources(); playlists and tracks come
 // from the generic library API. No service is named in this file.
 export default function LibraryView({ active = true }) {
-    const { playTrack, addToQueue } = useMusic();
+    const { playFrom, addToQueue } = useMusic();
     const { sources, loading: sourcesLoading, reload: reloadSources } = useSources();
 
     const [chosenSource, setChosenSource] = useState(null);
@@ -146,11 +146,12 @@ export default function LibraryView({ active = true }) {
         setChosenSource(name);
     };
 
+    // A track clicked in a playlist plays as part of it: the tracks loaded
+    // so far become the queue, and playback carries on down the list.
+    const playInList = (track) => playFrom(tracks.items, track);
     const handlePlayAll = () => {
-        const playable = tracks.items.filter(t => t.playable !== false);
-        if (playable.length === 0) return;
-        playTrack(playable[0]);
-        playable.slice(1).forEach(track => addToQueue(track));
+        const first = tracks.items.find(t => t.playable !== false);
+        if (first) playFrom(tracks.items, first);
     };
 
     const canLike = Boolean(service && service.capabilities && service.capabilities.like);
@@ -263,7 +264,7 @@ export default function LibraryView({ active = true }) {
                         items={tracks.items}
                         rowHeight={71}
                         renderRow={(track, index) => (
-                            <TrackRow key={`pl-track-${track.source}-${track.id}-${index}`} track={track} onPlay={playTrack} onQueue={addToQueue} onLike={onLike} onUnlike={onUnlike} canAddToPlaylist={selectedPlaylist.source !== 'custom'} />
+                            <TrackRow key={`pl-track-${track.source}-${track.id}-${index}`} track={track} onPlay={playInList} onQueue={addToQueue} onLike={onLike} onUnlike={onUnlike} canAddToPlaylist={selectedPlaylist.source !== 'custom'} />
                         )}
                     />
                 )}

@@ -33,6 +33,8 @@ describe('GET /api/health', () => {
             ffmpeg: { available: true, version: '6.1.1-static' }
         });
         expect(res.body.cache).toHaveProperty('maxBytes');
+        // What yt-dlp runs YouTube's script in: its name, not where it is.
+        expect(res.body.jsRuntime).toBe('node');
         expect(JSON.stringify(res.body)).not.toMatch(/[\\/]bin[\\/]|node_modules/);
     });
 

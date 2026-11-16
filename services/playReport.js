@@ -12,6 +12,7 @@
 // browser makes for further parts of a file it is already playing.
 const MAX_ENTRIES = 60;
 const MAX_REASON_CHARS = 300;
+const MAX_NOTES = 3;
 
 const entries = []; // oldest first
 const byResponse = new WeakMap(); // res -> its entry
@@ -56,6 +57,7 @@ function begin(req, res, { source, id }) {
         addressFrom: null, // yt-dlp | shared | memory | api
         how: null,         // cache | conversion | joined | file
         reason: null,
+        notes: [],         // what yt-dlp chose and warned about
         player: null       // what the player in the app said, if it reported an error
     });
     byResponse.set(res, entry);
@@ -99,6 +101,14 @@ function playing(res, { addressMs = null, addressFrom = null, how = null } = {})
     entry.how = how;
 }
 
+/** Something worth knowing about this play (what yt-dlp chose, what it warned about). */
+function note(res, text) {
+    const entry = res && byResponse.get(res);
+    const clean = tidy(text).slice(0, 260);
+    if (!entry || !clean || entry.notes.length >= MAX_NOTES || entry.notes.includes(clean)) return;
+    entry.notes.push(clean);
+}
+
 /** Why this play is failing, in the words of whatever failed (yt-dlp, ffmpeg, a service). */
 function reason(res, text, { failed = false } = {}) {
     const entry = res && byResponse.get(res);
@@ -120,7 +130,7 @@ function rejected(req, text) {
     add({
         n: ++counter, at: Date.now(), userId: null,
         source: tidy(query.source || 'youtube').toLowerCase().slice(0, 32), id: tidy(query.videoId || '').slice(0, 64), seek: 0,
-        status: 'failed', ms: 0, addressMs: null, addressFrom: null, how: null, reason: tidy(text), player: null, turnedAway: true
+        status: 'failed', ms: 0, addressMs: null, addressFrom: null, how: null, reason: tidy(text), notes: [], player: null, turnedAway: true
     });
 }
 
@@ -146,7 +156,7 @@ function playerSaid({ userId, source: rawSource, id: rawId, text }) {
     if (!entry) {
         entry = add({
             n: ++counter, at: Date.now(), userId, source, id, seek: 0,
-            status: 'failed', ms: 0, addressMs: null, addressFrom: null, how: null, reason: NEVER_ARRIVED, player: null
+            status: 'failed', ms: 0, addressMs: null, addressFrom: null, how: null, reason: NEVER_ARRIVED, notes: [], player: null
         });
     }
     entry.player = tidy(text).slice(0, 200) || 'an error with no description';
@@ -176,4 +186,4 @@ function _reset() {
     counter = 0;
 }
 
-module.exports = { begin, playing, reason, rejected, playerSaid, recent, MAX_ENTRIES, NEVER_ARRIVED, _reset };
+module.exports = { begin, playing, note, reason, rejected, playerSaid, recent, MAX_ENTRIES, NEVER_ARRIVED, _reset };

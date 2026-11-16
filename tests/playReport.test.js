@@ -80,6 +80,21 @@ describe('keeping the record', () => {
         expect(second).toMatchObject({ id: 'eeeeeeeeeee', status: 'playing', how: 'file' });
     });
 
+    it('keeps what yt-dlp chose and warned about with the play, a few lines at most', () => {
+        const res = start();
+        playReport.note(res, 'yt-dlp chose format 234, m3u8_native, mp4a.40.2');
+        playReport.note(res, 'yt-dlp chose format 234, m3u8_native, mp4a.40.2'); // said twice: kept once
+        playReport.note(res, 'yt-dlp: WARNING: No supported JavaScript runtime\ncould be found');
+        playReport.note(res, '');
+        for (let i = 0; i < 5; i++) playReport.note(res, `more ${i}`);
+        expect(playReport.recent()[0].notes).toEqual([
+            'yt-dlp chose format 234, m3u8_native, mp4a.40.2',
+            'yt-dlp: WARNING: No supported JavaScript runtime could be found',
+            'more 0'
+        ]);
+        expect(() => playReport.note(undefined, 'x')).not.toThrow();
+    });
+
     it('settles once: what happens after the first sound does not change the entry', () => {
         const res = start();
         playReport.playing(res, { how: 'cache' });

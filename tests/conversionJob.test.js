@@ -236,6 +236,48 @@ describe('a play is a conversion into the cache, with the response reading behin
         expect(fs.existsSync(cacheFile('youtube_brokenaaaaa'))).toBe(false);
     });
 
+    it('tells the app why when no audio came out, in whatever words ffmpeg used, or none', async () => {
+        const playReport = require('../services/playReport');
+        const reasons = jest.spyOn(playReport, 'reason').mockImplementation(() => {});
+        const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+        // The source refused: ffmpeg's wording has no "Error" in the telling line.
+        const refused = play('youtube_refusedaaaa');
+        lastChild().stderr.write('[https @ 0x1] HTTP error 403 Forbidden\n[hls @ 0x2] Failed to open segment 0 of playlist 0\n');
+        await wait(20);
+        lastChild().closed = true;
+        lastChild().emit('close', 183, null);
+        await until(() => refused.writableEnded, 'the response to end');
+        expect(reasons).toHaveBeenLastCalledWith(refused, 'ffmpeg: HTTP error 403 Forbidden / Failed to open segment 0 of playlist 0 (exit code 183)', { failed: true });
+        expect(logged.mock.calls.map((c) => c[0])).toContain('youtube_refusedaaaa: no audio. ffmpeg: HTTP error 403 Forbidden / Failed to open segment 0 of playlist 0 (exit code 183)');
+
+        // ffmpeg itself died: it says nothing, the signal is the reason.
+        const died = play('youtube_diedaaaaaaa');
+        lastChild().closed = true;
+        lastChild().emit('close', null, 'SIGSEGV');
+        await until(() => died.writableEnded, 'the response to end');
+        expect(reasons).toHaveBeenLastCalledWith(died, 'ffmpeg: it said nothing (ended by SIGSEGV)', { failed: true });
+
+        // It ended "successfully" with nothing: that is a failure with a reason too.
+        const empty = play('youtube_emptyaaaaaa');
+        lastChild().stderr.write('[out#0/mp3 @ 0x1] Output file is empty, nothing was encoded\n');
+        await wait(20);
+        lastChild().closed = true;
+        lastChild().emit('close', 0, null);
+        await until(() => empty.writableEnded, 'the response to end');
+        expect(reasons).toHaveBeenLastCalledWith(empty, 'ffmpeg: Output file is empty, nothing was encoded (exit code 0)', { failed: true });
+
+        reasons.mockRestore();
+        logged.mockRestore();
+    });
+
+    it('fetches the source with the headers its look-up named', () => {
+        play('youtube_headersaaaa', fakeRes(), { sourceHeaders: { 'User-Agent': 'Mozilla/5.0 Safari', 'Bad\r\nName': 'x' } });
+        const args = spawn.mock.calls[spawn.mock.calls.length - 1][1];
+        expect(args[args.indexOf('-headers') + 1]).toBe('User-Agent: Mozilla/5.0 Safari\r\n');
+        expect(args.indexOf('-headers')).toBeLessThan(args.indexOf('-i'));
+    });
+
     it('answers 500 and frees its slot when ffmpeg cannot be started', async () => {
         const res = play('youtube_nostartaaaa');
         lastChild().closed = true;

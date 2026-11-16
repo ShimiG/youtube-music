@@ -205,3 +205,72 @@ describe('one yt-dlp run per track', () => {
         expect(runs).toHaveLength(2);
     });
 });
+
+// --- What yt-dlp is given and what is taken from its answer (the play that
+// gave no audio on the owner's Mac: yt-dlp had no JavaScript runtime, and
+// ffmpeg fetched the address without the headers yt-dlp would have sent). ---
+describe('the JavaScript runtime and the request headers', () => {
+    const ytdlp = require('../services/ytdlp');
+    let savedRuntime;
+    beforeEach(() => { savedRuntime = process.env.YTDLP_JS_RUNTIME; delete process.env.YTDLP_JS_RUNTIME; ytdlp._forgetRuntime(); });
+    afterEach(() => {
+        if (savedRuntime === undefined) delete process.env.YTDLP_JS_RUNTIME; else process.env.YTDLP_JS_RUNTIME = savedRuntime;
+        ytdlp._forgetRuntime();
+    });
+
+    it('points yt-dlp at the Node this server runs on', async () => {
+        const { args } = await play('212\nhttps://rr1.googlevideo.com/audio\n');
+        const at = args.indexOf('--js-runtimes');
+        expect(at).toBeGreaterThan(-1);
+        expect(args[at + 1]).toBe(`node:${process.execPath}`);
+        expect(ytdlp.jsRuntime()).toMatchObject({ name: 'node', path: process.execPath });
+        // The address stays the last argument.
+        expect(args[args.length - 1]).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+    });
+
+    it('passes no runtime when told not to, and the named one when one is named', async () => {
+        process.env.YTDLP_JS_RUNTIME = 'off';
+        expect((await play('212\nhttps://rr1.googlevideo.com/a\n', { videoId: 'aaaaaaaaaa1' })).args).not.toContain('--js-runtimes');
+        expect(ytdlp.jsRuntime()).toBeNull();
+        process.env.YTDLP_JS_RUNTIME = 'deno:/opt/homebrew/bin/deno';
+        const { args } = await play('212\nhttps://rr1.googlevideo.com/a\n', { videoId: 'aaaaaaaaaa2' });
+        expect(args[args.indexOf('--js-runtimes') + 1]).toBe('deno:/opt/homebrew/bin/deno');
+        process.env.YTDLP_JS_RUNTIME = 'bun';
+        expect(ytdlp.jsRuntimeArgs()).toEqual(['--js-runtimes', 'bun']);
+    });
+
+    it("hands ffmpeg the headers yt-dlp names, and says what yt-dlp chose", async () => {
+        const playReport = require('../services/playReport');
+        const noteSpy = jest.spyOn(playReport, 'note').mockImplementation(() => {});
+        const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const stdout = '212\nhttps://rr1.googlevideo.com/audio\n{"User-Agent": "Mozilla/5.0 Safari", "Accept": "*/*"}\nchosen: format 251, https, opus\n';
+        const stderr = 'WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default\n';
+        const { args } = await play(stdout, { stderr, videoId: 'aaaaaaaaaa3' });
+        expect(args).toContain('%(http_headers)j');
+        const options = mockStreamTranscoded.mock.calls[0][2];
+        expect(options.sourceUrl).toBe('https://rr1.googlevideo.com/audio');
+        expect(options.sourceHeaders).toEqual({ 'User-Agent': 'Mozilla/5.0 Safari', Accept: '*/*' });
+        expect(noteSpy.mock.calls.map((c) => c[1])).toEqual([
+            'yt-dlp chose format 251, https, opus',
+            'yt-dlp: WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default'
+        ]);
+        // The warning goes to the log once, not on every play.
+        await play(stdout, { stderr, videoId: 'aaaaaaaaaa4' });
+        expect(warnSpy.mock.calls.filter((c) => /No supported JavaScript runtime/.test(c[0]))).toHaveLength(1);
+
+        // A second play of the same video uses the remembered answer, headers included.
+        mockStreamTranscoded.mockClear();
+        YouTubeController.streamTrack({ query: { videoId: 'aaaaaaaaaa3' } }, fakeRes());
+        await settle();
+        expect(mockStreamTranscoded.mock.calls[0][2].sourceHeaders).toEqual({ 'User-Agent': 'Mozilla/5.0 Safari', Accept: '*/*' });
+        noteSpy.mockRestore();
+        warnSpy.mockRestore();
+    });
+
+    it('plays on when an older yt-dlp gives no headers', async () => {
+        await play('212\nhttps://rr1.googlevideo.com/audio\nNA\nchosen: format NA, NA, NA\n', { videoId: 'aaaaaaaaaa5' });
+        expect(mockStreamTranscoded.mock.calls[0][2].sourceHeaders).toBeNull();
+        await play('212\nhttps://rr1.googlevideo.com/audio\n{not json\n', { videoId: 'aaaaaaaaaa6' });
+        expect(mockStreamTranscoded.mock.calls[1][2].sourceHeaders).toBeNull();
+    });
+});

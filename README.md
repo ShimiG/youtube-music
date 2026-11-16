@@ -87,6 +87,15 @@ after it in the background, shortly after it starts and at most once a day
   yt-dlp in use takes to start.
 - `YTDLP_PATH` names the yt-dlp to use and switches all of this off for it;
   `YTDLP_AUTO_UPDATE=false` turns the updates and the download off (CI and tests do).
+- **YouTube needs a JavaScript runtime.** YouTube hides its audio addresses behind a
+  script, and yt-dlp runs that script in a runtime it finds on the computer. By itself it
+  only looks for [deno](https://deno.com); with none it falls back to one limited YouTube
+  client, and tracks may not play. So the server tells yt-dlp which runtime to use: the
+  Node it runs on itself (`npm run dev`, `npm start`), or, in the installed app, a deno or
+  Node found on the computer. yt-dlp runs Node with its permission model on (the script
+  gets no files, network or processes). Settings → System shows which runtime is used, or
+  that none was found (then: `brew install deno`). `YTDLP_JS_RUNTIME` names one
+  (`deno`, `node:/path/to/node`, ...) or switches this off (`off`).
 
 ## Library API (one shape for every source)
 
@@ -219,6 +228,7 @@ Required environment variables (see `.env.example`):
 | `SOUNDCLOUD_REDIRECT_URI` | SoundCloud OAuth callback registered on the app, default `http://localhost:3000/auth/soundcloud/callback` |
 | `SOUNDCLOUD_PROVIDER` | `auto` (default), `api` or `ytdlp`; see "SoundCloud without API credentials" |
 | `YTDLP_AUTO_UPDATE` | Keep yt-dlp up to date (and fetch its faster folder build when the one in use is slow), shortly after the server starts, once a day (default `true`) |
+| `YTDLP_JS_RUNTIME` | The JavaScript runtime yt-dlp runs YouTube's player script in: `auto` (default: the server's own Node, or a deno/Node found on the computer when installed), a name with an optional path (`deno`, `node:/usr/local/bin/node`), or `off` |
 | `CLIENT_ORIGIN` | Allowed browser origin(s), comma-separated (default `http://localhost:5173`) |
 | `TOKEN_ENCRYPTION_KEY` | Key (32 bytes: 64 hex chars or base64) for encrypting stored OAuth tokens. Blank: the server generates `.token-key` in the data folder on first run. Changing it means users reconnect their services |
 | `CACHE_MAX_BYTES` | Audio cache size cap in bytes; least recently played tracks are evicted first (default `524288000`, 500 MB) |

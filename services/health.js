@@ -7,7 +7,7 @@
 // are never included in the response.
 const fs = require('fs');
 const { execFile } = require('child_process');
-const { ytDlpPath } = require('./ytdlp');
+const { ytDlpPath, jsRuntime } = require('./ytdlp');
 const { resolveFfmpeg } = require('./paths');
 
 const ffmpegPath = resolveFfmpeg();
@@ -95,6 +95,9 @@ async function getHealth({ fresh = false, detailed = false } = {}) {
         platform: process.platform,
         binaries: detailed ? binaries : { ytDlp: withoutVersion(binaries.ytDlp), ffmpeg: withoutVersion(binaries.ffmpeg) },
         cache,
+        // What yt-dlp runs YouTube's player script in (services/ytdlp.js);
+        // without one, YouTube tracks may not play. The name only.
+        jsRuntime: (() => { const runtime = jsRuntime(); return runtime ? runtime.name : null; })(),
         // Relative to the data folder; absolute paths stay out of responses.
         log: { enabled: logFile.enabled(), file: `logs/${logFile.FILE_NAME}` }
     };

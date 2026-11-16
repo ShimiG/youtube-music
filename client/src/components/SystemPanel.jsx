@@ -58,6 +58,7 @@ function RecentPlays({ plays, onRefresh }) {
                                     <span>
                                         {clock(play.at)} · {play.source} {play.id}
                                         <small style={what.kind === 'error' ? { color: '#ff8a8a' } : undefined}>{what.text}</small>
+                                        {(play.notes || []).map(note => <small key={note}>{note}</small>)}
                                     </span>
                                     <span className={`accounts-status is-${what.kind === 'error' ? 'warn' : what.kind}`}>{what.label}</span>
                                 </li>
@@ -132,8 +133,22 @@ export default function SystemPanel() {
                         </li>
                     );
                 })}
+                {'jsRuntime' in health && (
+                    <li>
+                        <span>JavaScript for yt-dlp<small>YouTube hides its audio behind a script; yt-dlp needs a runtime to run it</small></span>
+                        {health.jsRuntime
+                            ? <span className="accounts-status is-ok">{health.jsRuntime}</span>
+                            : <span className="accounts-status is-warn">Not found</span>}
+                    </li>
+                )}
                 <li><span>Audio cache</span><span>{Math.round(health.cache.bytes / MB)} MB of {Math.round(health.cache.maxBytes / MB)} MB</span></li>
             </ul>
+            {'jsRuntime' in health && !health.jsRuntime && (
+                <p className="accounts-error" role="alert">
+                    No JavaScript runtime was found for yt-dlp, so YouTube tracks may not play.
+                    {isMac ? <> Install one (in Terminal: <code>brew install deno</code>), then restart Music Manager.</> : ' Install deno or Node.js, then restart Music Manager.'}
+                </p>
+            )}
             {HELPERS.filter(helper => !health.binaries[helper.key].available).map(helper => (
                 <p key={helper.key} className="accounts-error" role="alert">
                     {helper.name} was not found, so streamed music cannot play.

@@ -22,6 +22,7 @@ const { EventEmitter } = require('events');
 const { spawn } = require('child_process');
 const { dataDir, resolveFfmpeg } = require('../services/paths');
 const playReport = require('../services/playReport');
+const mp3Frames = require('../services/mp3Frames');
 
 const ffmpegPath = resolveFfmpeg();
 const cacheDir = path.join(dataDir(), 'cache');
@@ -245,10 +246,15 @@ function serveFromCache(res, cacheKey, { req, seekTime = 0, timing } = {}) {
     const finalFilePath = cachePathFor(cacheKey);
     if (!finalFilePath || !fs.existsSync(finalFilePath)) {
         // Not there yet, but on its way: no need to look the address up again.
-        const job = req && seekTime === 0 ? jobs.get(cacheKey) : null;
+        // That goes for a seek too. The conversion runs ahead of the listener
+        // and what it has written can be read from any position, where a
+        // second conversion would have to download the track again and read
+        // through it up to that position (see follow, `fromSeconds`).
+        const job = req ? jobs.get(cacheKey) : null;
         if (!job) return false;
+        if (seekTime > 0 && (isPrepare(req) || !canFollowFrom(job))) return false;
         if (isPrepare(req)) answerPrepare(res, 'in_progress');
-        else follow(job, req, res, timing || { label: cacheKey });
+        else follow(job, req, res, timing || { label: cacheKey }, { fromSeconds: seekTime });
         return true;
     }
     const now = new Date();
@@ -505,6 +511,7 @@ function startJob(req, { sourceUrl, sourceHeaders, feed, cacheKey, finalFilePath
         child: null,
         stopped: false,      // ended by us (a limit, nobody listening), not by ffmpeg
         copied: canCopy(req, sourceCodec), // passing the source's MP3 through as it is
+        bitsPerSecond: parseInt(QUALITIES[qualityOf(req)].bitrate, 10) * 1000, // of what a conversion writes
         events: new EventEmitter(),
         startedAt: Date.now(),
         failedToStart: false,
@@ -626,11 +633,22 @@ function startJob(req, { sourceUrl, sourceHeaders, feed, cacheKey, finalFilePath
     return job;
 }
 
+// What a job converts to is constant-bitrate MP3 at the quality's bitrate, so
+// a time is a byte position. Not so for a source passed through as it is
+// (its bitrate is its own, and may vary).
+const canFollowFrom = (job) => !job.copied && job.bitsPerSecond > 0;
+// How much is looked at to find where a frame begins (a frame is under 2 KB).
+const ALIGN_WINDOW_BYTES = 8 * 1024;
+const HEAD_BYTES = 16 * 1024;
+
 /**
  * Sends a job's audio to `res`: what is in the file already, then the rest as
  * it is written, at the pace the client reads.
+ *
+ * `fromSeconds`: from that position on (a seek). The listener waits until the
+ * conversion has got that far, which it does faster than the track plays.
  */
-function follow(job, req, res, timing) {
+function follow(job, req, res, timing, { fromSeconds = 0 } = {}) {
     let fd;
     try {
         fd = fs.openSync(job.partPath, 'r');
@@ -647,7 +665,12 @@ function follow(job, req, res, timing) {
 
     setMediaHeaders(res);
 
-    let position = 0;
+    // A seek starts at the byte that belongs to its time, moved forward to
+    // where the next frame begins once that part of the file exists.
+    const startByte = fromSeconds > 0 ? Math.floor((fromSeconds * job.bitsPerSecond) / 8) : 0;
+    let position = startByte;
+    let placed = startByte === 0; // the exact place to start from is known
+    let sent = 0;
     let reading = false;  // a read from the file is in progress
     let blocked = false;  // waiting for the client to take what was sent
     let over = false;
@@ -672,8 +695,36 @@ function follow(job, req, res, timing) {
     };
 
 
+    const readAt = (length, at) => new Promise((resolve, reject) => {
+        const buffer = Buffer.allocUnsafe(length);
+        fs.read(fd, buffer, 0, length, at, (err, bytesRead) => (err ? reject(err) : resolve(buffer.subarray(0, bytesRead))));
+    });
+
+    // Moves `position` to the beginning of a frame. If none can be found
+    // (which would mean the file is not what a conversion writes), the stream
+    // starts at the calculated byte: players skip to the next frame themselves.
+    function place() {
+        // Wait until the conversion has written past the place (or has ended).
+        if (!job.done && job.bytes < startByte + ALIGN_WINDOW_BYTES) return;
+        reading = true;
+        Promise.all([readAt(HEAD_BYTES, 0), readAt(ALIGN_WINDOW_BYTES, startByte)])
+            .then(([head, window]) => {
+                const first = mp3Frames.firstFrame(head);
+                const at = first ? mp3Frames.nextFrame(window, first.header) : -1;
+                if (at > 0) position = startByte + at;
+            })
+            .catch(() => { /* read again, and reported, by pump */ })
+            .then(() => {
+                reading = false;
+                if (over) return fs.close(fd, () => {});
+                placed = true;
+                return pump();
+            });
+    }
+
     function pump() {
         if (over || reading || blocked) return;
+        if (!placed) return place();
         reading = true;
         const buffer = Buffer.allocUnsafe(FOLLOW_CHUNK_BYTES);
         fs.read(fd, buffer, 0, buffer.length, position, (err, bytesRead) => {
@@ -686,12 +737,13 @@ function follow(job, req, res, timing) {
             }
             if (bytesRead > 0) {
                 position += bytesRead;
+                sent += bytesRead;
                 if (!logged) {
                     logged = true;
                     res.setHeader('Content-Type', 'audio/mpeg');
                     res.setHeader('Transfer-Encoding', 'chunked');
                     logPlay(req, timing, joined
-                        ? `joined a conversion started ${joinedAfterMs} ms earlier`
+                        ? `joined a conversion started ${joinedAfterMs} ms earlier${fromSeconds ? ` (seek to ${fromSeconds} s)` : ''}`
                         : `first audio ${Date.now() - job.startedAt} ms after starting ffmpeg`, joined ? 'joined' : 'conversion');
                 }
                 if (res.write(bytesRead === buffer.length ? buffer : buffer.subarray(0, bytesRead))) return pump();
@@ -703,12 +755,12 @@ function follow(job, req, res, timing) {
             if (job.done) {
                 leave();
                 // Nothing came out of the conversion: say why, for the app to show.
-                if (position === 0 && !job.ok) playReport.reason(res, job.complaint || NO_AUDIO, { failed: true });
-                if (job.failedToStart && position === 0 && !res.headersSent) {
+                if (sent === 0 && !job.ok) playReport.reason(res, job.complaint || NO_AUDIO, { failed: true });
+                if (job.failedToStart && sent === 0 && !res.headersSent) {
                     return res.status(500).json({ error: 'Audio processor unavailable' });
                 }
                 // No audio at all: an error answer, not an empty success.
-                if (position === 0 && !job.ok && !res.headersSent) return res.status(502).json(NO_AUDIO_ANSWER);
+                if (sent === 0 && !job.ok && !res.headersSent) return res.status(502).json(NO_AUDIO_ANSWER);
                 return res.end();
             }
             return undefined; // woken by 'grow' or 'done'

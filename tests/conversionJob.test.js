@@ -191,8 +191,8 @@ describe('a play is a conversion into the cache, with the response reading behin
         const again = fakeRes();
         expect(transcode.serveFromCache(again, 'youtube_prepskipaaa', { req: { query: { prepare: '1' } }, seekTime: 0 })).toBe(true);
         expect(again.json).toHaveBeenCalledWith({ prepared: 'in_progress' });
-        // A seek cannot be served from a file that is still growing.
-        expect(transcode.serveFromCache(fakeRes(), 'youtube_prepskipaaa', { req: { query: { seek: '30' } }, seekTime: 30 })).toBe(false);
+        // A request that only prepares never seeks.
+        expect(transcode.serveFromCache(fakeRes(), 'youtube_prepskipaaa', { req: { query: { prepare: '1', seek: '30' } }, seekTime: 30 })).toBe(false);
 
         await until(() => res.body().length === 130000, 'what was already converted');
         await convert(child, audio(20000));
@@ -557,5 +557,166 @@ describe('a source that yt-dlp downloads is piped into ffmpeg', () => {
         } finally {
             jest.useRealTimers();
         }
+    });
+});
+
+// A seek in a track that is still being converted reads from the conversion
+// that is running, at the byte that belongs to the time (128 kbit/s: 16,000
+// bytes a second), instead of starting a second download and conversion.
+describe('a seek joins the conversion that is already running', () => {
+    const BYTES_PER_SECOND = 16000; // the standard quality, 128 kbit/s
+    const seek = (key, seconds, res = fakeRes()) => {
+        const req = { query: { seek: String(seconds) }, playStartedAt: Date.now() };
+        return { res, joined: transcode.serveFromCache(res, key, { req, seekTime: seconds }) };
+    };
+
+    // What ffmpeg writes: an ID3 tag, then frames of 384 bytes (128 kbit/s at
+    // 48 kHz), each beginning FF FB 94 00. Every third frame also carries those
+    // same four bytes in its middle: a place that looks like a frame and is not one.
+    const TAG = 45;
+    const FRAME = 384;
+    function mp3(frames) {
+        const tag = Buffer.alloc(TAG);
+        tag.write('ID3', 0, 'latin1');
+        tag[3] = 4;
+        tag[9] = TAG - 10; // the tag's size, without its own ten bytes
+        const out = [tag];
+        for (let i = 0; i < frames; i++) {
+            const frame = Buffer.alloc(FRAME, (i % 200) + 1);
+            frame.set([0xff, 0xfb, 0x94, 0x00], 0);
+            if (i % 3 === 0) frame.set([0xff, 0xfb, 0x94, 0x00], 150);
+            frame.writeUInt32BE(i, 4); // which frame this is
+            out.push(frame);
+        }
+        return Buffer.concat(out);
+    }
+
+    it('starts no second ffmpeg, and sends from the frame that begins at that time', async () => {
+        const first = play('youtube_seekjoinaaa');
+        const child = lastChild();
+        const data = mp3(600); // 230 KB: 14.4 s of audio
+        child.stdout.write(data);
+        await until(() => first.body().length === data.length, 'the listener to have it all');
+
+        const { res, joined } = seek('youtube_seekjoinaaa', 8);
+        expect(joined).toBe(true);
+        expect(spawn).toHaveBeenCalledTimes(1);
+        await until(() => res.body().length > 0, 'the seek to be answered');
+        expect(res.headers['Content-Type']).toBe('audio/mpeg');
+
+        // 8 s is byte 128,000: inside a frame, just before that frame's look-alike.
+        // The stream begins with the next whole frame, not there.
+        const sentFrom = data.length - (await (async () => { child.stdout.end(); await wait(20); child.emit('close', 0); await until(() => res.writableEnded, 'the end'); return res.body().length; })());
+        expect(sentFrom).toBeGreaterThanOrEqual(8 * BYTES_PER_SECOND);
+        expect(sentFrom).toBeLessThan(8 * BYTES_PER_SECOND + FRAME);
+        expect(((8 * BYTES_PER_SECOND - TAG) % FRAME)).toBeLessThan(150); // the look-alike lies between the two
+        expect((sentFrom - TAG) % FRAME).toBe(0);
+        expect([...res.body().subarray(0, 4)]).toEqual([0xff, 0xfb, 0x94, 0x00]);
+        // Not the look-alike in the middle of a frame: the frame's number follows.
+        expect(res.body().readUInt32BE(4)).toBe((sentFrom - TAG) / FRAME);
+        expect(res.body()).toEqual(data.subarray(sentFrom));
+        expect(logSpy.mock.calls.map((c) => c[0]).join('\n')).toMatch(/Play youtube_seekjoinaaa: joined a conversion started \d+ ms earlier \(seek to 8 s\)/);
+        lastChild().closed = true;
+    });
+
+    it('waits for the conversion to get there when the seek is ahead of it', async () => {
+        play('youtube_seekwaitaaa');
+        const child = lastChild();
+        const data = mp3(600);
+        child.stdout.write(data.subarray(0, 50000)); // 3 s converted so far
+        await wait(40);
+
+        const { res, joined } = seek('youtube_seekwaitaaa', 10);
+        expect(joined).toBe(true);
+        await wait(80);
+        expect(res.body().length).toBe(0); // nothing yet: byte 160,000 is not written
+        expect(res.writableEnded).toBe(false);
+
+        child.stdout.write(data.subarray(50000));
+        await until(() => res.body().length > 0, 'the seek to be answered');
+        child.stdout.end();
+        await wait(20);
+        child.closed = true;
+        child.emit('close', 0);
+        await until(() => res.writableEnded, 'the end');
+        const sentFrom = data.length - res.body().length;
+        expect(sentFrom).toBeGreaterThanOrEqual(10 * BYTES_PER_SECOND);
+        expect((sentFrom - TAG) % FRAME).toBe(0);
+        expect(spawn).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the conversion going for the one who seeked when the first listener leaves', async () => {
+        const first = play('youtube_seekkeepaaa');
+        const child = lastChild();
+        child.stdout.write(mp3(600));
+        await until(() => first.body().length > 0, 'the first listener to get audio');
+        const { res } = seek('youtube_seekkeepaaa', 2);
+        await until(() => res.body().length > 0, 'the seek to be answered');
+        first.destroy(); // the player dropped the old request when it seeked
+        await wait(30);
+        expect(child.kill).not.toHaveBeenCalled();
+        expect(transcode._backgroundTranscodes()).toBe(0); // still listened to
+        child.closed = true;
+        child.emit('close', 0);
+        await until(() => res.writableEnded, 'the end');
+    });
+
+    it('starts at the calculated byte when no frame can be recognised there', async () => {
+        play('youtube_seekrawaaaa');
+        const child = lastChild();
+        child.stdout.write(audio(150000)); // not MP3 at all
+        await wait(40);
+        const { res } = seek('youtube_seekrawaaaa', 5);
+        child.stdout.end();
+        await wait(20);
+        child.closed = true;
+        child.emit('close', 0);
+        await until(() => res.writableEnded, 'the end');
+        expect(res.body()).toEqual(audio(150000).subarray(5 * BYTES_PER_SECOND));
+    });
+
+    it('ends with nothing for a position past the end, and with an error when the conversion failed', async () => {
+        play('youtube_seekpastaaa');
+        const child = lastChild();
+        child.stdout.write(mp3(600));
+        await wait(40);
+        const past = seek('youtube_seekpastaaa', 60).res; // the track is 14 s long
+        child.stdout.end();
+        await wait(20);
+        child.closed = true;
+        child.emit('close', 0);
+        await until(() => past.writableEnded, 'the end');
+        expect(past.body().length).toBe(0);
+        expect(past.status).not.toHaveBeenCalled();
+
+        play('youtube_seekfailaaa');
+        const failing = seek('youtube_seekfailaaa', 30).res;
+        lastChild().closed = true;
+        lastChild().emit('close', 1, null);
+        await until(() => failing.writableEnded, 'the end');
+        expect(failing.status).toHaveBeenCalledWith(502);
+    });
+
+    it('does not join a source that is passed through as it is: its bitrate is its own', async () => {
+        play('soundcloud_seekcopya', fakeRes(), { sourceCodec: 'mp3' });
+        lastChild().stdout.write(mp3(600));
+        await wait(40);
+        expect(seek('soundcloud_seekcopya', 5).joined).toBe(false);
+    });
+
+    it('reckons with the quality: the high setting is twice the bytes a second', async () => {
+        const high = { query: { quality: 'high' }, playStartedAt: Date.now() };
+        transcode.streamTranscoded(high, fakeRes(), { sourceUrl: 'https://media.example/a', cacheKey: 'youtube_seekhighaaa_q256', seekTime: 0, timing: { label: 'high' } });
+        const child = lastChild();
+        child.stdout.write(audio(200000));
+        await wait(40);
+        const res = fakeRes();
+        expect(transcode.serveFromCache(res, 'youtube_seekhighaaa_q256', { req: { query: { quality: 'high', seek: '5' } }, seekTime: 5 })).toBe(true);
+        child.stdout.end();
+        await wait(20);
+        child.closed = true;
+        child.emit('close', 0);
+        await until(() => res.writableEnded, 'the end');
+        expect(res.body().length).toBe(200000 - 5 * 32000);
     });
 });

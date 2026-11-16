@@ -555,3 +555,56 @@
 .system-plays .system-list li { align-items: flex-start; }
 .system-plays .system-list li > span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .system-plays .accounts-status { white-space: nowrap; flex-shrink: 0; }
+
+/* A track card's picture, with the two small buttons that appear on its top
+   right corner while the pointer is on the card: add to a playlist, and below
+   it add to the queue. Grey and small, so they do not compete with the cover. */
+.track-card-art {
+  position: relative;
+  margin-bottom: 10px;
+}
+.track-card-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  /* Above the pictures of the neighbouring cards, which the playlist menu
+     reaches over. */
+  z-index: 2;
+}
+/* The one whose menu is open goes above the other cards' buttons too. */
+.track-card-actions:has([aria-expanded="true"]) {
+  z-index: 60;
+}
+.track-card:hover .track-card-actions,
+.track-card:focus-within .track-card-actions,
+.track-card-actions:has([aria-expanded="true"]) {
+  opacity: 1;
+}
+/* No pointer to hover with (a touch screen): always there. */
+@media (hover: none) {
+  .track-card-actions { opacity: 1; }
+}
+.card-action {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(38, 38, 38, 0.78);
+  color: #cfcfcf;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.card-action:hover,
+.card-action:focus-visible,
+.card-action[aria-expanded="true"] {
+  background: rgba(72, 72, 72, 0.95);
+  color: #fff;
+}

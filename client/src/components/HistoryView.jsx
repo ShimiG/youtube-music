@@ -8,7 +8,7 @@ import { apiFetch } from '../utils/api';
 // since it last asked: not on every visit.
 export default function HistoryView({ active = true }) {
     const [recentTracks, setRecentTracks] = useState([]);
-    const { playTrack } = useMusic();
+    const { playTrack, addToQueue } = useMusic();
     // Counts the plays recorded since the app started (the player announces each).
     const [plays, setPlays] = useState(0);
     const shownPlays = useRef(-1);
@@ -39,7 +39,7 @@ export default function HistoryView({ active = true }) {
             ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '15px', marginTop: '15px' }}>
                     {recentTracks.map((track, idx) => (
-                        <TrackCard key={`history-${track.id || track.videoId}-${idx}`} track={track} onClick={playTrack} />
+                        <TrackCard key={`history-${track.id || track.videoId}-${idx}`} track={track} onClick={playTrack} onQueue={addToQueue} canAddToPlaylist />
                     ))}
                 </div>
             )}

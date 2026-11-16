@@ -55,7 +55,8 @@ function begin(req, res, { source, id }) {
         addressMs: null,   // the look-up of the audio address, when there was one
         addressFrom: null, // yt-dlp | shared | memory | api
         how: null,         // cache | conversion | joined | file
-        reason: null
+        reason: null,
+        player: null       // what the player in the app said, if it reported an error
     });
     byResponse.set(res, entry);
 
@@ -119,9 +120,41 @@ function rejected(req, text) {
     add({
         n: ++counter, at: Date.now(), userId: null,
         source: tidy(query.source || 'youtube').toLowerCase().slice(0, 32), id: tidy(query.videoId || '').slice(0, 64), seek: 0,
-        status: 'failed', ms: 0, addressMs: null, addressFrom: null, how: null, reason: tidy(text), turnedAway: true
+        status: 'failed', ms: 0, addressMs: null, addressFrom: null, how: null, reason: tidy(text), player: null, turnedAway: true
     });
 }
+
+const NEVER_ARRIVED = 'no request for this track reached the server';
+const PLAYER_SAID_WITHIN_MS = 3 * 60 * 1000;
+
+/**
+ * What the player in the app said about a track it could not play (the
+ * browser's own media error). Attached to that play's entry, so one list
+ * holds both sides. When there is no entry, the request never got here (or
+ * went to another program on the same port): that is noted as such.
+ * Returns the entry as recent() would.
+ */
+function playerSaid({ userId, source: rawSource, id: rawId, text }) {
+    const source = tidy(rawSource).slice(0, 32);
+    const id = tidy(rawId).slice(0, 64);
+    const since = Date.now() - PLAYER_SAID_WITHIN_MS;
+    let entry = null;
+    for (let i = entries.length - 1; i >= 0 && !entry; i--) {
+        const e = entries[i];
+        if (e.at >= since && e.source === source && e.id === id && (e.userId === null || e.userId === userId)) entry = e;
+    }
+    if (!entry) {
+        entry = add({
+            n: ++counter, at: Date.now(), userId, source, id, seek: 0,
+            status: 'failed', ms: 0, addressMs: null, addressFrom: null, how: null, reason: NEVER_ARRIVED, player: null
+        });
+    }
+    entry.player = tidy(text).slice(0, 200) || 'an error with no description';
+    return shown(entry);
+}
+
+// What is handed out: not whose play it was, nor the notes kept for bookkeeping.
+const shown = ({ failed, turnedAway, userId, ...rest }) => rest; // eslint-disable-line no-unused-vars
 
 /**
  * The latest entries, newest first. `userId`: only that account's (and those
@@ -134,7 +167,7 @@ function recent({ userId = null, limit = 20, source, id } = {}) {
             && (!source || e.source === source) && (!id || e.id === String(id)))
         .slice(-max)
         .reverse()
-        .map(({ failed, turnedAway, userId: owner, ...shown }) => shown); // eslint-disable-line no-unused-vars
+        .map(shown);
 }
 
 // Tests only.
@@ -143,4 +176,4 @@ function _reset() {
     counter = 0;
 }
 
-module.exports = { begin, playing, reason, rejected, recent, MAX_ENTRIES, _reset };
+module.exports = { begin, playing, reason, rejected, playerSaid, recent, MAX_ENTRIES, NEVER_ARRIVED, _reset };

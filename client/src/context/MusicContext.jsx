@@ -13,6 +13,30 @@ const PREPARE_BEFORE_END_SEC = 25;
 // A track that cannot be played is skipped; this many in a row and it stops.
 const MAX_SKIPS_IN_A_ROW = 3;
 
+// What the browser's player says when it gives up on a track. The code is
+// the standard one (MediaError); the message, where the browser gives one,
+// says more ("DEMUXER_ERROR_COULD_NOT_OPEN", "Format error", ...).
+const MEDIA_ERRORS = {
+    1: 'the load was stopped',
+    2: 'the connection to the server failed or was cut',
+    3: 'the audio it received could not be decoded',
+    4: 'it was given no audio it can play (an error answer, an empty one, or a format it does not support)'
+};
+function describeMediaError(error) {
+    if (!error) return 'an error with no description';
+    const detail = error.message ? `: ${String(error.message).slice(0, 120)}` : '';
+    return `${MEDIA_ERRORS[error.code] || 'an unknown error'} (media error ${error.code}${detail})`;
+}
+
+// One sentence on why a track did not play, from what the server noted about
+// the play and what the player said.
+function explainFailure(play, playerSaid) {
+    if (!play) return `the player said: ${playerSaid}`;
+    if (play.status === 'failed') return play.reason || 'the server could not produce the audio';
+    if (play.status === 'playing') return `the server sent the audio, but the player did not play it: ${playerSaid}`;
+    return `the player gave up while the server was still fetching the audio: ${playerSaid}`;
+}
+
 export const MusicProvider = ({ children }) => {
     const [currentTrack, setCurrentTrack] = useState(null);
     const [isPlaying, setIsPlaying] = useState(false);
@@ -371,19 +395,21 @@ const seek = useCallback((time) => {
             const canSkip = queueIndex < queue.length - 1;
             const failedLoad = loadSeq.current;
             failuresInARow.current += 1;
-            // A missing helper program stops every streamed track, so say that
-            // (once) instead of skipping through the whole queue.
             // Two things are asked of the server: whether a helper program
-            // is missing altogether, and what it noted about this very play
-            // (the reason yt-dlp or ffmpeg gave: services/playReport.js).
+            // is missing altogether (that stops every streamed track, so it
+            // is said once instead of skipping through the queue), and what
+            // it knows about this very play (services/playReport.js). It is
+            // told what the player itself said, so that its list of recent
+            // plays has both sides.
             const failedSource = currentTrack ? (currentTrack.source || DEFAULT_SOURCE) : '';
-            const failedId = currentTrack ? (currentTrack.id || currentTrack.videoId) : '';
+            const failedId = String(currentTrack ? (currentTrack.id || currentTrack.videoId) : '');
+            const playerSaid = describeMediaError(audio.error);
             const missingHelpers = apiFetch('/api/health')
                 .then(health => ['ytDlp', 'ffmpeg'].filter(name => health.binaries && health.binaries[name] && !health.binaries[name].available))
                 .catch(() => []);
-            const whatWentWrong = apiFetch(`/api/system/plays?limit=1&source=${encodeURIComponent(failedSource)}&id=${encodeURIComponent(failedId)}`)
-                .then(data => { const last = data.plays && data.plays[0]; return last && last.status === 'failed' ? last.reason : null; })
-                .catch(() => null);
+            const whatWentWrong = apiFetch('/api/system/plays/player-error', { method: 'POST', body: { source: failedSource, id: failedId, message: playerSaid } })
+                .then(data => explainFailure(data.play, playerSaid))
+                .catch(() => `the player said: ${playerSaid}`);
             Promise.all([missingHelpers, whatWentWrong])
                 .then(([missing, why]) => {
                     if (loadSeq.current !== failedLoad) return; // another track was started meanwhile

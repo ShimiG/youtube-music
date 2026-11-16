@@ -122,6 +122,16 @@ app.get('/api/system/plays', requireAuth, async (req, res, next) => {
     }
 });
 
+// The player in the app could not play a track: what the browser said goes
+// next to what the server knows about that play, so one list has both sides.
+app.post('/api/system/plays/player-error', requireAuth, (req, res) => {
+    const { source, id, message } = req.body || {};
+    const text = (value, max) => (typeof value === 'string' && value.length > 0 && value.length <= max ? value : null);
+    if (!text(source, 32) || !text(id, 64) || !text(message, 300)) return res.status(400).json({ error: 'source, id and message are required' });
+    res.set('Cache-Control', 'no-store');
+    return res.json({ play: playReport.playerSaid({ userId: req.userId, source: source.toLowerCase(), id, text: message }) });
+});
+
 // The end of the server's log (services/logFile.js), for a problem report.
 // Owner only: the log covers every account on this installation.
 app.get('/api/system/log', requireAuth, settingsController.requireOwner, (req, res) => {

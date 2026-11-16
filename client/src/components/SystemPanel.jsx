@@ -20,6 +20,12 @@ const LOOKUPS = { 'yt-dlp': 'yt-dlp was run', shared: 'a yt-dlp run already unde
 
 // What one play was made of, in a line.
 function describePlay(play) {
+    // The server did its part and the player in the app still gave up.
+    if (play.player && play.status !== 'failed') {
+        const sent = play.status === 'playing' ? `The server sent the audio after ${seconds(play.ms || 0)}` : 'The server was still fetching the audio';
+        return { text: `${sent}; the player reported: ${play.player}.`, kind: 'error', label: 'Not played' };
+    }
+    if (play.status === 'failed' && play.player) return { text: `${(play.reason || 'It could not be played').replace(/[.\s]+$/, '')}. The player reported: ${play.player}.`, kind: 'error', label: `Failed after ${seconds(play.ms || 0)}` };
     if (play.status === 'failed') return { text: play.reason || 'It could not be played.', kind: 'error', label: `Failed after ${seconds(play.ms || 0)}` };
     if (play.status === 'left') return { text: 'Skipped before any sound.', kind: 'off', label: `Left after ${seconds(play.ms || 0)}` };
     if (play.status === 'waiting') return { text: 'Still being fetched.', kind: 'off', label: 'Waiting' };

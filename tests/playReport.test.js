@@ -123,6 +123,29 @@ describe('keeping the record', () => {
         expect(playReport.recent({ userId: 1, source: 'youtube', id: 'theirs' })).toEqual([]);
     });
 
+    it('attaches what the player said to the play it is about', () => {
+        const res = start('sent', { userId: 1 });
+        playReport.playing(res, { how: 'conversion' });
+        start('other', { userId: 2 }).emit('close');
+        const play = playReport.playerSaid({ userId: 1, source: 'youtube', id: 'sent', text: 'the audio could not be decoded\n(media error 3)' });
+        expect(play).toMatchObject({ id: 'sent', status: 'playing', player: 'the audio could not be decoded (media error 3)' });
+        expect(play).not.toHaveProperty('userId');
+        expect(playReport.recent()).toHaveLength(2);
+        expect(playReport.recent({ id: 'sent' })[0].player).toMatch(/could not be decoded/);
+    });
+
+    it('says so when the player reports a track the server never saw a request for', () => {
+        start('theirs', { userId: 2 }).emit('close');
+        // Another account's play of the same track is not this one's.
+        const play = playReport.playerSaid({ userId: 1, source: 'youtube', id: 'theirs', text: 'the connection failed' });
+        expect(play).toMatchObject({ status: 'failed', reason: playReport.NEVER_ARRIVED, player: 'the connection failed', ms: 0 });
+        expect(playReport.recent({ userId: 2 }).map((p) => p.player)).toEqual([null]);
+        expect(playReport.recent({ userId: 1 })).toHaveLength(1);
+        // Said again: the same entry, not another.
+        playReport.playerSaid({ userId: 1, source: 'youtube', id: 'theirs', text: '' });
+        expect(playReport.recent({ userId: 1 })).toEqual([expect.objectContaining({ player: 'an error with no description' })]);
+    });
+
     it('keeps one entry for a burst of requests turned away, so it cannot push the plays out', () => {
         start('real').emit('close');
         for (let i = 0; i < 200; i++) playReport.rejected({ query: { videoId: `junk${i}` } }, 'too many requests');
@@ -191,6 +214,35 @@ describe('through the server', () => {
         expect(await plays(1, '?id=a&id=b')).toHaveLength(2);
         expect(await plays(1, `?source=${'y'.repeat(100)}`)).toHaveLength(2);
         expect(await plays(1, '?limit=abc')).toHaveLength(2);
+    });
+
+    it('notes a play whose media token was refused, which no handler sees', async () => {
+        const res = await request(app).get('/stream?videoId=eeeeeeeeeee&t=not-a-token');
+        expect(res.statusCode).toBe(401);
+        const [latest] = await plays(2, '?id=eeeeeeeeeee');
+        expect(latest).toMatchObject({ status: 'failed', source: 'youtube' });
+        expect(latest.reason).toMatch(/media token/);
+        // Not for /duration, and not for a request that only prepares.
+        await request(app).get('/duration?videoId=fffffffffff');
+        await request(app).get('/stream?videoId=fffffffffff&prepare=1');
+        expect(await plays(1, '?id=fffffffffff')).toEqual([]);
+    });
+
+    it("takes the player's own error and puts it with the play", async () => {
+        const send = (userId, body) => request(app).post('/api/system/plays/player-error').set(authFor(userId)).send(body);
+        expect((await request(app).post('/api/system/plays/player-error').send({ source: 'youtube', id: 'x', message: 'm' })).statusCode).toBe(401);
+        for (const bad of [{}, { source: 'youtube', id: 'x' }, { source: 'youtube', id: '', message: 'm' }, { source: 5, id: 'x', message: 'm' }, { source: 'youtube', id: 'x', message: 'm'.repeat(301) }]) {
+            expect((await send(1, bad)).statusCode).toBe(400);
+        }
+        // A play the server knows about (it failed in yt-dlp): both sides in one entry.
+        const known = await send(2, { source: 'YouTube', id: 'aaaaaaaaaaa', message: 'it was given no audio it can play (media error 4)' });
+        expect(known.statusCode).toBe(200);
+        expect(known.body.play.reason).toMatch(/^yt-dlp: ERROR/);
+        expect(known.body.play.player).toMatch(/media error 4/);
+        // One it has never heard of.
+        const unknown = await send(2, { source: 'youtube', id: 'zzzzzzzzzzz', message: 'the connection failed (media error 2)' });
+        expect(unknown.body.play).toMatchObject({ status: 'failed', reason: 'no request for this track reached the server', player: 'the connection failed (media error 2)' });
+        expect((await plays(2, '?id=zzzzzzzzzzz'))).toHaveLength(1);
     });
 
     it('keeps no entry for a request that only prepares the next track', async () => {

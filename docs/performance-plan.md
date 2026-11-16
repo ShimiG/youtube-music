@@ -301,11 +301,30 @@ browser's follow-up requests for a later part of a file are left out.
   you're not a bot). Skipping to the next track.`
 - **Settings → System → Recent plays** lists them with the time each took.
 
+Two kinds of failure leave nothing in the log at all, and both are covered:
+
+- A request that no handler sees: turned away by the rate limit, or with a
+  media token that was refused. Each is noted as a failed play.
+- A failure on the player's side. The player tells the server what the
+  browser said (`POST /api/system/plays/player-error`), and that goes into
+  the same entry: "the server sent the audio after 2.0 s; the player
+  reported: …" means the browser could not use what it got; "no request for
+  this track reached the server" means the request went somewhere else or
+  nowhere (another program on the port, something blocking it).
+
 Checked in the browser against a stand-in yt-dlp (2 s per look-up) with a
 playlist of four: one refused by "YouTube", one whose audio address was dead
 (ffmpeg: `Server returned 404 Not Found`), two that play. Both reasons
 appeared in the messages and in the list; the two that played show "Finding
-the audio took 2.0 s … Sound after 2.1 s".
+the audio took 2.0 s … Sound after 2.1 s". And with the browser made to
+drop one request and to garble the audio of another: "no request for this
+track reached the server" and "the server sent the audio, but the player
+did not play it: … (media error 4)".
+
+Also checked, because the owner's Mac showed every track failing with an
+empty log: the released v2.2.2 with a yt-dlp that takes 12 s per look-up.
+It plays (after 12 s) and logs the play, so a slow yt-dlp alone is not what
+fails there.
 
 ### Still open
 

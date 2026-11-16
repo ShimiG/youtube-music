@@ -139,7 +139,7 @@ function AccountRow({ source, service, onServices }) {
                     {service && service.canEdit && !optional && `Before anyone can connect, Music Manager needs this installation's own ${source.label} credentials.`}
                     {service && service.canEdit && optional && `Optional. To connect an account, Music Manager needs this installation's own ${source.label} credentials.`}
                     {service && !service.canEdit && service.managedBy === 'env' && `${source.label} is only partly set in the .env file. Complete it there and restart.`}
-                    {service && !service.canEdit && service.managedBy !== 'env' && `${source.label} is not set up here yet. The first account created on this computer can set it up.`}
+                    {service && !service.canEdit && service.managedBy !== 'env' && `${source.label} is not set up here yet. The first person who signed in on this computer can set it up.`}
                 </p>
             )}
 

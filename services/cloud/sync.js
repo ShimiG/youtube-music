@@ -208,25 +208,6 @@ async function localUserFor(db, cloudName) {
     return row ? row.user_id : null;
 }
 
-/** Stops syncing this user. Their data stays here and in the cloud. */
-async function unlink(db, userId) {
-    linked.delete(userId);
-    pending.delete(userId);
-    // A YouTube login that came from the cloud account goes with it (it is a
-    // short-lived token with nothing here to renew it). One connected on this
-    // computer with its own credentials stays.
-    const row = await getLink(db, userId);
-    if (row && row.google_connected) {
-        await db.run(
-            `DELETE FROM user_connections WHERE user_id = ? AND refresh_token IS NULL
-             AND source_id = (SELECT id FROM sources WHERE name = 'youtube')`,
-            [userId]
-        );
-    }
-    await db.run('DELETE FROM cloud_links WHERE user_id = ?', [userId]);
-    await db.run('DELETE FROM sync_records WHERE user_id = ?', [userId]);
-}
-
 // --- One sync run -----------------------------------------------------------------
 
 // Whether a change from the cloud beats what this computer has for the record.
@@ -551,7 +532,6 @@ module.exports = {
     urlIsFixed,
     getMeta,
     setMeta,
-    unlink,
     syncNow,
     touch,
     start,

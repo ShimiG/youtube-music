@@ -97,9 +97,10 @@ describe("Stored Google connection (sourceToken('youtube') middleware)", () => {
 });
 
 describe('Input validation', () => {
-    it('POST /api/login rejects missing credentials with 400', async () => {
-        const res = await request(app).post('/api/login').send({});
+    it('POST /api/cloud/login rejects missing credentials with 400', async () => {
+        const res = await request(app).post('/api/cloud/login').send({});
         expect(res.statusCode).toBe(400);
+        expect(res.body.code).toBe('CLOUD_BAD_INPUT');
     });
 
     it('POST /history with a valid token but no track data returns 400', async () => {
@@ -159,19 +160,19 @@ describe('Session token hardening', () => {
     it('answers a request it cannot read with the client\'s own status, and says nothing about the inside', async () => {
         const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
         const error = jest.spyOn(console, 'error').mockImplementation(() => {});
-        const big = await request(app).post('/api/register').send({ username: 'someone', password: 'x'.repeat(2 * 1024 * 1024) });
+        const big = await request(app).post('/api/cloud/login').send({ username: 'someone', password: 'x'.repeat(2 * 1024 * 1024) });
         expect(big.statusCode).toBe(413);
         expect(big.body).toEqual({ error: 'Request body too large.' });
 
-        const broken = await request(app).post('/api/login').set('Content-Type', 'application/json').send('{"username": "a", ');
+        const broken = await request(app).post('/api/cloud/login').set('Content-Type', 'application/json').send('{"username": "a", ');
         expect(broken.statusCode).toBe(400);
         expect(broken.body).toEqual({ error: 'Malformed request.' });
         expect(JSON.stringify(broken.body)).not.toMatch(/JSON|position|Unexpected|at /);
         // Not logged as a failure of the server.
         expect(error).not.toHaveBeenCalled();
         expect(warn.mock.calls.map(([line]) => line)).toEqual([
-            expect.stringMatching(/^Rejected request: POST \/api\/register \(413, entity\.too\.large\)$/),
-            expect.stringMatching(/^Rejected request: POST \/api\/login \(400, entity\.parse\.failed\)$/)
+            expect.stringMatching(/^Rejected request: POST \/api\/cloud\/login \(413, entity\.too\.large\)$/),
+            expect.stringMatching(/^Rejected request: POST \/api\/cloud\/login \(400, entity\.parse\.failed\)$/)
         ]);
         warn.mockRestore();
         error.mockRestore();

@@ -10,7 +10,6 @@ const requireMediaToken = require('./middleware/requireMediaToken');
 const { issueMediaToken } = require('./services/mediaToken');
 
 const authController = require('./controllers/authController');
-const { registerUser, loginUser } = require('./controllers/UserController');
 const searchController = require('./controllers/searchController');
 const playlistController = require('./controllers/playlistController');
 const historyController = require('./controllers/historyController');
@@ -107,9 +106,9 @@ app.get('/api/system/log', requireAuth, settingsController.requireOwner, (req, r
     res.json({ file: `logs/${logFile.FILE_NAME}`, lines: logFile.readRecent(req.query.lines) });
 });
 
-// --- Local account auth ---
-app.post('/api/register', authLimiter, registerUser);
-app.post('/api/login', authLimiter, loginUser);
+// --- Signing in: the cloud account is the only account (POST /api/cloud/login,
+// further down with the other cloud routes). The app's own accounts
+// (/api/register, /api/login) are gone; see docs/cloud-data.md, "One sign-in". ---
 
 // --- Google OAuth (connects a YouTube account to the logged-in user) ---
 // The URL endpoint requires our login so the callback can tie the tokens to a
@@ -182,7 +181,6 @@ app.get('/api/cloud/status', requireAuth, cloudController.getStatus);
 app.put('/api/cloud/url', requireAuth, settingsLimiter, settingsController.requireOwner, cloudController.saveUrl);
 app.delete('/api/cloud/url', requireAuth, settingsLimiter, settingsController.requireOwner, cloudController.clearUrl);
 app.post('/api/cloud/link', requireAuth, authLimiter, requireExistingUser, cloudController.link);
-app.delete('/api/cloud/link', requireAuth, cloudController.unlink);
 app.post('/api/cloud/sync', requireAuth, cloudSyncLimiter, cloudController.syncNow);
 app.get('/api/cloud/google/status', requireAuth, cloudSyncLimiter, cloudController.googleStatus);
 // Before anyone is logged in: signing in to the app with the cloud account,

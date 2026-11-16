@@ -46,7 +46,15 @@ const tracksOf = async (c, name) => {
     return list ? (await on(c).get(`/api/custom-playlists/${list.id}/tracks`)).body.map((t) => t.title) : null;
 };
 const history = async (c) => (await on(c).get('/history')).body.map((h) => h.title);
-const linkAs = (c, password = 'correct horse', extra = {}) => on(c).post('/api/cloud/link', { username: 'Shimi', password, ...extra });
+// Signs a computer in with the cloud account, as the login screen does (and
+// creates the account when a registration code is given). Answers with the
+// refusal, or with the account's status once the first run is over.
+const linkAs = async (c, password = 'correct horse', extra = {}) => {
+    const res = await on(c).post('/api/cloud/login', { username: 'Shimi', password, ...extra });
+    if (res.statusCode >= 400) return res;
+    const status = (await on(c).get('/api/cloud/status')).body;
+    return { statusCode: res.statusCode, body: { ...status, result: { ok: !status.lastError } } };
+};
 const syncNow = (c) => sync.syncNow(c.db, c.userId);
 // A changes something, both sync: A pushes, B pulls.
 const settle = async () => { await syncNow(A); await syncNow(B); await syncNow(A); };
@@ -68,6 +76,9 @@ beforeEach(async () => {
     client = require('../services/cloud/client');
     cloud = fakeCloud();
     client.http.fetch = cloud.fetch;
+    // The hash kept for signing in without a connection is slow by design too;
+    // here a quick one will do (tests/cloudConnect.test.js uses the real one).
+    require('../controllers/UserController').hashPassword = (password) => require('bcryptjs').hash(password, 4);
     // The key is the real one, worked out once per name and password for the
     // whole file instead of twice per test (it is slow by design).
     const derive = client.deriveAuthKey;
@@ -173,7 +184,9 @@ describe('linking a computer to the cloud account', () => {
     it('needs a login here, an address, and a name and password', async () => {
         expect((await request(app).get('/api/cloud/status')).statusCode).toBe(401);
         expect((await request(app).post('/api/cloud/link').send({ username: 'a', password: 'b' })).statusCode).toBe(401);
-        expect((await on(A).post('/api/cloud/link', { username: 'Shimi' })).body.code).toBe('CLOUD_BAD_INPUT');
+        expect((await on(A).post('/api/cloud/login', { username: 'Shimi' })).body.code).toBe('CLOUD_BAD_INPUT');
+        // Signing in again (Settings) is for someone who is signed in: there is nobody yet.
+        expect((await on(A).post('/api/cloud/link', { password: 'correct horse' })).body.code).toBe('CLOUD_BAD_INPUT');
         expect((await linkAs(A, 'pw', { registrationCode: 'wrong' })).body.code).toBe('CLOUD_BAD_REGISTRATION_CODE');
         await sync.clearCloudUrl(A.db);
         expect((await linkAs(A)).body.code).toBe('CLOUD_NOT_CONFIGURED');
@@ -409,19 +422,6 @@ describe('when things go wrong', () => {
         expect(await tracksOf(A, 'Road Trip')).toEqual([]);
         const kept = cloud.records().filter((r) => !r.deleted).map((r) => r.collection).sort();
         expect(kept).toEqual(['playlist_tracks', 'playlists', 'podcasts']);
-    });
-
-    it('disconnecting stops the sync and keeps the data on both sides', async () => {
-        const res = await on(A).del('/api/cloud/link');
-        expect(res.body).toMatchObject({ linked: false, state: 'off' });
-        expect(await playlists(A)).toEqual(['Road Trip (0)']);
-        expect(cloud.records().filter((r) => !r.deleted)).toHaveLength(1);
-        expect(await syncNow(A)).toMatchObject({ ok: false, reason: 'not_linked' });
-        // Linking again finds the same playlist, not a second copy of it.
-        await linkAs(A);
-        await syncNow(B);
-        expect(await playlists(A)).toEqual(['Road Trip (0)']);
-        expect(await playlists(B)).toEqual(['Road Trip (0)']);
     });
 });
 

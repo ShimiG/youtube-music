@@ -79,8 +79,9 @@ beforeEach(async () => {
     connections.http.fetch = jest.fn(async () => { throw new Error('no call to Google expected'); });
 
     A = await computer('a');
-    const linked = await on(A).post('/api/cloud/link', { username: 'Shimi', password: 'correct horse', registrationCode: 'let-me-in' });
-    expect(linked.statusCode).toBe(200);
+    // The account is created at the first sign-in (the login screen, with the registration code).
+    const signedIn = await on(A).post('/api/cloud/login', { username: 'Shimi', password: 'correct horse', registrationCode: 'let-me-in' });
+    expect(signedIn.statusCode).toBe(200);
 });
 
 afterEach(async () => {
@@ -147,8 +148,8 @@ describe('YouTube through the cloud account', () => {
     it('a second computer signed in to the account has YouTube without connecting anything', async () => {
         cloud.connectYouTube();
         const B = await computer('b');
-        const linked = await on(B).post('/api/cloud/link', { username: 'Shimi', password: 'correct horse' });
-        expect(linked.body).toMatchObject({ linked: true, youtube: { available: true, connected: true } });
+        expect((await on(B).post('/api/cloud/login', { username: 'Shimi', password: 'correct horse' })).statusCode).toBe(200);
+        expect((await on(B).get('/api/cloud/status')).body).toMatchObject({ linked: true, youtube: { available: true, connected: true } });
         expect((await sourceNamed(B, 'youtube')).connected).toBe(true);
         expect(await connections.getSourceToken(B.db, B.userId, 'youtube')).toBe('ya29.from-the-cloud-1');
         await B.db.close();
@@ -216,21 +217,6 @@ describe('YouTube through the cloud account', () => {
         expect((await on(A).get('/api/cloud/google/status')).body).toEqual({ configured: true, connected: false });
         // The cloud revoked the login at Google; this computer had nothing to revoke.
         expect(connections.http.fetch).not.toHaveBeenCalled();
-    });
-
-    it('turning cloud sync off here takes the cloud\'s YouTube login with it, but not one made on this computer', async () => {
-        cloud.connectYouTube();
-        await sync.syncNow(A.db, A.userId);
-        await connections.getSourceToken(A.db, A.userId, 'youtube');
-        await on(A).del('/api/cloud/link');
-        expect(await youtubeRow(A)).toBeUndefined();
-        expect((await sourceNamed(A, 'youtube')).connected).toBe(false);
-
-        // Linked again, but YouTube connected here with this installation's own credentials.
-        await on(A).post('/api/cloud/link', { username: 'Shimi', password: 'correct horse' });
-        await connections.storeConnection(A.db, A.userId, 'youtube', { accessToken: 'ya29.local', refreshToken: '1//local-refresh', expiresAt: Date.now() + 3600 * 1000 });
-        await on(A).del('/api/cloud/link');
-        expect((await youtubeRow(A)).refresh_token).toMatch(/^enc:v1:/);
     });
 
     it('a login made on this computer with its own credentials is still renewed here', async () => {
@@ -332,37 +318,43 @@ describe('signing in to the app with the cloud account', () => {
         expect(again.body).toMatchObject({ userId: 1, username: 'Shimi' });
         expect((await N.db.get('SELECT COUNT(*) AS n FROM users')).n).toBe(1);
 
-        // An account linked from Settings is found the same way (A is "local-a" here).
-        const viaLink = await login(A, shimi);
-        expect(viaLink.statusCode).toBe(200);
-        expect(viaLink.body).toMatchObject({ userId: A.userId, username: 'local-a' });
+        // On the computer it was created from, too; it is known by its cloud name.
+        const first = await login(A, shimi);
+        expect(first.statusCode).toBe(200);
+        expect(first.body).toMatchObject({ userId: A.userId, username: 'Shimi' });
+        expect((await A.db.get('SELECT username FROM users WHERE id = ?', [A.userId])).username).toBe('Shimi');
         expect((await on(N).post('/api/cloud/login', {})).statusCode).toBe(400);
         await N.db.close();
     });
 
-    it('does not hand over a local account that merely has the same name', async () => {
-        const B = await computer('b');
-        await B.db.run(`UPDATE users SET username = 'shimi' WHERE id = 1`);
-        const res = await login(B, shimi);
-        expect(res.statusCode).toBe(409);
-        expect(res.body.code).toBe('CLOUD_LOCAL_ACCOUNT_EXISTS');
-        expect((await on(B).get('/api/cloud/status')).body.linked).toBe(false);
+    it('the address is asked for while the computer has none, and is not replaced once it has', async () => {
+        // Accounts from before the cloud sign-in do not change that: there is no other way in.
+        const B = await computer('b', { cloudAddress: false });
+        expect((await on(B).get('/api/cloud/info')).body).toEqual({ configured: false, canSetAddress: true });
+        expect((await login(B, shimi)).body.code).toBe('CLOUD_NOT_CONFIGURED');
+        expect((await login(B, { ...shimi, url: WORKER })).statusCode).toBe(200);
+        expect((await on(B).get('/api/cloud/info')).body).toEqual({ configured: true, canSetAddress: false });
+
+        await login(B, { ...shimi, url: 'https://elsewhere.example' });
+        expect((await sync.cloudUrl(B.db)).url).toBe(WORKER);
         await B.db.close();
     });
 
-    it('the address can only be given on a computer nobody has used yet', async () => {
-        const B = await computer('b', { cloudAddress: false }); // has an account, no address
-        expect((await on(B).get('/api/cloud/info')).body).toEqual({ configured: false, canSetAddress: false });
-        const res = await login(B, { ...shimi, url: WORKER });
-        expect(res.statusCode).toBe(409);
-        expect(res.body.code).toBe('CLOUD_NOT_CONFIGURED');
-        expect((await on(B).get('/api/cloud/status')).body.configured).toBe(false);
-
-        // And an address that is already set is not replaced by the login screen.
+    it('creates the account from the login screen, with the registration code', async () => {
         const N = await computer('new', { user: false });
-        await login(N, { ...shimi, url: 'https://elsewhere.example' });
-        expect((await sync.cloudUrl(N.db)).url).toBe(WORKER);
-        await B.db.close();
+        const wrong = await login(N, { username: 'Newcomer', password: 'a new password', registrationCode: 'not-it' });
+        expect(wrong.statusCode).toBe(403);
+        expect(wrong.body.code).toBe('CLOUD_BAD_REGISTRATION_CODE');
+        expect((await N.db.get('SELECT COUNT(*) AS n FROM users')).n).toBe(0);
+
+        const made = await login(N, { username: 'Newcomer', password: 'a new password', registrationCode: 'let-me-in' });
+        expect(made.statusCode).toBe(201);
+        expect(made.body).toEqual({ token: expect.any(String), userId: 1, username: 'Newcomer' });
+        expect((await login(N, { username: 'Newcomer', password: 'a new password' })).statusCode).toBe(200);
+        // The name is taken now, and an account cannot be made while the cloud is out of reach.
+        expect((await login(N, { username: 'newcomer', password: 'another one', registrationCode: 'let-me-in' })).body.code).toBe('CLOUD_USERNAME_TAKEN');
+        cloud.down = true;
+        expect((await login(N, { username: 'Newcomer', password: 'a new password', registrationCode: 'let-me-in' })).statusCode).toBe(502);
         await N.db.close();
     });
 
@@ -378,11 +370,126 @@ describe('signing in to the app with the cloud account', () => {
         expect(wrong.body.code).toBe('CLOUD_UNREACHABLE');
         // Never seen here: nothing to check against.
         expect((await login(N, { username: 'Other', password: 'correct horse' })).statusCode).toBe(502);
-        // The ordinary log-in works with the same name and password too.
-        const local = await on(N).post('/api/login', shimi);
-        expect(local.statusCode).toBe(200);
-        expect(local.body.userId).toBe(1);
         await N.db.close();
+    });
+
+    it('there is no other way in: the app\'s own accounts and the switch-off are gone', async () => {
+        expect((await request(app).post('/api/register').send({ username: 'someone', password: 'a password 1' })).statusCode).toBe(404);
+        expect((await request(app).post('/api/login').send({ username: 'local-a', password: 'x' })).statusCode).toBe(404);
+        expect((await on(A).del('/api/cloud/link')).statusCode).toBe(404);
+        expect((await on(A).get('/api/cloud/status')).body.linked).toBe(true);
+    });
+
+    it('signing in again from Settings is the same account, with its password', async () => {
+        cloud.rejectSessions = true; // the session stored here is no longer accepted
+        await sync.syncNow(A.db, A.userId);
+        cloud.rejectSessions = false;
+        expect((await on(A).get('/api/cloud/status')).body.state).toBe('signin_required');
+
+        const other = await on(A).post('/api/cloud/link', { username: 'SomeoneElse', password: 'correct horse' });
+        expect(other.statusCode).toBe(409);
+        expect(other.body.code).toBe('CLOUD_DIFFERENT_ACCOUNT');
+        expect((await on(A).post('/api/cloud/link', { password: 'wrong horse' })).body.code).toBe('CLOUD_BAD_CREDENTIALS');
+        const again = await on(A).post('/api/cloud/link', { password: 'correct horse' });
+        expect(again.statusCode).toBe(200);
+        expect(again.body).toMatchObject({ linked: true, username: 'Shimi', state: 'ok', result: { ok: true } });
+    });
+});
+
+// Accounts the app kept of its own, from before the cloud sign-in
+// (services/accounts.js). Decided by the owner on 16 Nov 2026: what they hold
+// moves into the account of whoever signs in, and they are removed.
+describe('accounts from before the cloud sign-in', () => {
+    const login = (c, body) => on(c).post('/api/cloud/login', body);
+    const shimi = { username: 'Shimi', password: 'correct horse' };
+    const as = (c, userId) => ({ db: c.db, userId, auth: sessionFor(userId) });
+    const newPlaylist = async (c, name, ...tracks) => {
+        const id = (await on(c).post('/api/custom-playlists', { name })).body.id;
+        for (const [externalId, title] of tracks) await on(c).post(`/api/custom-playlists/${id}/tracks`, { sourceName: 'youtube', externalId, title, artist: 'Band' });
+        return id;
+    };
+    const playlistsOf = async (c) => (await on(c).get('/api/custom-playlists')).body.map((p) => `${p.name} (${p.itemCount})`).sort();
+    const tracksOf = async (c, name) => {
+        const list = (await on(c).get('/api/custom-playlists')).body.find((p) => p.name === name);
+        return (await on(c).get(`/api/custom-playlists/${list.id}/tracks`)).body.map((t) => t.title);
+    };
+    const historyOf = async (c) => (await on(c).get('/history')).body.map((h) => h.title);
+    const play = (c, id, title) => on(c).post('/history', { trackId: id, title, artist: 'Band', source: 'youtube' });
+
+    it('the one account on a computer becomes the cloud account, with everything it had', async () => {
+        const B = await computer('b'); // "local-b", never signed in to the cloud
+        await newPlaylist(B, 'From Before', ['bbbbbbbbbbb', 'Old Song']);
+        await play(B, 'ccccccccccc', 'Old Play');
+
+        const res = await login(B, shimi);
+        expect(res.statusCode).toBe(200);
+        // The same row, so whoever owned this installation still does.
+        expect(res.body).toMatchObject({ userId: B.userId, username: 'Shimi' });
+        expect((await B.db.all('SELECT id, username FROM users'))).toEqual([{ id: 1, username: 'Shimi' }]);
+        expect(await playlistsOf(B)).toEqual(['From Before (1)']);
+        expect((await on(B).get('/api/cloud/status')).body).toMatchObject({ linked: true, canConfigure: true, pending: 0 });
+
+        // And it went up: the first computer gets it at its next run.
+        await sync.syncNow(A.db, A.userId);
+        expect(await playlistsOf(A)).toEqual(['From Before (1)']);
+        expect(await historyOf(A)).toEqual(['Old Play']);
+        await B.db.close();
+    });
+
+    it('a second account that was the cloud one takes over what the first, local one held', async () => {
+        // The state the owner's computer was in: account 1 from before, with
+        // the data; account 2 made later by signing in with the cloud account.
+        const B = await computer('b');
+        const old = as(B, 1);
+        await newPlaylist(old, 'Old Mix', ['aaaaaaaaaaa', 'Song A'], ['bbbbbbbbbbb', 'Song B']);
+        await newPlaylist(old, 'Only Local', ['ccccccccccc', 'Song C']);
+        await play(old, 'aaaaaaaaaaa', 'Song A');
+        await play(old, 'ddddddddddd', 'Song D');
+        await B.db.run(`UPDATE history SET played_at = datetime('now', '-2 hours') WHERE user_id = 1`);
+        await connections.storeConnection(B.db, 1, 'soundcloud', { accessToken: 'sc-access', refreshToken: 'sc-refresh', expiresAt: Date.now() + 3600 * 1000 });
+        await B.db.run(`INSERT INTO local_folders (user_id, path, added_at) VALUES (1, '/music/mine', 1)`);
+
+        await B.db.run(`INSERT INTO users (id, username, password) VALUES (2, 'second', 'x')`);
+        await sync.link(B.db, 2, shimi);
+        const cloudOne = as(B, 2);
+        await newPlaylist(cloudOne, 'old mix', ['bbbbbbbbbbb', 'Song B'], ['eeeeeeeeeee', 'Song E']); // the same name, one track in common
+        await play(cloudOne, 'aaaaaaaaaaa', 'Song A'); // played again, later
+        expect((await on(cloudOne).get('/api/cloud/status')).body.canConfigure).toBe(false); // not the owner: the reason the log could not be read
+
+        const res = await login(B, shimi);
+        expect(res.statusCode).toBe(200);
+        expect(res.body).toMatchObject({ userId: 2, username: 'Shimi', adopted: { accounts: 1, playlists: 1, tracks: 2, plays: 1, connections: 1, folders: 1 } });
+
+        expect(await B.db.all('SELECT id, username FROM users')).toEqual([{ id: 2, username: 'Shimi' }]);
+        expect(await playlistsOf(cloudOne)).toEqual(['Only Local (1)', 'old mix (3)']);
+        expect(await tracksOf(cloudOne, 'old mix')).toEqual(['Song B', 'Song E', 'Song A']); // what it had, then what came over
+        expect(await historyOf(cloudOne)).toEqual(['Song A', 'Song D']); // one entry per track, the latest play first
+        expect((await B.db.get('SELECT COUNT(*) AS n FROM user_connections WHERE user_id = 2')).n).toBe(1);
+        expect((await B.db.all('SELECT user_id, path FROM local_folders'))).toEqual([{ user_id: 2, path: '/music/mine' }]);
+        // It is the installation's owner now, and everything is in the cloud.
+        expect((await on(cloudOne).get('/api/cloud/status')).body).toMatchObject({ canConfigure: true, pending: 0, lastError: null });
+        await sync.syncNow(A.db, A.userId);
+        expect(await playlistsOf(A)).toEqual(['Only Local (1)', 'old mix (3)']);
+
+        // Nothing left to take over the next time.
+        expect((await login(B, shimi)).body.adopted).toBeUndefined();
+        await B.db.close();
+    });
+
+    it('someone else\'s cloud account on the same computer is left alone', async () => {
+        const B = await computer('b');
+        cloud.registrationCode = 'let-me-in';
+        expect((await login(B, { username: 'Housemate', password: 'their password', registrationCode: 'let-me-in' })).statusCode).toBe(200);
+        await newPlaylist(B, 'Theirs', ['zzzzzzzzzzz', 'Their Song']);
+
+        const mine = await login(B, shimi);
+        expect(mine.statusCode).toBe(201); // a row of its own
+        expect(mine.body).toMatchObject({ userId: 2, username: 'Shimi' });
+        expect(mine.body.adopted).toBeUndefined();
+        expect(await playlistsOf(as(B, 2))).toEqual([]);
+        expect(await playlistsOf(B)).toEqual(['Theirs (1)']);
+        expect((await B.db.all('SELECT id, username FROM users ORDER BY id'))).toEqual([{ id: 1, username: 'Housemate' }, { id: 2, username: 'Shimi' }]);
+        await B.db.close();
     });
 });
 

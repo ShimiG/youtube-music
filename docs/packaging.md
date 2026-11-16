@@ -148,9 +148,9 @@ once:
 
 ### First run
 
-1. Start Music Manager and register. The first account created on a computer
-   is its owner: the only one that can change service credentials and read
-   the log.
+1. Start Music Manager and sign in with your cloud account (or create it:
+   see `cloud/README.md`). The first person to sign in on a computer is its
+   owner: the only one who can change service credentials and read the log.
 2. Open Settings → Accounts → Set up YouTube, and paste the Client ID and
    Client secret of your Google OAuth client (the form shows the redirect
    address to register on it). Credentials are never built into the

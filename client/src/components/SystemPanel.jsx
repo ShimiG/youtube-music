@@ -93,7 +93,7 @@ export default function SystemPanel() {
                     Links and tokens are cut from it.
                 </p>
             )}
-            {log && log.denied && <p className="accounts-detail">Only the first account created on this computer can read the log.</p>}
+            {log && log.denied && <p className="accounts-detail">Only the first person who signed in on this computer can read the log.</p>}
             {log && log.lines && (
                 <textarea className="system-log" readOnly aria-label="Recent server log" value={log.lines.length ? log.lines.join('\n') : 'The log is empty.'} />
             )}

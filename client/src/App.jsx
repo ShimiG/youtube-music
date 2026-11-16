@@ -155,6 +155,23 @@ function App() {
         setLocalUser(null);
     };
 
+    // The account is the cloud account. A session left over from before that
+    // (an account the app kept of its own) is not a sign-in any more: back to
+    // the sign-in screen, where signing in brings that account's data along.
+    const signedInAs = localUser ? localUser.id : null;
+    useEffect(() => {
+        if (!signedInAs) return undefined;
+        let cancelled = false;
+        apiFetch('/api/cloud/status')
+            .then((cloud) => {
+                if (cancelled || cloud.linked) return;
+                toast('Sign in with your cloud account to carry on. Your playlists and history on this computer come with you.', { kind: 'warning', timeoutMs: 12000 });
+                handleLogout();
+            })
+            .catch(() => { /* the server could not be asked: stay as we are */ });
+        return () => { cancelled = true; };
+    }, [signedInAs]);
+
     // The server renews any connection it holds a refresh token for, so an
     // expiry passing is normally invisible. Auto-logout only applies to a
     // connection the server cannot renew (no refresh token): at the earliest

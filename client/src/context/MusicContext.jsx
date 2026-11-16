@@ -10,6 +10,8 @@ import { setPlaybackTime } from '../utils/playbackClock';
 
 const PREPARE_AFTER_SEC = 15;
 const PREPARE_BEFORE_END_SEC = 25;
+// A track that cannot be played is skipped; this many in a row and it stops.
+const MAX_SKIPS_IN_A_ROW = 3;
 
 export const MusicProvider = ({ children }) => {
     const [currentTrack, setCurrentTrack] = useState(null);
@@ -32,6 +34,8 @@ export const MusicProvider = ({ children }) => {
     // Which next track the server has already been asked to get ready.
     const preparedNext = useRef(null);
     const playStartTime = useRef(0);
+    // How many tracks failed one after another (reset by any that plays).
+    const failuresInARow = useRef(0);
     
     
     // Media URLs carry a short-lived token (utils/media.js). Keep one ready so
@@ -327,7 +331,7 @@ const seek = useCallback((time) => {
             playNext();
         };
         const handleWaiting = () => setIsLoading(true);   
-        const handlePlaying = () => setIsLoading(false);  
+        const handlePlaying = () => { failuresInARow.current = 0; setIsLoading(false); };  
         const handleCanPlay = () => setIsLoading(false);  
         const handleTimeUpdate = () => {
             const time = audio.currentTime;
@@ -366,6 +370,7 @@ const seek = useCallback((time) => {
             const title = currentTrack?.title ? `"${currentTrack.title}"` : 'This track';
             const canSkip = queueIndex < queue.length - 1;
             const failedLoad = loadSeq.current;
+            failuresInARow.current += 1;
             // A missing helper program stops every streamed track, so say that
             // (once) instead of skipping through the whole queue.
             apiFetch('/api/health')
@@ -376,6 +381,12 @@ const seek = useCallback((time) => {
                     if (missing.length) {
                         const names = missing.map(name => (name === 'ytDlp' ? 'yt-dlp' : name)).join(' and ');
                         toast(`Nothing can play: ${names} was not found on this computer. See Settings, System.`, { kind: 'error', timeoutMs: 12000 });
+                    } else if (canSkip && failuresInARow.current >= MAX_SKIPS_IN_A_ROW) {
+                        // Something is wrong with playing as such, not with
+                        // these tracks: running on through the queue would only
+                        // burn through it (and through the server's request
+                        // limit, after which nothing at all can play for a while).
+                        toast(`${failuresInARow.current} tracks in a row could not be played, so playback has stopped. The reason is in the server's log (Settings, System).`, { kind: 'error', timeoutMs: 15000 });
                     } else if (canSkip) {
                         toast(`${title} is unavailable. Skipping to the next track.`, { kind: 'warning' });
                         playNext();

@@ -539,7 +539,11 @@ stays as fast as it is and works offline. In order:
    links it and brings the playlists, history and YouTube login. The
    Worker's address can be built into a release (`CLOUD_URL` at build time;
    a repository variable in the release workflow).
-7. A run on a real Cloudflare account and a real Google project (needs the
+7. **Done.** One sign-in: the cloud account is the only account. The
+   app's own accounts and the separate "link this computer" step are gone;
+   what older local accounts hold on a computer is moved into the cloud
+   account at sign-in.
+8. A run on a real Cloudflare account and a real Google project (needs the
    owner): deploy, set the two Google secrets, register the Worker's
    `/google/callback` with Google, then two computers. Steps in
    `cloud/README.md`.

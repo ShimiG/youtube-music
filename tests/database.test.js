@@ -151,13 +151,12 @@ describe('end to end on a real database', () => {
 
     afterEach(async () => { await db.close(); });
 
-    it('register -> custom playlist -> add track -> per-user metadata in history', async () => {
-        const reg = await request(app).post('/api/register').send({ username: 'alice', password: 'correct-horse-1' });
-        expect(reg.statusCode).toBe(201);
-        const auth = { Authorization: `Bearer ${reg.body.token}` };
-
-        const login = await request(app).post('/api/login').send({ username: 'alice', password: 'correct-horse-1' });
-        expect(login.statusCode).toBe(200);
+    it('a signed-in account -> custom playlist -> add track -> per-user metadata in history', async () => {
+        // Signing in is the cloud account's business (tests/cloudConnect.test.js);
+        // here the account is simply there, with a session for it.
+        await db.run(`INSERT INTO users (id, username, password) VALUES (1, 'alice', 'x')`);
+        const { issueToken } = require('../controllers/UserController');
+        const auth = { Authorization: `Bearer ${issueToken(1)}` };
 
         const pl = await request(app).post('/api/custom-playlists').set(auth).send({ name: 'Mix' });
         expect(pl.statusCode).toBe(201);
@@ -180,11 +179,5 @@ describe('end to end on a real database', () => {
         await request(app).post('/history').set(auth).send({ trackId: 'bbbbbbbbbbb', title: 'Song', artist: 'Band', source: 'youtube' });
         const hist = await request(app).get('/history').set(auth);
         expect(hist.body).toEqual([expect.objectContaining({ id: 'bbbbbbbbbbb', title: 'Song', source: 'youtube' })]);
-    });
-
-    it('rejects a duplicate username with 409', async () => {
-        await request(app).post('/api/register').send({ username: 'bob', password: 'password-123' });
-        const dup = await request(app).post('/api/register').send({ username: 'bob', password: 'password-456' });
-        expect(dup.statusCode).toBe(409);
     });
 });

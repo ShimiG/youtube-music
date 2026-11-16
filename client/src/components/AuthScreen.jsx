@@ -1,19 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { API_BASE } from '../utils/api';
 
-// The first screen: log in to (or create) an account on this computer, or
-// sign in with the cloud account. The last one is for a computer that has not
-// seen you before: it creates the account here, links it, and brings your
-// playlists, history and YouTube login with it (docs/cloud-data.md).
+// The first screen: sign in with your cloud account. It is the only account
+// there is. Signing in on a computer sets that computer up: your playlists,
+// history and YouTube connection come with you, and a copy is kept here so
+// the app stays fast and works without a connection (docs/cloud-data.md).
+//
+// Creating the account happens here too, once, with the registration code
+// that was set when the cloud service was deployed.
 
 const field = { padding: '12px', borderRadius: '6px', border: '1px solid #333', background: '#282828', color: 'white', outline: 'none' };
 const linkStyle = { textAlign: 'center', fontSize: '14px', color: '#b3b3b3', cursor: 'pointer', background: 'none', border: 'none', padding: 0, font: 'inherit' };
+const note = { margin: 0, fontSize: '13px', color: '#b3b3b3', textAlign: 'center' };
 
-const TITLES = { login: 'Welcome Back', register: 'Create Account', cloud: 'Cloud Account' };
-const BUTTONS = { login: 'Log In', register: 'Sign Up', cloud: 'Sign In' };
-const ENDPOINTS = { login: '/api/login', register: '/api/register', cloud: '/api/cloud/login' };
-
-// Whether this computer can sign in with a cloud account.
+// Whether this computer knows where the cloud service is.
 async function cloudInfo(signal) {
     try {
         const res = await fetch(`${API_BASE}/api/cloud/info`, { signal });
@@ -24,45 +24,44 @@ async function cloudInfo(signal) {
 }
 
 export default function AuthScreen({ onLoginSuccess }) {
-    const [mode, setMode] = useState('login'); // login | register | cloud
+    const [creating, setCreating] = useState(false);
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
+    const [code, setCode] = useState('');
     const [address, setAddress] = useState('');
-    const [cloud, setCloud] = useState(null); // { configured, canSetAddress }
+    const [cloud, setCloud] = useState(null); // { configured, canSetAddress }; null while asking
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
         const controller = new AbortController();
-        cloudInfo(controller.signal).then((info) => { if (info) setCloud(info); });
+        cloudInfo(controller.signal).then((info) => { if (!controller.signal.aborted) setCloud(info || { configured: false, canSetAddress: false }); });
         return () => controller.abort();
     }, []);
 
-    const cloudOffered = Boolean(cloud && (cloud.configured || cloud.canSetAddress));
-    const askAddress = mode === 'cloud' && cloud && !cloud.configured && cloud.canSetAddress;
-    const switchTo = (next) => { setMode(next); setError(''); };
+    const askAddress = Boolean(cloud && !cloud.configured && cloud.canSetAddress);
+    // No address, and none can be given here: it is fixed for this copy and wrong.
+    const stuck = Boolean(cloud && !cloud.configured && !cloud.canSetAddress);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
         setIsLoading(true);
-
         try {
-            const body = { username, password, ...(askAddress ? { url: address } : {}) };
-            const res = await fetch(`${API_BASE}${ENDPOINTS[mode]}`, {
+            const body = {
+                username,
+                password,
+                ...(askAddress ? { url: address } : {}),
+                ...(creating ? { registrationCode: code } : {})
+            };
+            const res = await fetch(`${API_BASE}/api/cloud/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             });
-
             const data = await res.json().catch(() => ({}));
-
-            if (!res.ok) {
-                throw new Error(data.error || "Authentication failed");
-            }
-
+            if (!res.ok) throw new Error(data.error || 'Signing in failed.');
             onLoginSuccess(data.token, data.userId, data.username);
-
         } catch (err) {
             setError(err.message);
         } finally {
@@ -73,79 +72,94 @@ export default function AuthScreen({ onLoginSuccess }) {
     return (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', width: '100vw', background: '#121212', color: 'white' }}>
             <h1 style={{ marginBottom: '30px', fontSize: '36px' }}>Music Manager</h1>
-            
-            <form onSubmit={handleSubmit} style={{ background: '#181818', padding: '40px', borderRadius: '12px', width: '300px', display: 'flex', flexDirection: 'column', gap: '20px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
-                <h2 style={{ margin: 0, textAlign: 'center' }}>{TITLES[mode]}</h2>
 
-                {mode === 'cloud' && (
-                    <p style={{ margin: 0, fontSize: '13px', color: '#b3b3b3', textAlign: 'center' }}>
-                        Sign in with your cloud account to set this computer up with your playlists, history and YouTube login.
-                    </p>
-                )}
-                
+            <form onSubmit={handleSubmit} aria-label={creating ? 'Create your account' : 'Sign in'} style={{ background: '#181818', padding: '40px', borderRadius: '12px', width: '300px', display: 'flex', flexDirection: 'column', gap: '20px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                <h2 style={{ margin: 0, textAlign: 'center' }}>{creating ? 'Create Account' : 'Sign In'}</h2>
+
+                <p style={note}>
+                    {creating
+                        ? 'Create your account in your cloud service. You need the registration code that was set when it was deployed.'
+                        : 'Your playlists, history and YouTube connection come with your account to every computer you sign in on.'}
+                </p>
+
                 {error && <div role="alert" style={{ color: '#ff4d4d', fontSize: '14px', textAlign: 'center', background: '#ff4d4d20', padding: '10px', borderRadius: '6px' }}>{error}</div>}
+                {stuck && (
+                    <div role="alert" style={{ color: '#ffb84d', fontSize: '13px', textAlign: 'center', background: '#ffb84d20', padding: '10px', borderRadius: '6px' }}>
+                        The address of the cloud service set for this copy of the app (CLOUD_URL) is not usable. Correct it and start the app again.
+                    </div>
+                )}
 
                 {askAddress && (
-                    <input
-                        type="url"
-                        placeholder="Cloud address (https://…)"
-                        aria-label="Cloud address"
-                        value={address}
-                        onChange={(e) => setAddress(e.target.value)}
-                        autoComplete="off"
-                        spellCheck={false}
-                        required
-                        style={field}
-                    />
+                    <>
+                        <input
+                            type="url"
+                            placeholder="Cloud address (https://…)"
+                            aria-label="Cloud address"
+                            value={address}
+                            onChange={(e) => setAddress(e.target.value)}
+                            autoComplete="off"
+                            spellCheck={false}
+                            required
+                            style={field}
+                        />
+                        <p style={{ ...note, textAlign: 'left', fontSize: '12px' }}>
+                            The address of your own cloud service, asked for once on this computer. It was printed when the service was deployed and looks like https://music-manager-cloud.your-name.workers.dev
+                        </p>
+                    </>
                 )}
 
-                <input 
-                    type="text" 
-                    placeholder={mode === 'cloud' ? 'Cloud user name' : 'Username'}
-                    aria-label={mode === 'cloud' ? 'Cloud user name' : 'Username'}
-                    value={username} 
+                <input
+                    type="text"
+                    placeholder="User name"
+                    aria-label="User name"
+                    value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     autoComplete="username"
-                    required
-                    style={field}
-                />
-                
-                <input 
-                    type="password" 
-                    placeholder="Password" 
-                    aria-label="Password"
-                    value={password} 
-                    onChange={(e) => setPassword(e.target.value)}
-                    autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+                    spellCheck={false}
                     required
                     style={field}
                 />
 
-                <button 
-                    type="submit" 
-                    disabled={isLoading}
-                    style={{ background: '#1db954', color: 'black', padding: '12px', border: 'none', borderRadius: '24px', fontWeight: 'bold', fontSize: '16px', cursor: isLoading ? 'not-allowed' : 'pointer', marginTop: '10px' }}
+                <input
+                    type="password"
+                    placeholder="Password"
+                    aria-label="Password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete={creating ? 'new-password' : 'current-password'}
+                    required
+                    style={field}
+                />
+
+                {creating && (
+                    <>
+                        <input
+                            type="password"
+                            placeholder="Registration code"
+                            aria-label="Registration code"
+                            value={code}
+                            onChange={(e) => setCode(e.target.value)}
+                            autoComplete="off"
+                            required
+                            style={field}
+                        />
+                        <p style={{ ...note, textAlign: 'left', fontSize: '12px' }}>
+                            The password cannot be recovered, so choose one you will remember.
+                        </p>
+                    </>
+                )}
+
+                <button
+                    type="submit"
+                    disabled={isLoading || !cloud || stuck}
+                    style={{ background: '#1db954', color: 'black', padding: '12px', border: 'none', borderRadius: '24px', fontWeight: 'bold', fontSize: '16px', cursor: isLoading ? 'not-allowed' : 'pointer', marginTop: '10px', opacity: !cloud || stuck ? 0.5 : 1 }}
                 >
-                    {isLoading ? (mode === 'cloud' ? 'Signing in…' : '...') : BUTTONS[mode]}
+                    {isLoading ? (creating ? 'Creating…' : 'Signing in…') : (creating ? 'Create Account' : 'Sign In')}
                 </button>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
-                    {mode !== 'cloud' && (
-                        <button type="button" style={linkStyle} onClick={() => switchTo(mode === 'login' ? 'register' : 'login')}>
-                            {mode === 'login' ? "Don't have an account? Sign up" : "Already have an account? Log in"}
-                        </button>
-                    )}
-                    {mode !== 'cloud' && cloudOffered && (
-                        <button type="button" style={linkStyle} onClick={() => switchTo('cloud')}>
-                            Sign in with your cloud account
-                        </button>
-                    )}
-                    {mode === 'cloud' && (
-                        <button type="button" style={linkStyle} onClick={() => switchTo('login')}>
-                            Use an account on this computer instead
-                        </button>
-                    )}
-                </div>
+                <button type="button" style={linkStyle} onClick={() => { setCreating(c => !c); setError(''); }}>
+                    {creating ? 'I already have an account' : 'Create an account'}
+                </button>
             </form>
         </div>
     );

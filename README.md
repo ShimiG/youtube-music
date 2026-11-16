@@ -41,7 +41,10 @@ history are stored in a local **SQLite** file.
   **`config/db.js`** — SQLite schema + indexes (Node's built-in `node:sqlite`).
 
 ### Two kinds of login
-- **Local account** (username/password): the API issues a signed **JWT** on register/login.
+- **Your account** (user name and password) lives in your own cloud service
+  ([`cloud/`](cloud/README.md)); it is the only account there is. Signing in
+  (`POST /api/cloud/login`) sets the computer up with a synced copy of your data, and the
+  API issues a signed **JWT** for this computer's server.
   The client sends it as `Authorization: Bearer <token>` to our own endpoints
   (`/history`, `/api/custom-playlists`). Identity is read from the token, never from a
   client header.
@@ -243,7 +246,7 @@ see [docs/packaging.md](docs/packaging.md).
 
 | Method & path | Auth | Purpose |
 |---|---|---|
-| `POST /api/register`, `POST /api/login` | — | Create/log in a local account → returns a JWT |
+| `GET /api/cloud/info`, `POST /api/cloud/login` | — | Whether a cloud address is known; sign in with the cloud account (or create it, with the registration code) → returns a JWT |
 | `GET /auth/google`, `GET /auth/google/callback` | — | Connect a Google/YouTube account |
 | `GET /search?q=` | Google token | Search YouTube |
 | `GET /playlists`, `GET /playlists/:id/tracks` | Google token | The user's YouTube playlists |
@@ -261,21 +264,22 @@ see [docs/packaging.md](docs/packaging.md).
 
 ## Notes & known limitations
 
-- **Cloud sync.** [`cloud/`](cloud/README.md) is a Cloudflare Worker with a D1 database,
-  deployed to your own free Cloudflare account. Under Settings → Accounts → Cloud sync you
-  point the app at it and sign in; your custom playlists and history are then the same on
-  every computer signed in to that account. Reads stay local, so nothing gets slower and
-  the app works offline; sync runs in the background. The cloud account can also hold your
-  **YouTube login** (the Worker does the sign-in with Google, so no computer needs Google
-  credentials), and the login screen offers **"Sign in with your cloud account"**: on a
-  new computer that one sign-in creates your account there and brings your playlists,
-  history and YouTube connection. Design: [docs/cloud-data.md](docs/cloud-data.md).
+- **One account, in your cloud.** [`cloud/`](cloud/README.md) is a Cloudflare Worker with a
+  D1 database, deployed to your own free Cloudflare account. You sign in to the app with
+  the account you create there, and with nothing else: on a new computer that one sign-in
+  brings your custom playlists, history and (when the Worker holds the Google credentials)
+  your **YouTube connection**. Each computer keeps a synced copy, so reads stay local,
+  nothing gets slower and the app works offline; sync runs in the background. The app
+  needs the cloud service to sign in: there are no accounts of its own. Design:
+  [docs/cloud-data.md](docs/cloud-data.md).
   `CLOUD_URL` in the environment sets the address for everyone on the installation, and
   `CLOUD_URL` at build time (`npm run build:server`, or the repository variable the
-  release workflow reads) builds it into the app.
+  release workflow reads) builds it into the app; otherwise the sign-in screen asks for it
+  once. For calling the API in tests without a cloud service, `scripts/test-session.js`
+  makes a throwaway account and prints a session.
 - **Accounts and the owner.** Settings → Accounts connects and disconnects services and holds
   this installation's own service credentials (encrypted in the database, applied without
-  a restart). The first account created on an installation is its owner: only it can change
+  a restart). The first person to sign in on an installation is its owner: only they can change
   those credentials or read the server log.
 - **When nothing plays.** Settings → System shows whether `yt-dlp` and `ffmpeg` were found.
   The server keeps its output in `logs/server.log` (in the project folder when run from

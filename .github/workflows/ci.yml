@@ -80,7 +80,8 @@ jobs:
 
       # Build the single executable the desktop app ships (scripts/build-sea.mjs)
       # and boot it from an empty folder with no configuration at all, the way a
-      # fresh install starts: it must create its data folder and secrets itself.
+      # fresh install starts: it must create its data folder, database and
+      # secrets itself.
       - name: Build single executable
         run: npm run build:server
 
@@ -98,13 +99,13 @@ jobs:
           SRV=$!
           for i in $(seq 1 60); do
             if curl -sf http://127.0.0.1:3988/ > /dev/null; then
-              CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
-                -d '{"username":"ci-user","password":"ci-password-1234"}' http://127.0.0.1:3988/api/register)
+              # What the sign-in screen asks first; answering it reads the database.
+              INFO=$(curl -s http://127.0.0.1:3988/api/cloud/info)
               kill $SRV; cat sea.log
               ls -a "$DATADIR"
-              [ "$CODE" = "201" ] && test -f "$DATADIR/database.sqlite" && test -f "$DATADIR/.jwt-secret" \
-                && echo "Single executable booted and registered a user." && exit 0
-              echo "Unexpected register status $CODE or missing data files"; exit 1
+              [ "$INFO" = '{"configured":false,"canSetAddress":true}' ] && test -f "$DATADIR/database.sqlite" && test -f "$DATADIR/.jwt-secret" \
+                && echo "Single executable booted and answered from its database." && exit 0
+              echo "Unexpected answer '$INFO' or missing data files"; exit 1
             fi
             sleep 0.5
           done

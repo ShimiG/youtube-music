@@ -152,14 +152,15 @@ closed again:
 npx wrangler secret delete REGISTRATION_CODE
 ```
 
-Then, in Music Manager: Settings → Accounts → Cloud sync. Enter the address,
-choose "Create an account instead", and give a user name, a password and the
-registration code.
+Then start Music Manager. Its first screen is the sign-in: choose "Create an
+account", enter the address (asked once per computer, unless it is built
+into the app), a user name, a password and the registration code. This
+account is the only one the app has; the password cannot be recovered.
 
-On every other computer there is nothing to set up: on the login screen
-choose "Sign in with your cloud account" and give the address (asked once,
-on a computer nobody has used yet), the user name and the password. That
-creates your account on that computer and brings your data.
+On every other computer, sign in with that user name and password. That
+sets the computer up and brings your data. If a computer still has
+playlists or history from before the cloud account existed, they are moved
+into your account the first time you sign in there.
 
 ## YouTube through the cloud (optional, once)
 

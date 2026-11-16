@@ -141,8 +141,9 @@ What this adds to the design:
 - **Accounts move to the Worker.** Signing in on a computer is "user name
   and password, checked by the Worker", which then also decides whose data
   is synced and whose YouTube login is used. The sync token of the first
-  design is replaced by that login. The local server keeps working on its
-  own, with local accounts, when no cloud is set up.
+  design is replaced by that login. (As first built, the app also kept
+  accounts of its own for when no cloud was set up; those were removed on
+  16 Nov 2026, see "One sign-in".)
 - **Sign-up is closed by default.** Because the Worker's address would be
   in a public installer, the Worker only accepts the accounts its owner
   creates (the first account, or an invite code). "For now it's just me"
@@ -203,9 +204,8 @@ and worth doing first whatever is decided about the cloud.
     in between read only the collections a change was reported in (a play:
     the history), which keeps them at a few milliseconds whatever the size
     of the library.
-  - Each computer keeps its own local account; the cloud account is linked
-    to it. The cloud session is stored encrypted and renews itself, so the
-    password is asked for once per computer.
+  - The cloud session is stored encrypted on each computer and renews
+    itself, so the password is asked for once per computer.
   - Tracks from Local Files stay on their computer. A record a computer
     cannot use (from a newer version, say) is left alone in the cloud.
   - Checked with two copies of the app syncing through the Worker running
@@ -229,18 +229,36 @@ and worth doing first whatever is decided about the cloud.
     Google and every computer loses it.
   - If the cloud cannot be reached when a token is needed, the app says
     YouTube is unavailable for the moment; the login is not dropped.
-- **Step 6, signing in to the app with the cloud account:** the login
-  screen offers "Sign in with your cloud account" when the computer knows a
-  cloud address, or when nobody has used the computer yet (the address is
-  then asked for, checked, and kept only if the sign-in works).
-  - A first sign-in creates the account on that computer under the cloud
-    user name, links it, and syncs before the first screen is drawn. Later
-    sign-ins find the same account.
-  - A one-way hash of the password is kept with that local account (as for
-    any local account), so the same name and password still open it when
-    the cloud cannot be reached.
-  - A local account that merely has the same name is never handed over:
-    log in to it and link it under Settings instead.
+- **Step 6, one sign-in: the cloud account.** It is the only account
+  there is (`controllers/cloudController.js`, `services/accounts.js`). The
+  app first had accounts of its own on each computer, with the cloud
+  account linked to one of them; that made two logins for one person, and
+  left data behind in whichever local account had not been linked. Removed
+  on the owner's decision of 16 Nov 2026.
+  - The sign-in screen asks for the cloud user name and password, and
+    creates the account when the registration code is given. The cloud
+    address is asked for while the computer has none (checked, and kept
+    only if the sign-in works); a release can carry it built in.
+  - Signing in sets the computer up: the cloud session is stored, and the
+    data is synced before the first screen is drawn. The copy kept on the
+    computer is what makes the app fast and usable without a connection; it
+    is not a separate account.
+  - A one-way hash of the password is kept with that copy, so the same name
+    and password still open it when the cloud cannot be reached.
+  - **Accounts from before.** What accounts without a cloud sign-in hold on
+    a computer (playlists, history, connected services, music folders) is
+    moved into the account of whoever signs in, and those accounts are
+    removed. A playlist of the same name is merged, track by track; the
+    history keeps the latest play of each track. Another person's cloud
+    account on the same computer is left alone. A browser still holding a
+    session of an old account is sent to the sign-in screen.
+  - The installation's owner (who may change service credentials and read
+    the log) is still the first account on the computer, which after the
+    move is the first person to have signed in.
+  - Signing in again when the stored cloud session has run out is done
+    under Settings, with the password only, and always for the same
+    account. A computer is no longer "switched off" from the account while
+    someone is signed in; logging out is the way to leave.
   - **The address can be built in.** `CLOUD_URL` at build time is compiled
     into the server (`scripts/build-sea.mjs`); the release workflow reads
     it from a repository variable. Order of precedence: `CLOUD_URL` in the
@@ -294,6 +312,10 @@ and worth doing first whatever is decided about the cloud.
 
 4. Service credentials and logins live in the cloud too (Worker secrets and
    encrypted rows), so nothing is pasted in per computer (see "Secrets").
+5. (16 Nov 2026) One sign-in: the cloud account. No accounts of the app's
+   own. Each computer still keeps a synced copy, so decision 1 stands. What
+   older local accounts hold is moved into the cloud account at sign-in,
+   without asking, and those accounts are removed.
 
 ## Sources
 

@@ -5,14 +5,31 @@ import { toast } from '../utils/toast';
 const menuStyle = { position: 'absolute', right: 0, top: 'calc(100% + 6px)', minWidth: '220px', maxHeight: '260px', overflowY: 'auto', background: '#282828', border: '1px solid #444', borderRadius: '8px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)', zIndex: 50, padding: '6px' };
 const itemStyle = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: 'transparent', border: 'none', borderRadius: '4px', color: '#eee', cursor: 'pointer', font: 'inherit', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
 
+// The menu normally hangs from the button's right edge, reaching to the left
+// (up to about 300px with its "new playlist" field). Whether there is room for that inside the area that
+// scrolls (a card in the first column of a grid has none).
+const MENU_ROOM = 300;
+function roomOnTheLeft(element, width) {
+    let box = element.parentElement;
+    while (box && box !== document.body) {
+        const overflow = getComputedStyle(box).overflowY;
+        if (overflow === 'auto' || overflow === 'scroll') break;
+        box = box.parentElement;
+    }
+    const edge = box && box !== document.body ? box.getBoundingClientRect().left : 0;
+    return element.getBoundingClientRect().right - width >= edge + 8;
+}
+
 // "+ Playlist" on a track row: a small menu of the user's custom playlists,
 // plus a field to create a new one and add the track to it in one step.
-export default function AddToPlaylist({ track }) {
+// `compact`: a small icon button instead (on a card's picture).
+export default function AddToPlaylist({ track, compact = false }) {
     const [open, setOpen] = useState(false);
     const [playlists, setPlaylists] = useState(null); // null = loading
     const [newName, setNewName] = useState('');
     const [busy, setBusy] = useState(false);
     const rootRef = useRef(null);
+    const [hangLeft, setHangLeft] = useState(false); // the menu starts at the button and reaches right
 
     // Close on a click outside or Escape.
     useEffect(() => {
@@ -30,6 +47,7 @@ export default function AddToPlaylist({ track }) {
     const toggle = (e) => {
         e.stopPropagation();
         if (open) return setOpen(false);
+        setHangLeft(compact && rootRef.current ? !roomOnTheLeft(rootRef.current, MENU_ROOM) : false);
         setOpen(true);
         setPlaylists(null);
         listCustomPlaylists()
@@ -69,18 +87,26 @@ export default function AddToPlaylist({ track }) {
     };
 
     return (
-        <span ref={rootRef} style={{ position: 'relative', display: 'inline-block' }}>
-            <button
-                onClick={toggle}
-                aria-haspopup="menu"
-                aria-expanded={open}
-                title="Add to a playlist"
-                style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #555', background: 'transparent', color: '#ddd', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', whiteSpace: 'nowrap' }}
-            >
-                + Playlist
-            </button>
+        <span ref={rootRef} style={{ position: 'relative', display: compact ? 'block' : 'inline-block' }}>
+            {compact ? (
+                <button type="button" className="card-action" onClick={toggle} aria-haspopup="menu" aria-expanded={open} title="Add to playlist" aria-label="Add to playlist">
+                    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+                        <path d="M3 5h9M3 9h9M3 13h5M15 10v6M12 13h6" />
+                    </svg>
+                </button>
+            ) : (
+                <button
+                    onClick={toggle}
+                    aria-haspopup="menu"
+                    aria-expanded={open}
+                    title="Add to a playlist"
+                    style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #555', background: 'transparent', color: '#ddd', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', whiteSpace: 'nowrap' }}
+                >
+                    + Playlist
+                </button>
+            )}
             {open && (
-                <div role="menu" style={menuStyle} onClick={(e) => e.stopPropagation()}>
+                <div role="menu" style={hangLeft ? { ...menuStyle, right: 'auto', left: 0 } : menuStyle} onClick={(e) => e.stopPropagation()}>
                     {playlists === null && <div style={{ ...itemStyle, color: '#888', cursor: 'default' }}>Loading…</div>}
                     {playlists && playlists.length === 0 && (
                         <div style={{ ...itemStyle, color: '#888', cursor: 'default' }}>No playlists yet</div>

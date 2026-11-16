@@ -122,24 +122,62 @@ export const TrackRow = ({ track, onPlay, onQueue, onLike, onUnlike, canAddToPla
     );
 };
 
+// "Add to queue" on a card's picture. The card gives no other sign that it
+// worked, so the button shows a tick for a moment.
+const QueueAction = ({ track, onQueue }) => {
+    const [done, setDone] = useState(false);
+    const add = (e) => {
+        e.stopPropagation(); // not a click on the card, which plays the track
+        onQueue(track);
+        setDone(true);
+        setTimeout(() => setDone(false), 1200);
+    };
+    return (
+        <button type="button" className="card-action" onClick={add} title="Add to queue" aria-label="Add to queue">
+            {done ? (
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M4 10.5l4 4 8-9" />
+                </svg>
+            ) : (
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+                    <path d="M3 5h13M3 9h13M3 13h6" />
+                    <path d="M12.5 11.5l5 3-5 3z" fill="currentColor" stroke="none" />
+                </svg>
+            )}
+        </button>
+    );
+};
+
 // GRID CARD
-export const TrackCard = ({ track, onClick }) => {
+// `canAddToPlaylist` and `onQueue` put two small buttons on the picture's top
+// right corner (playlist above queue), shown while the pointer is on the card.
+export const TrackCard = ({ track, onClick, onQueue, canAddToPlaylist = false }) => {
     const service = serviceOf(track.source);
+    const hasActions = canAddToPlaylist || Boolean(onQueue);
     return (
         <div
+            className="track-card"
             onClick={() => onClick(track)}
             style={{ background: '#181818', padding: '15px', borderRadius: '8px', cursor: 'pointer', transition: 'background 0.3s' }}
             onMouseEnter={(e) => e.currentTarget.style.background = '#282828'}
             onMouseLeave={(e) => e.currentTarget.style.background = '#181818'}
         >
-            <img
-                src={listArtOf(track) || PLACEHOLDER_150}
-                loading="lazy"
-                decoding="async"
-                alt={track.title}
-                style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '4px', marginBottom: '10px' }}
-                onError={(e) => { e.target.src = PLACEHOLDER_150; }}
-            />
+            <div className="track-card-art">
+                <img
+                    src={listArtOf(track) || PLACEHOLDER_150}
+                    loading="lazy"
+                    decoding="async"
+                    alt={track.title}
+                    style={{ display: 'block', width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '4px' }}
+                    onError={(e) => { e.target.src = PLACEHOLDER_150; }}
+                />
+                {hasActions && (
+                    <div className="track-card-actions">
+                        {canAddToPlaylist && <AddToPlaylist track={track} compact />}
+                        {onQueue && <QueueAction track={track} onQueue={onQueue} />}
+                    </div>
+                )}
+            </div>
             <div style={{ fontWeight: 'bold', fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {track.title}
             </div>

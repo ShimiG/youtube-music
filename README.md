@@ -27,7 +27,7 @@ history are stored in a local **SQLite** file.
 - **`app.js`** — the single Express app (middleware + routes). Exported so tests import
   the exact app that ships.
 - **`providers/`** — one file per music source (`youtube.js`, `soundcloud.js`,
-  `custom.js`) behind a single interface, registered in `providers/index.js`. Every
+  `audius.js`, `deezer.js`, `local.js`, `custom.js`) behind a single interface, registered in `providers/index.js`. Every
   provider returns the same normalised `Playlist` and `Track` shapes and pages with an
   opaque cursor, so the routes and the client never learn service details.
 - **`controllers/libraryController.js`** — the generic library API (see below).
@@ -186,14 +186,15 @@ per query on the dev machine) takes over; `MATCH_YTDLP_FALLBACK=off` disables it
 
 - **Node.js 22.13+** (the database is Node's built-in `node:sqlite`)
 - **Rust + `rustup`** (for the Tauri build)
-- A **`yt-dlp` binary** in `bin/` — `bin/yt-dlp_macos` on macOS, `bin/yt-dlp.exe` on Windows
-  (or `yt-dlp` on the PATH, e.g. `brew install yt-dlp`; `YTDLP_PATH` overrides).
+- A **`yt-dlp` binary** in `bin/` — `bin/yt-dlp_macos` on macOS, `bin/yt-dlp.exe` on Windows,
+  `bin/yt-dlp` on Linux (or `yt-dlp` on the PATH, e.g. `brew install yt-dlp`; `YTDLP_PATH` overrides).
 - **ffmpeg** comes from the `ffmpeg-static` npm package. If its download fails during
   `npm install`, a system ffmpeg is used instead (`brew install ffmpeg`; `FFMPEG_PATH` overrides).
 - A **Google Cloud** project with the **YouTube Data API v3** enabled and OAuth credentials.
 - Optional: a **SoundCloud app** (Client ID + secret) from
   [developers.soundcloud.com](https://developers.soundcloud.com/docs/api/register-app);
-  registering one requires an Artist Pro account. Without it the app runs YouTube-only.
+  registering one requires an Artist Pro account. Without it SoundCloud search and playback
+  run through yt-dlp (see "SoundCloud without API credentials").
 
 ## Setup
 
@@ -207,6 +208,7 @@ Required environment variables (see `.env.example`):
 | Variable | Purpose |
 |---|---|
 | `PORT` | API port (default 3000) |
+| `HOST` | Interface the API binds to (default `127.0.0.1`, so it is not reachable from the network; `0.0.0.0` only inside a container) |
 | `JWT_SECRET` | Secret for signing login tokens. Optional: when it is not set, one is generated once and kept in the data folder |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth credentials. Can be entered in the app instead (Settings → Accounts); a value set here wins. Not needed at all when YouTube is connected through the cloud account (`cloud/README.md`) |
 | `CLOUD_URL` | Address of your cloud service (optional). Set here, it cannot be changed in the app |
@@ -218,6 +220,11 @@ Required environment variables (see `.env.example`):
 | `SOUNDCLOUD_PROVIDER` | `auto` (default), `api` or `ytdlp`; see "SoundCloud without API credentials" |
 | `YTDLP_AUTO_UPDATE` | Keep yt-dlp up to date (and fetch its faster folder build when the one in use is slow), shortly after the server starts, once a day (default `true`) |
 | `CLIENT_ORIGIN` | Allowed browser origin(s), comma-separated (default `http://localhost:5173`) |
+| `TOKEN_ENCRYPTION_KEY` | Key (32 bytes: 64 hex chars or base64) for encrypting stored OAuth tokens. Blank: the server generates `.token-key` in the data folder on first run. Changing it means users reconnect their services |
+| `CACHE_MAX_BYTES` | Audio cache size cap in bytes; least recently played tracks are evicted first (default `524288000`, 500 MB) |
+| `AUDIUS_API_KEY` | Optional Audius API key for higher rate limits (Audius search and playback need no account) |
+| `LOCAL_MUSIC_ROOTS` | Extra places music folders may be added from, separated by `:` (`;` on Windows). By default only your home folder and other drives / mounted volumes are allowed |
+| `MUSIC_DATA_DIR` | Use this folder for data instead of the per-user data folder |
 | `MATCH_DURATION_TOLERANCE_SEC` | Largest duration difference, in seconds, between a track and its YouTube match (default `5`) |
 | `MATCH_CONCURRENCY` | Concurrent YouTube Music searches (default `4`); the yt-dlp fallback always runs one at a time |
 | `MATCH_REQUEST_BUDGET_MS` | How long a library or resolve request waits for matches before reporting the rest as `pending` (default `25000`) |
@@ -256,7 +263,8 @@ see [docs/packaging.md](docs/packaging.md).
 | Method & path | Auth | Purpose |
 |---|---|---|
 | `GET /api/cloud/info`, `POST /api/cloud/login` | — | Whether a cloud address is known; sign in with the cloud account (or create it, with the registration code) → returns a JWT |
-| `GET /auth/google`, `GET /auth/google/callback` | — | Connect a Google/YouTube account |
+| `GET /auth/google/url`, `GET /auth/google/callback` | JWT (callback: —) | Connect a Google/YouTube account |
+| `GET /auth/soundcloud/url`, `GET /auth/soundcloud/callback` | JWT (callback: —) | Connect a SoundCloud account (needs SoundCloud API credentials) |
 | `GET /search?q=` | Google token | Search YouTube |
 | `GET /playlists`, `GET /playlists/:id/tracks` | Google token | The user's YouTube playlists |
 | `GET /api/media/token` | JWT | Short-lived media token for the two routes below |
@@ -270,6 +278,7 @@ see [docs/packaging.md](docs/packaging.md).
 | `GET /api/artwork/colors?url=` | JWT, rate-limited | Theme colours from a cover image (see below) |
 | `GET /history`, `POST /history` | JWT | Play history |
 | `GET/POST /api/custom-playlists`, `.../:playlistId/tracks` | JWT | Local playlists |
+| `GET/POST /api/local/folders`, `POST .../:id/rescan`, `DELETE .../:id` | JWT | Music folders on this computer; adding one starts a background scan and its tracks appear as `source=local` in the Library and Search |
 
 ## Notes & known limitations
 

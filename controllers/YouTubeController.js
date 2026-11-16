@@ -5,6 +5,7 @@ const { sendSourceError } = require('../services/errors');
 // Lengths are remembered there, across restarts, so /duration does not start
 // yt-dlp for a track that has been seen before.
 const trackLengths = require('../services/trackLengths');
+const playReport = require('../services/playReport');
 
 // yt-dlp must never outlive the request that asked for it: bounded by a
 // timeout, and killed as soon as the client disconnects. `runner.execFile` is
@@ -166,6 +167,7 @@ function streamVideo(req, res, videoId) {
         if (clientGone) return;
         if (!found.url) {
             console.error(`YouTube ${videoId}: yt-dlp returned no audio URL.`);
+            playReport.reason(res, 'yt-dlp found no audio for this video');
             if (!res.headersSent) sendSourceError(res, 'TRACK_UNAVAILABLE', 'youtube', { reason: 'no_audio_url' });
             return;
         }
@@ -179,7 +181,9 @@ function streamVideo(req, res, videoId) {
         });
     }).catch((error) => {
         if (clientGone) return;
-        console.error(`YouTube ${videoId}: could not resolve audio: ${error.detail || describeYtDlpFailure(error, '')}`);
+        const detail = error.detail || describeYtDlpFailure(error, '');
+        console.error(`YouTube ${videoId}: could not resolve audio: ${detail}`);
+        playReport.reason(res, `yt-dlp: ${detail}`);
         if (!res.headersSent) sendSourceError(res, 'TRACK_UNAVAILABLE', 'youtube', { reason: 'resolve_failed' });
     });
 }

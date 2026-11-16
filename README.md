@@ -274,6 +274,8 @@ see [docs/packaging.md](docs/packaging.md).
 | `GET /api/settings/services`, `PUT`/`DELETE /api/settings/services/:source` | JWT; changes: owner only | Service credentials entered in the app (never returned) |
 | `DELETE /api/user/connections/youtube`, `.../soundcloud` | JWT | Disconnect a service account |
 | `GET /api/health`, `GET /api/system/log` | JWT; exact versions and the log: owner only | Whether yt-dlp and ffmpeg were found, and cache use (their versions for the owner); the end of the server log |
+| `GET /api/system/plays` | JWT; an account sees its own, the owner all | The last plays (up to 60, in memory): time to first sound, what the wait was made of, and why a play failed. `?limit=`, `?source=`, `?id=` |
+| `POST /api/system/plays/player-error` | JWT | The player reports a track it could not play (`source`, `id`, `message`); the browser's error is kept with that play |
 | `GET /api/lyrics?source=&id=&title=&artist=&duration=&online=1` | JWT, rate-limited | Lyrics for the playing track (see below) |
 | `GET /api/artwork/colors?url=` | JWT, rate-limited | Theme colours from a cover image (see below) |
 | `GET /history`, `POST /history` | JWT | Play history |

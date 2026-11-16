@@ -278,11 +278,60 @@ copy that works with no connection on the first start; the folder build
 replaces it within the first minute. Carrying the folder build in the
 installer itself would save that minute and needs trying on a Mac.
 
+### Eighth round: the app says what each play did
+
+The timings were in the log since step 0, and so was the reason when a track
+failed. In practice neither reached anyone: a log has to be found and
+copied, and what the app itself said was "Failed to load audio. Skipping to
+next track." with nothing to tell a video YouTube refuses from a yt-dlp that
+is out of date, a full disk or a server that is busy.
+
+Now the server keeps the last 60 plays in memory (`services/playReport.js`):
+when each was asked for, how long until the first sound, how much of that
+was finding the audio address and where the address came from (a yt-dlp
+run, one already under way, memory), whether it came from the cache, and
+for a failure the words of whatever failed (yt-dlp's `ERROR:` line, ffmpeg's
+complaint, the rate limit). Requests that only prepare the next track and a
+browser's follow-up requests for a later part of a file are left out.
+
+- `GET /api/system/plays` hands them out, newest first. An account sees its
+  own plays, the first account everyone's.
+- The message when a track cannot be played carries the reason, for example
+  `"…" could not be played (yt-dlp: ERROR: [youtube] …: Sign in to confirm
+  you're not a bot). Skipping to the next track.`
+- **Settings → System → Recent plays** lists them with the time each took.
+
+Two kinds of failure leave nothing in the log at all, and both are covered:
+
+- A request that no handler sees: turned away by the rate limit, or with a
+  media token that was refused. Each is noted as a failed play.
+- A failure on the player's side. The player tells the server what the
+  browser said (`POST /api/system/plays/player-error`), and that goes into
+  the same entry: "the server sent the audio after 2.0 s; the player
+  reported: …" means the browser could not use what it got; "no request for
+  this track reached the server" means the request went somewhere else or
+  nowhere (another program on the port, something blocking it).
+
+Checked in the browser against a stand-in yt-dlp (2 s per look-up) with a
+playlist of four: one refused by "YouTube", one whose audio address was dead
+(ffmpeg: `Server returned 404 Not Found`), two that play. Both reasons
+appeared in the messages and in the list; the two that played show "Finding
+the audio took 2.0 s … Sound after 2.1 s". And with the browser made to
+drop one request and to garble the audio of another: "no request for this
+track reached the server" and "the server sent the audio, but the player
+did not play it: … (media error 4)".
+
+Also checked, because the owner's Mac showed every track failing with an
+empty log: the released v2.2.2 with a yt-dlp that takes 12 s per look-up.
+It plays (after 12 s) and logs the play, so a slow yt-dlp alone is not what
+fails there.
+
 ### Still open
 
 - **The flags `yt-dlp` is run with** (the other half of 1.5). Only
-  comparable against the real thing; the `Play …` lines in the log give the
-  time per look-up, now without the start-up time hiding everything else.
+  comparable against the real thing. Settings → System → Recent plays now
+  shows the time per look-up on the computer that matters, without the
+  start-up time hiding everything else and without reading a log.
 
 ## Where the time goes
 

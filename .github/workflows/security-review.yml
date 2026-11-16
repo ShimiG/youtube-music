@@ -1,0 +1,141 @@
+name: Security Review (weekly)
+
+# The Exploiter and The Clogger (.claude/agents/), once a week.
+#
+# Claude Code runs here, on the runner, against a copy of the app started on
+# the runner itself. It writes three report files; everything after that is
+# plain shell: the reports go to a branch and a pull request, and each finding
+# becomes an issue (scripts/report-to-issues.mjs, which never files one twice).
+#
+# Needs ONE repository secret (Settings -> Secrets and variables -> Actions):
+#   CLAUDE_CODE_OAUTH_TOKEN  from `claude setup-token` (uses a Claude subscription), or
+#   ANTHROPIC_API_KEY        an API key (billed per use).
+# And, for the pull request: Settings -> Actions -> General -> "Allow GitHub
+# Actions to create and approve pull requests". Without it the branch is still
+# pushed and the issues are still filed.
+#
+# A schedule only runs from the default branch, and GitHub switches it off
+# after 60 days without a commit to the repository.
+
+on:
+  schedule:
+    - cron: '17 5 * * 1' # Mondays 05:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: security-review
+  cancel-in-progress: false
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      HAS_CLAUDE_AUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' }}
+    steps:
+      - name: Check that Claude can sign in
+        if: env.HAS_CLAUDE_AUTH != 'true'
+        run: |
+          echo "::error::Set the repository secret CLAUDE_CODE_OAUTH_TOKEN (from 'claude setup-token') or ANTHROPIC_API_KEY."
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix client
+
+      - name: Date of this run
+        id: date
+        run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: Exploiter, then The Clogger
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: >-
+            --max-turns 200
+            --allowedTools "Read,Grep,Glob,Bash,Write,Edit,WebSearch,WebFetch"
+          prompt: |
+            You are running as the scheduled WEEKLY security review for the Music Manager
+            repository (a Node/Express + React app, checked out in the working directory,
+            dependencies installed). Work entirely within this repository and a LOCAL
+            instance of the app on 127.0.0.1. Do NOT attack, scan, or send crafted payloads
+            to any remote host or third-party service (SoundCloud, Google, GitHub,
+            Cloudflare). This is authorized defensive testing of the owner's own app.
+
+            <DATE> is ${{ steps.date.outputs.date }}.
+
+            Step 1 - Exploiter. Read `.claude/agents/exploiter.md` and act exactly as that
+            agent. Boot the app locally and offline: a data folder of its own
+            (MUSIC_DATA_DIR in a temporary directory), a random JWT_SECRET of at least 32
+            characters, a spare PORT such as 3999, no service credentials, no CLOUD_URL,
+            and YTDLP_AUTO_UPDATE=false. Signing in needs a cloud account, which is not
+            available here: make test sessions with `scripts/test-session.js` instead
+            (same MUSIC_DATA_DIR and JWT_SECRET as the server). Run the agent's full
+            static + dependency + dynamic process against http://localhost:3999, then
+            write reports/security/<DATE>.md and reports/security/<DATE>.findings.json
+            using exactly the findings-file schema in the persona (run.agent =
+            "exploiter", run.labels = ["security"]). Record every attempt, including the
+            ones the app correctly defended. Stop the app and delete what you created
+            outside reports/.
+
+            Step 2 - The Clogger. Read `.claude/agents/the-clogger.md` and act exactly as
+            that agent. Read the two files you just wrote, verify each finding against
+            the current code, fill in each finding's `suggested_fix` in
+            reports/security/<DATE>.findings.json in place (do not change ids, titles,
+            severities or statuses), and write reports/security/<DATE>.fixes.md.
+
+            Change no source file. Do NOT commit, push, open a pull request or open
+            issues: the workflow does that with the three report files.
+
+            Finish by stating the three report paths and the counts (confirmed /
+            potential / defended).
+
+      - name: Publish the reports (branch, pull request, issues)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATE: ${{ steps.date.outputs.date }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          FILES=("reports/security/$DATE.md" "reports/security/$DATE.findings.json" "reports/security/$DATE.fixes.md")
+          for f in "${FILES[@]}"; do
+            [ -f "$f" ] || { echo "::error::The review did not write $f"; exit 1; }
+          done
+          node -e "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'))" "reports/security/$DATE.findings.json"
+
+          BRANCH="automation/security-$DATE"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add -- "${FILES[@]}"          # the reports and nothing else
+          git commit -m "Security review $DATE"
+          git push --force-with-lease origin "$BRANCH"
+          SHA=$(git rev-parse HEAD)
+
+          gh pr create --base "${{ github.event.repository.default_branch }}" --head "$BRANCH" \
+            --title "Security review $DATE" \
+            --body "Weekly run of the Exploiter and The Clogger. Reports: \`reports/security/$DATE.md\`, \`$DATE.fixes.md\`, \`$DATE.findings.json\`. One issue per finding has been filed by this run." \
+            || echo "::warning::No pull request was opened (it exists already, or Actions may not create pull requests in this repository). The reports are on the branch $BRANCH."
+
+          # A push made with this token starts no other workflow, so the issues
+          # are filed here and not by "Report to Issues".
+          node scripts/report-to-issues.mjs \
+            --input "reports/security/$DATE.findings.json" \
+            --report-url "$REPO_URL/blob/$SHA/reports/security/$DATE.findings.json"

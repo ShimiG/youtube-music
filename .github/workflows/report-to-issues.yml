@@ -1,11 +1,14 @@
 name: Report to Issues
 
 # Turns agent findings files into GitHub issues, one per finding. This workflow
-# runs NO Claude / LLM code and needs NO API key: the agents (run by scheduled
-# Claude cloud routines on the owner's own account) commit their findings JSON,
-# and this workflow only reads that JSON and opens issues with the built-in
-# GITHUB_TOKEN. Issue creation is idempotent (fingerprint dedup in the script),
-# so re-runs never duplicate a task.
+# runs NO Claude / LLM code and needs NO API key: it only reads the JSON and
+# opens issues with the built-in GITHUB_TOKEN. Issue creation is idempotent
+# (fingerprint dedup in the script), so re-runs never duplicate a task.
+#
+# The weekly agent workflows (security-review.yml, product-discovery.yml) file
+# their own issues, because a push made by a workflow starts no other
+# workflow. This one covers every other way a findings file arrives: an agent
+# run by hand and pushed, or a run from the Actions tab.
 
 on:
   push:

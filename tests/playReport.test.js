@@ -183,6 +183,18 @@ describe('through the server', () => {
         tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-plays-'));
         process.env.MUSIC_DATA_DIR = tmp;
         jest.resetModules();
+        // No real program is started: ffmpeg is a stand-in that gives up when
+        // its input ends without audio, as the real one does.
+        jest.doMock('child_process', () => ({
+            ...jest.requireActual('child_process'),
+            spawn: jest.fn(() => {
+                const { fakeProcess } = require('./helpers/fakeProcess');
+                const ffmpeg = fakeProcess();
+                ffmpeg.stdin.resume();
+                ffmpeg.stdin.on('end', () => { ffmpeg.stderr.write('pipe:0: Invalid data found when processing input\n'); ffmpeg.exit(1); });
+                return ffmpeg;
+            })
+        }));
         db = await require('../config/db')();
         app = require('../app');
         app.locals.db = db;
@@ -190,14 +202,21 @@ describe('through the server', () => {
         ({ withMedia } = require('./helpers/media'));
         await db.run(`INSERT INTO users (id, username, password) VALUES (1, 'first', 'x'), (2, 'second', 'x')`);
         jest.spyOn(console, 'error').mockImplementation(() => {});
-        // yt-dlp refuses every video, the way YouTube's bot check makes it.
-        YouTubeController.runner.execFile = jest.fn((bin, args, opts, cb) => {
-            cb(Object.assign(new Error('Command failed'), { code: 1 }), '', 'ERROR: [youtube] xxxxxxxxxxx: Sign in to confirm you are not a bot\n');
-            return { exitCode: 1, kill: jest.fn() };
+        // yt-dlp refuses every video, the way YouTube's bot check makes it:
+        // the download ends with its error and no audio.
+        YouTubeController.runner.spawn = jest.fn(() => {
+            const { fakeProcess } = require('./helpers/fakeProcess');
+            const ytDlp = fakeProcess();
+            setTimeout(() => {
+                ytDlp.stderr.write('ERROR: [youtube] xxxxxxxxxxx: Sign in to confirm you are not a bot\n');
+                ytDlp.exit(1);
+            }, 5);
+            return ytDlp;
         });
     });
     afterAll(async () => {
         console.error.mockRestore();
+        jest.dontMock('child_process');
         await db.close();
         fs.rmSync(tmp, { recursive: true, force: true });
         delete process.env.MUSIC_DATA_DIR;

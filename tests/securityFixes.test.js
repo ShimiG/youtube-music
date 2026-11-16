@@ -84,24 +84,24 @@ describe('ytdlp-stream-orphan-no-timeout', () => {
         return res;
     }
 
-    it('passes a timeout and kills yt-dlp when the client disconnects, without starting ffmpeg', () => {
+    // A play no longer has a look-up of its own: yt-dlp downloads the audio as
+    // part of the conversion and ends with it (tests/conversionJob.test.js,
+    // "a source that yt-dlp downloads"). The look-up that is left is the one
+    // for a track's length.
+    it('passes a timeout and kills yt-dlp when the client disconnects', () => {
         const child = fakeChild();
         let callback;
         YouTubeController.runner.execFile = jest.fn((bin, args, opts, cb) => { callback = cb; return child; });
 
         const res = fakeRes();
-        YouTubeController.streamTrack({ query: { videoId: 'aaaaaaaaaaa' } }, res);
+        YouTubeController.getDuration({ query: { videoId: 'aaaaaaaaaaa' } }, res);
 
         const opts = YouTubeController.runner.execFile.mock.calls[0][2];
         expect(opts.timeout).toBe(YouTubeController.YTDLP_TIMEOUT_MS);
 
-        res.emit('close'); // client went away mid-resolve
+        res.emit('close'); // client went away mid-look-up
         expect(child.kill).toHaveBeenCalledWith('SIGKILL');
-
-        // yt-dlp's late callback must not answer a dead response or spawn ffmpeg.
-        callback(null, 'https://media.example/audio');
-        expect(res.setHeader).not.toHaveBeenCalled();
-        expect(res.json).not.toHaveBeenCalled();
+        expect(() => callback(Object.assign(new Error('killed'), { killed: true }), '', '')).not.toThrow();
     });
 
     it('does not kill anything after a normal response', () => {

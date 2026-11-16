@@ -87,6 +87,11 @@ after it in the background, shortly after it starts and at most once a day
   yt-dlp in use takes to start.
 - `YTDLP_PATH` names the yt-dlp to use and switches all of this off for it;
   `YTDLP_AUTO_UPDATE=false` turns the updates and the download off (CI and tests do).
+- **YouTube audio is downloaded by yt-dlp, not by ffmpeg.** YouTube answers 403 to a
+  program that just asks for an audio address, so yt-dlp fetches the audio and pipes it
+  into ffmpeg (`yt-dlp -o - … | ffmpeg -i pipe:0 …`). What yt-dlp can download, the app
+  can play; when a track fails, the message and Settings → System → Recent plays carry
+  yt-dlp's own error.
 - **YouTube needs a JavaScript runtime.** YouTube hides its audio addresses behind a
   script, and yt-dlp runs that script in a runtime it finds on the computer. By itself it
   only looks for [deno](https://deno.com); with none it falls back to one limited YouTube

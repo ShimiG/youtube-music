@@ -365,6 +365,51 @@ still fails, the list now carries ffmpeg's own answer and the rendition.
 Cost: with a runtime yt-dlp asks more of YouTube per look-up. The time per
 look-up is in the same list.
 
+### It was not the whole cause: YouTube refuses ffmpeg (16 Nov 2026, later)
+
+With the runtime and the headers in place the list on that Mac said, for
+every track: `ffmpeg: https://rr4---sn-….googlevideo.com/... Server returned
+403 Forbidden`. YouTube's media servers no longer hand the audio to a
+program that simply asks for the address. yt-dlp's source shows how it asks
+itself: in ranged pieces (`http_chunk_size`, or the address cut into
+`range=` fragments), which a plain request by ffmpeg is not.
+
+So the app stopped fetching YouTube audio with ffmpeg. yt-dlp downloads it
+and writes it to its standard output; ffmpeg converts what it reads from
+there (`controllers/YouTubeController.js`, `downloadFeed`;
+`controllers/transcode.js`, `connectFeed`):
+
+    yt-dlp -f bestaudio/best -o - <video>  |  ffmpeg -i pipe:0 ... -f mp3 -
+
+- What yt-dlp can download, the app can play. When YouTube changes again,
+  a newer yt-dlp is the fix, and the app keeps yt-dlp up to date itself.
+- One yt-dlp run per play, as before: the look-up is the first thing that
+  run does. The length and the rendition it chose come out of the same run.
+- The downloader never outlives the conversion: whatever ends ffmpeg (the
+  listener leaving, a limit, an error) ends yt-dlp too.
+- When the download fails, the reason shown is yt-dlp's own
+  (`yt-dlp: ERROR: … HTTP Error 403: Forbidden`), and the request is
+  answered with 502 instead of an empty success.
+
+What it costs: a seek in a track that is not in the cache yet starts a new
+download and reads up to the position (a pipe cannot be searched), where it
+used to reuse a remembered address. Once a track is cached, which takes
+seconds, seeks are served from the file as before.
+
+Checked with real ffmpeg and a stand-in yt-dlp that writes an Opus file to
+its output: a whole play (40.0 s of audio out of 40), a seek to 25 s (15.0 s
+out), a refused download (502 with yt-dlp's words, in the message and in the
+list), in the browser too, and no process left behind afterwards. **Not**
+run against YouTube: the build machine cannot reach it. Whether yt-dlp's
+own download works on a given computer is what decides now; this command
+shows it in a terminal:
+
+    yt-dlp --js-runtimes node -f bestaudio -o test.audio "https://www.youtube.com/watch?v=<id>"
+
+Open: SoundCloud through yt-dlp still hands ffmpeg an address. Its AAC
+renditions decode as noise there (the megabytes of ffmpeg errors in the
+owner's log); the same pipe would let yt-dlp fetch and unpack them.
+
 ### Still open
 
 - **The installed app carries no JavaScript runtime.** It uses a deno or

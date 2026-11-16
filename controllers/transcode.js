@@ -292,16 +292,24 @@ function headerLines(headers) {
     return lines.join('');
 }
 
+// The input of a conversion whose source is fed in by another process
+// (`feed`, see connectFeed): ffmpeg reads it from its standard input.
+const PIPED = 'pipe:0';
+
 function ffmpegArgsFor(req, sourceUrl, seekTime, { copy = false, headers = null } = {}) {
     // The reconnect options only exist for network inputs; ffmpeg refuses to
     // open a local file (`file:` input, local files) when they are given.
     const isNetworkInput = /^https?:\/\//i.test(sourceUrl);
     const sent = isNetworkInput ? headerLines(headers) : '';
+    // A pipe cannot be searched: there ffmpeg reads from the start and drops
+    // what comes before the position (-ss after the input, not before it).
+    const piped = sourceUrl === PIPED;
     return [
         ...(isNetworkInput ? ['-reconnect_streamed', '1', '-reconnect_delay_max', '5'] : []),
         ...(sent ? ['-headers', sent] : []),
-        '-ss', seekTime.toString(),
+        ...(piped ? [] : ['-ss', seekTime.toString()]),
         '-i', sourceUrl,
+        ...(piped && seekTime > 0 ? ['-ss', seekTime.toString()] : []),
         '-vn',
         // Copying keeps the source's frames; its tags stay behind.
         ...(copy ? ['-c:a', 'copy', '-map_metadata', '-1'] : ['-c:a', 'libmp3lame', '-b:a', QUALITIES[qualityOf(req)].bitrate]),
@@ -365,7 +373,68 @@ function watchFfmpeg(child) {
     };
 }
 
+// --- A source that another program downloads -----------------------------------
+//
+// YouTube's audio addresses can no longer simply be handed to ffmpeg: its
+// servers answer 403 unless the audio is asked for the way yt-dlp asks (in
+// ranged pieces, among other things that change from month to month). So for
+// such a source yt-dlp does the downloading and ffmpeg is given the bytes:
+//
+//     yt-dlp -o - ...  |  ffmpeg -i pipe:0 ...
+//
+// `feed()` starts the downloading process and returns
+// { child, failure(code, signal, { endedByUs }) }: its stdout is the audio,
+// `failure` is its own account of why it failed (null when it did not). connectFeed joins the two and makes sure the
+// downloader never outlives the conversion: whatever ends ffmpeg ends it too.
+// `whenOver(cb)` calls back, once both are gone, with the downloader's
+// account if it was the one that failed (null when it was not).
+function connectFeed(feeder, ffmpeg) {
+    const source = feeder.child;
+    let endedByUs = false;
+    let over = null; // { code, signal } once the downloader is gone
+    const waiting = [];
+    const gone = (code, signal) => {
+        if (over) return;
+        over = { code, signal };
+        waiting.splice(0).forEach((cb) => cb());
+    };
+    const end = () => {
+        if (over || endedByUs) return;
+        // Already on its way out by itself: what it said stands.
+        if (source.exitCode !== null && source.exitCode !== undefined) return;
+        endedByUs = true;
+        try { source.kill('SIGKILL'); } catch { /* gone already */ }
+    };
+    source.once('close', gone);
+    // A program that could not be started emits 'error' and may never close.
+    source.once('error', (err) => {
+        feeder.startError = err;
+        gone(-1, null);
+        if (ffmpeg.stdin && !ffmpeg.stdin.destroyed) ffmpeg.stdin.end();
+    });
+    // ffmpeg leaving first closes its end of the pipe: not an error to report.
+    if (ffmpeg.stdin) {
+        ffmpeg.stdin.on('error', () => {});
+        source.stdout.on('error', () => {});
+        source.stdout.pipe(ffmpeg.stdin);
+    }
+    ffmpeg.once('close', end);
+    ffmpeg.once('error', end);
+    return {
+        end,
+        whenOver(cb) {
+            const report = () => {
+                if (feeder.startError) return cb(`it could not be started: ${feeder.startError.message}`);
+                return cb(feeder.failure(over.code, over.signal, { endedByUs }) || null);
+            };
+            if (over) report();
+            else waiting.push(report);
+        }
+    };
+}
+
 const NO_AUDIO = 'ffmpeg could not get any audio from the source';
+const NO_AUDIO_ANSWER = { error: 'No audio could be got for this track.', code: 'TRACK_UNAVAILABLE', reason: 'no_audio' };
 const STOPPED_EARLY = 'the conversion was stopped before any audio arrived (a time limit, or nobody was listening any more)';
 
 // --- Conversion jobs: ffmpeg -> cache file, responses read the growing file ------
@@ -382,6 +451,7 @@ function enterBackground(job) {
 // which a pass-through job is tried again as a conversion).
 function stopJob(job) {
     job.stopped = true;
+    if (job.feed) job.feed.end();
     job.child.kill('SIGKILL');
 }
 
@@ -418,7 +488,7 @@ function settle(job) {
 }
 
 /** Starts ffmpeg writing `<cacheKey>_<time>.part`. Null when no job could be started. */
-function startJob(req, { sourceUrl, sourceHeaders, cacheKey, finalFilePath, timing, onSourceFailed, prepare, sourceCodec }) {
+function startJob(req, { sourceUrl, sourceHeaders, feed, cacheKey, finalFilePath, timing, onSourceFailed, prepare, sourceCodec }) {
     const partPath = path.resolve(cacheDir, `${cacheKey}_${Date.now()}.part`);
     if (!partPath.startsWith(resolvedCacheDir + path.sep)) return null;
     let fd;
@@ -501,8 +571,10 @@ function startJob(req, { sourceUrl, sourceHeaders, cacheKey, finalFilePath, timi
     const launch = () => {
         // windowsHide: the desktop app has no console; without it every
         // transcode would flash a console window on Windows.
-        const child = spawn(ffmpegPath, ffmpegArgsFor(req, sourceUrl, 0, { copy: job.copied, headers: sourceHeaders }), { windowsHide: true });
+        const child = spawn(ffmpegPath, ffmpegArgsFor(req, feed ? PIPED : sourceUrl, 0, { copy: job.copied, headers: sourceHeaders }), { windowsHide: true });
         job.child = child;
+        const fed = feed ? connectFeed(feed(), child) : null;
+        job.feed = fed;
         child.stdout.on('data', (chunk) => {
             job.producedAudio = true;
             stallTimer.refresh();
@@ -525,12 +597,14 @@ function startJob(req, { sourceUrl, sourceHeaders, cacheKey, finalFilePath, timi
             finish(-1);
         });
         // once: the counters must move exactly one step per process.
-        child.once('close', (code, signal) => {
+        // `sourceSaid`: the downloader's account, when the source was fed in
+        // and it was the downloader that failed.
+        const closed = (code, signal, sourceSaid) => {
             const again = code !== 0 && job.copied && !job.producedAudio && !job.stopped && !job.failedToStart;
             // Nothing came out: keep the reason for whoever is listening, and
             // for the log. Its own last words, unless it was us who ended it.
             if (!job.producedAudio && !job.failedToStart && !again) {
-                job.complaint = job.stopped ? STOPPED_EARLY : said.lastWords(code, signal);
+                job.complaint = job.stopped ? STOPPED_EARLY : (sourceSaid || said.lastWords(code, signal));
                 if (!job.stopped) console.error(`${timing && timing.label ? timing.label : cacheKey}: no audio. ${job.complaint}`);
             }
             if (again) {
@@ -540,6 +614,10 @@ function startJob(req, { sourceUrl, sourceHeaders, cacheKey, finalFilePath, timi
                 return launch();
             }
             return finish(code);
+        };
+        child.once('close', (code, signal) => {
+            if (!fed) return closed(code, signal, null);
+            return fed.whenOver((sourceSaid) => closed(code, signal, sourceSaid));
         });
     };
     launch();
@@ -629,6 +707,8 @@ function follow(job, req, res, timing) {
                 if (job.failedToStart && position === 0 && !res.headersSent) {
                     return res.status(500).json({ error: 'Audio processor unavailable' });
                 }
+                // No audio at all: an error answer, not an empty success.
+                if (position === 0 && !job.ok && !res.headersSent) return res.status(502).json(NO_AUDIO_ANSWER);
                 return res.end();
             }
             return undefined; // woken by 'grow' or 'done'
@@ -645,7 +725,7 @@ function follow(job, req, res, timing) {
 
 // --- Straight from ffmpeg to the response ---------------------------------------------
 
-function streamDirect(req, res, { sourceUrl, sourceHeaders, seekTime, timing, onSourceFailed, sourceCodec }) {
+function streamDirect(req, res, { sourceUrl, sourceHeaders, feed, seekTime, timing, onSourceFailed, sourceCodec }) {
     const spawnedAt = Date.now();
     let copied = canCopy(req, sourceCodec);
     let ffmpegProcess = null;
@@ -661,8 +741,10 @@ function streamDirect(req, res, { sourceUrl, sourceHeaders, seekTime, timing, on
         slotReleased = true;
         activeTranscodes--;
     };
+    let fed = null; // the downloader feeding ffmpeg, when the source is fed in
     const stop = () => {
         stopped = true;
+        if (fed) fed.end();
         ffmpegProcess.kill('SIGKILL');
     };
 
@@ -671,6 +753,14 @@ function streamDirect(req, res, { sourceUrl, sourceHeaders, seekTime, timing, on
     const cleanupTimer = setTimeout(() => {
         if (!finished) stop();
     }, MAX_ATTENDED_MS);
+    // A downloader that never delivers would keep the listener waiting for
+    // good: ffmpeg has no way to tell a slow pipe from a dead one.
+    const firstAudioTimer = feed ? setTimeout(() => {
+        if (finished || producedAudio) return;
+        complaint = `no audio arrived from the source within ${STALL_MS / 1000} s`;
+        playReport.reason(res, complaint, { failed: true });
+        stop();
+    }, STALL_MS) : null;
 
     setMediaHeaders(res);
     res.setHeader('Content-Type', 'audio/mpeg');
@@ -679,8 +769,10 @@ function streamDirect(req, res, { sourceUrl, sourceHeaders, seekTime, timing, on
     // Started once, or twice when a pass-through is not possible after all
     // (see startJob): the response is therefore ended here, not by the pipe.
     const launch = () => {
-        ffmpegProcess = spawn(ffmpegPath, ffmpegArgsFor(req, sourceUrl, seekTime, { copy: copied, headers: sourceHeaders }), { windowsHide: true });
+        ffmpegProcess = spawn(ffmpegPath, ffmpegArgsFor(req, feed ? PIPED : sourceUrl, seekTime, { copy: copied, headers: sourceHeaders }), { windowsHide: true });
         const child = ffmpegProcess;
+        fed = feed ? connectFeed(feed(), child) : null;
+        const feeding = fed;
         child.on('error', (err) => {
             releaseSlot();
             console.error('Failed to start FFmpeg:', err.message);
@@ -692,10 +784,10 @@ function streamDirect(req, res, { sourceUrl, sourceHeaders, seekTime, timing, on
         });
         child.stdout.pipe(res, { end: false });
         const said = watchFfmpeg(child);
-        child.once('close', (code, signal) => {
+        const closed = (code, signal, sourceSaid) => {
             const again = code !== 0 && copied && !producedAudio && !stopped;
             if (!producedAudio && !stopped && !again) {
-                complaint = said.lastWords(code, signal);
+                complaint = sourceSaid || said.lastWords(code, signal);
                 console.error(`${timing && timing.label ? timing.label : 'A stream'}: no audio. ${complaint}`);
             }
             if (again) {
@@ -707,12 +799,18 @@ function streamDirect(req, res, { sourceUrl, sourceHeaders, seekTime, timing, on
             releaseSlot();
             finished = true;
             clearTimeout(cleanupTimer);
+            clearTimeout(firstAudioTimer);
             if (code !== 0 && !producedAudio && typeof onSourceFailed === 'function') onSourceFailed();
             if (!producedAudio && !stopped) playReport.reason(res, complaint || NO_AUDIO, { failed: true });
+            if (!producedAudio && !stopped && !res.headersSent && !res.destroyed) return res.status(502).json(NO_AUDIO_ANSWER);
             // 'close' comes after ffmpeg's output has ended, so everything it
             // produced has been handed to the response by now.
             if (!res.writableEnded && !res.destroyed) res.end();
             return undefined;
+        };
+        child.once('close', (code, signal) => {
+            if (!feeding) return closed(code, signal, null);
+            return feeding.whenOver((sourceSaid) => closed(code, signal, sourceSaid));
         });
     };
     launch();
@@ -740,8 +838,10 @@ function streamDirect(req, res, { sourceUrl, sourceHeaders, seekTime, timing, on
  * any audio out of `sourceUrl`. `sourceCodec: 'mp3'` says the source is MP3
  * already, which lets it be passed through instead of converted.
  * `sourceHeaders` are sent with ffmpeg's requests for a network source.
+ * `feed`, instead of `sourceUrl`: a function that starts the process whose
+ * output is the source (see connectFeed).
  */
-function streamTranscoded(req, res, { sourceUrl, sourceHeaders, cacheKey, seekTime = 0, allowCache = true, timing, onSourceFailed, sourceCodec }) {
+function streamTranscoded(req, res, { sourceUrl, sourceHeaders, feed, cacheKey, seekTime = 0, allowCache = true, timing, onSourceFailed, sourceCodec }) {
     const finalFilePath = cachePathFor(cacheKey);
     const prepare = isPrepare(req);
     const cacheable = Boolean(allowCache && finalFilePath && seekTime === 0);
@@ -766,16 +866,18 @@ function streamTranscoded(req, res, { sourceUrl, sourceHeaders, cacheKey, seekTi
         return res.status(503).json({ error: 'Too many streams in progress. Try again in a moment.', code: 'SERVER_BUSY' });
     }
 
-    const job = cacheable ? startJob(req, { sourceUrl, sourceHeaders, cacheKey, finalFilePath, timing, onSourceFailed, prepare, sourceCodec }) : null;
+    const job = cacheable ? startJob(req, { sourceUrl, sourceHeaders, feed, cacheKey, finalFilePath, timing, onSourceFailed, prepare, sourceCodec }) : null;
     if (prepare) return answerPrepare(res, job ? 'started' : 'skipped');
     if (job) return follow(job, req, res, timing);
-    return streamDirect(req, res, { sourceUrl, sourceHeaders, seekTime, timing, onSourceFailed, sourceCodec });
+    return streamDirect(req, res, { sourceUrl, sourceHeaders, feed, seekTime, timing, onSourceFailed, sourceCodec });
 }
 
 module.exports = {
     _watchFfmpeg: watchFfmpeg,
     _headerLines: headerLines,
     _ffmpegArgsFor: ffmpegArgsFor,
+    _connectFeed: connectFeed,
+    PIPED,
     cacheDir,
     isValidCacheKey,
     parseSeek,

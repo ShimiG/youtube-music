@@ -51,7 +51,7 @@ async function probeBinaries(fresh = false) {
     const ytDlpStartedAt = Date.now();
     let ytDlpStartMs = null;
     const [ytDlp, ffmpegLine] = await Promise.all([
-        runner.version(ytDlpPath, ['--version']).then((v) => { ytDlpStartMs = Date.now() - ytDlpStartedAt; return v; }),
+        runner.version(ytDlpPath(), ['--version']).then((v) => { ytDlpStartMs = Date.now() - ytDlpStartedAt; return v; }),
         runner.version(ffmpegPath, ['-version'])
     ]);
     const binaries = {

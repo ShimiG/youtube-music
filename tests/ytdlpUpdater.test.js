@@ -76,6 +76,9 @@ describe('looking for a yt-dlp update once a day', () => {
         stampFile = path.join(dir, '.ytdlp-update-check');
         existsSpy = jest.spyOn(fs, 'existsSync').mockReturnValue(true);
         execMock.mockResolvedValue({ stdout: 'yt-dlp is up to date (stable@2026.09.10)\n', stderr: '' });
+        // The folder build (tests/ytdlpFolder.test.js) is not what these are
+        // about, and must never be fetched for real from a test.
+        jest.spyOn(require('../services/ytdlpFolder'), 'ensure').mockResolvedValue({ status: 'kept', message: 'not needed' });
     });
     afterEach(() => {
         existsSpy.mockRestore();

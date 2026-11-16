@@ -18,7 +18,7 @@ const runner = { execFile };
 // characters are stripped so the text can't forge extra log lines.
 function describeYtDlpFailure(error, stderr) {
     if (error && error.code === 'ENOENT') {
-        return `yt-dlp not found at "${ytDlpPath}". Install it (brew install yt-dlp) or set YTDLP_PATH.`;
+        return `yt-dlp not found at "${ytDlpPath()}". Install it (brew install yt-dlp) or set YTDLP_PATH.`;
     }
     if (error && error.killed) return `yt-dlp timed out after ${YTDLP_TIMEOUT_MS / 1000}s.`;
     const lines = String(stderr || '').split('\n').map((l) => l.trim()).filter(Boolean);
@@ -65,7 +65,7 @@ function startResolving(videoId) {
     const args = ['-f', 'bestaudio/best', '--no-playlist', '--print', 'duration', '--print', 'urls', `https://www.youtube.com/watch?v=${videoId}`];
     const job = { waiters: 0, done: false, child: null, promise: null };
     job.promise = new Promise((resolve, reject) => {
-        job.child = runner.execFile(ytDlpPath, args, { timeout: YTDLP_TIMEOUT_MS, windowsHide: true }, (error, stdout, stderr) => {
+        job.child = runner.execFile(ytDlpPath(), args, { timeout: YTDLP_TIMEOUT_MS, windowsHide: true }, (error, stdout, stderr) => {
             job.done = true;
             if (resolving.get(videoId) === job) resolving.delete(videoId);
             if (error) {

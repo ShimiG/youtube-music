@@ -9,7 +9,7 @@ const ytdlp = require('../controllers/soundcloud/ytdlp');
 const { decrypt } = require('../services/tokenCrypto');
 const { withMedia } = require('./helpers/media');
 
-const validToken = jwt.sign({ userId: 1 }, process.env.JWT_SECRET, { expiresIn: '1h' });
+const validToken = jwt.sign({ userId: 1, purpose: 'session' }, process.env.JWT_SECRET, { expiresIn: '1h' });
 const authHeader = { Authorization: `Bearer ${validToken}` };
 
 const jsonResponse = (status, body) => ({

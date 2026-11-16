@@ -29,6 +29,9 @@ const net = require('net');
 const { spawn } = require('child_process');
 const pkg = require('../package.json');
 const { resolveFfmpeg } = require('./paths');
+const netGuard = require('./netGuard');
+
+const { isPublicAddress } = netGuard;
 
 const CLIENT_ID = `MusicManager/${pkg.version}`;
 const MAX_URL_CHARS = 2048;
@@ -54,30 +57,7 @@ class ArtworkError extends Error {
     }
 }
 
-// --- Which addresses may be contacted -----------------------------------------
-
-const blocked = new net.BlockList();
-for (const [prefix, bits] of [
-    ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16],
-    ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.0.2.0', 24], ['192.88.99.0', 24], ['192.168.0.0', 16],
-    ['198.18.0.0', 15], ['198.51.100.0', 24], ['203.0.113.0', 24], ['224.0.0.0', 4], ['240.0.0.0', 4]
-]) blocked.addSubnet(prefix, bits, 'ipv4');
-for (const [prefix, bits] of [
-    ['::', 128], ['::1', 128], ['64:ff9b::', 96], ['64:ff9b:1::', 48], ['100::', 64],
-    ['2001::', 23], ['2001:db8::', 32], ['2002::', 16], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]
-]) blocked.addSubnet(prefix, bits, 'ipv6');
-// IPv4 written as IPv6 (::ffff:127.0.0.1) is never a cover host. Kept apart:
-// in the list above this rule would also match every plain IPv4 address.
-const mapped = new net.BlockList();
-mapped.addSubnet('::ffff:0:0', 96, 'ipv6');
-
-/** Whether an IP address is an ordinary public one. */
-function isPublicAddress(address) {
-    const family = net.isIP(address);
-    if (family === 4) return !blocked.check(address, 'ipv4');
-    if (family === 6) return !mapped.check(address, 'ipv6') && !blocked.check(address, 'ipv6');
-    return false;
-}
+// --- Which addresses may be contacted: services/netGuard.js -------------------
 
 // Wrapped so tests can stand in for DNS, the network and ffmpeg.
 const runner = {
@@ -91,18 +71,10 @@ const runner = {
  * The socket connects to what this returns, so the check and the connection
  * cannot disagree.
  */
-function guardedLookup(hostname, options, callback) {
-    const done = typeof options === 'function' ? options : callback;
-    const opts = typeof options === 'function' ? {} : (options || {});
-    runner.dnsLookup(hostname, { ...opts, all: true }, (err, addresses) => {
-        if (err) return done(err);
-        const list = Array.isArray(addresses) ? addresses : [];
-        if (!list.length || !list.every((entry) => isPublicAddress(entry.address))) {
-            return done(new ArtworkError('BLOCKED', 'That host is not on the public internet.'));
-        }
-        return opts.all ? done(null, list) : done(null, list[0].address, list[0].family);
-    });
-}
+const guardedLookup = netGuard.guardedLookup({
+    lookup: (hostname, options, callback) => runner.dnsLookup(hostname, options, callback),
+    blockedError: () => new ArtworkError('BLOCKED', 'That host is not on the public internet.')
+});
 
 /** Parses and checks a cover URL; throws ArtworkError('BAD_URL' | 'BLOCKED'). */
 function checkUrl(raw) {

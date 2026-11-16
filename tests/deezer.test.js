@@ -18,7 +18,7 @@ const matcher = require('../services/matcher');
 const YouTubeController = require('../controllers/YouTubeController');
 const { withMedia } = require('./helpers/media');
 
-const auth = { Authorization: `Bearer ${jwt.sign({ userId: 1 }, process.env.JWT_SECRET, { expiresIn: '1h' })}` };
+const auth = { Authorization: `Bearer ${jwt.sign({ userId: 1, purpose: 'session' }, process.env.JWT_SECRET, { expiresIn: '1h' })}` };
 
 const dzTrack = (over = {}) => ({
     id: 3135556,

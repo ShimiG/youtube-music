@@ -77,16 +77,23 @@ async function cacheUsage() {
     return { files, bytes, maxBytes: cacheMaxBytes() };
 }
 
-async function getHealth({ fresh = false } = {}) {
+// Exact versions of yt-dlp, ffmpeg and Node tell someone which known flaws to
+// try, so only the installation's owner gets them. Every account still learns
+// whether each helper was found: Settings -> System and the "nothing can
+// play" message are for everyone (security review 2026-11-16,
+// health-endpoint-any-authenticated-user).
+const withoutVersion = (binary) => ({ ...binary, version: null });
+
+async function getHealth({ fresh = false, detailed = false } = {}) {
     const [binaries, cache] = await Promise.all([probeBinaries(fresh), cacheUsage()]);
     const degraded = !binaries.ytDlp.available || !binaries.ffmpeg.available;
     return {
         status: degraded ? 'degraded' : 'ok',
         version: pkg.version,
-        node: process.version,
+        node: detailed ? process.version : null,
         uptimeSec: Math.round(process.uptime()),
         platform: process.platform,
-        binaries,
+        binaries: detailed ? binaries : { ytDlp: withoutVersion(binaries.ytDlp), ffmpeg: withoutVersion(binaries.ffmpeg) },
         cache,
         // Relative to the data folder; absolute paths stay out of responses.
         log: { enabled: logFile.enabled(), file: `logs/${logFile.FILE_NAME}` }

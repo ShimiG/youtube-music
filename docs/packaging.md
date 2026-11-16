@@ -110,7 +110,8 @@ These are checked in order:
 macOS GUI apps don't inherit the shell's PATH, which is why the Homebrew
 locations are listed by name.
 
-`GET /api/health` (requires login) reports which versions were found, and
+`GET /api/health` (requires login; the exact versions only for the first
+account, the installation's owner) reports which versions were found, and
 reports `degraded` when one is missing.
 
 ## Installers

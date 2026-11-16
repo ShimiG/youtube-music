@@ -32,7 +32,7 @@ const YouTubeController = require('../controllers/YouTubeController');
 const app = require('../app');
 const { withMedia } = require('./helpers/media');
 
-const validToken = jwt.sign({ userId: 1 }, process.env.JWT_SECRET, { expiresIn: '1h' });
+const validToken = jwt.sign({ userId: 1, purpose: 'session' }, process.env.JWT_SECRET, { expiresIn: '1h' });
 const auth = { Authorization: `Bearer ${validToken}` };
 
 const SPOTIFY_ID = '3n3Ppam7vgaVa1iaRUc9Lp'; // 22 base62 chars, like a real Spotify track id

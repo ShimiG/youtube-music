@@ -48,7 +48,7 @@ describe('YouTube without Google credentials', () => {
     it('is reported as not connectable, and the connect URL answers 503 SOURCE_NOT_CONFIGURED', async () => {
         const app = require('../app');
         app.locals.db = { get: jest.fn().mockResolvedValue({ id: 1 }), all: jest.fn().mockResolvedValue([]), run: jest.fn() };
-        const auth = { Authorization: `Bearer ${jwt.sign({ userId: 1 }, process.env.JWT_SECRET, { expiresIn: '1h' })}` };
+        const auth = { Authorization: `Bearer ${jwt.sign({ userId: 1, purpose: 'session' }, process.env.JWT_SECRET, { expiresIn: '1h' })}` };
 
         expect(require('../providers/youtube').isAvailable()).toBe(false);
         const res = await request(app).get('/auth/google/url').set(auth);

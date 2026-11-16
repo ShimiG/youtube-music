@@ -198,6 +198,7 @@ Required environment variables (see `.env.example`):
 | `JWT_SECRET` | Secret for signing login tokens. Optional: when it is not set, one is generated once and kept in the data folder |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth credentials. Can be entered in the app instead (Settings → Accounts); a value set here wins. Not needed at all when YouTube is connected through the cloud account (`cloud/README.md`) |
 | `CLOUD_URL` | Address of your cloud service (optional). Set here, it cannot be changed in the app |
+| `CLOUD_ALLOW_LOCAL` | `1` accepts a cloud address on this computer or a private network (`http://localhost:8787` for `wrangler dev`). Off by default: the address must be https and on the public internet |
 | `REDIRECT_URI` | Google OAuth callback, e.g. `http://localhost:3000/auth/google/callback` |
 | `SOUNDCLOUD_CLIENT_ID` / `SOUNDCLOUD_CLIENT_SECRET` | SoundCloud app credentials (optional; adds the SoundCloud library). Also enterable under Settings → Accounts |
 | `LOG_FILE` | `off` stops the server writing `logs/server.log` (default: on) |
@@ -252,7 +253,7 @@ see [docs/packaging.md](docs/packaging.md).
 | `GET /api/cloud/status`, `PUT`/`DELETE /api/cloud/url`, `POST`/`DELETE /api/cloud/link`, `POST /api/cloud/sync` | JWT; address: owner only | Cloud sync: where the service is, linking this computer, syncing now |
 | `GET /api/settings/services`, `PUT`/`DELETE /api/settings/services/:source` | JWT; changes: owner only | Service credentials entered in the app (never returned) |
 | `DELETE /api/user/connections/youtube`, `.../soundcloud` | JWT | Disconnect a service account |
-| `GET /api/health`, `GET /api/system/log` | JWT; log: owner only | yt-dlp / ffmpeg versions and cache use; the end of the server log |
+| `GET /api/health`, `GET /api/system/log` | JWT; exact versions and the log: owner only | Whether yt-dlp and ffmpeg were found, and cache use (their versions for the owner); the end of the server log |
 | `GET /api/lyrics?source=&id=&title=&artist=&duration=&online=1` | JWT, rate-limited | Lyrics for the playing track (see below) |
 | `GET /api/artwork/colors?url=` | JWT, rate-limited | Theme colours from a cover image (see below) |
 | `GET /history`, `POST /history` | JWT | Play history |

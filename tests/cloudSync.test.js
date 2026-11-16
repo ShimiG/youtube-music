@@ -94,8 +94,16 @@ afterEach(async () => {
 describe('the cloud address', () => {
     it('accepts https addresses only (http just for a Worker on this computer), and only the bare address', () => {
         expect(client.normalizeUrl(' https://music-manager-cloud.me.workers.dev/ ')).toBe('https://music-manager-cloud.me.workers.dev');
+        // A Worker on this computer (wrangler dev) only with CLOUD_ALLOW_LOCAL
+        // set; see tests/cloudAddressGuard.test.js.
+        process.env.CLOUD_ALLOW_LOCAL = '1';
         expect(client.normalizeUrl('http://127.0.0.1:8787')).toBe('http://127.0.0.1:8787');
         expect(client.normalizeUrl('http://localhost:8787')).toBe('http://localhost:8787');
+        expect(() => client.normalizeUrl('http://192.168.1.5:8787')).toThrow(expect.objectContaining({ code: 'BAD_URL' })); // http is for this computer only
+        delete process.env.CLOUD_ALLOW_LOCAL;
+        for (const bad of ['http://127.0.0.1:8787', 'http://localhost:8787']) {
+            expect(() => client.normalizeUrl(bad)).toThrow(expect.objectContaining({ code: 'BAD_URL' }));
+        }
         for (const bad of [
             '', undefined, 42, 'not a url', 'http://example.com', 'ftp://example.com', 'file:///etc/passwd',
             'https://user:pass@example.com', 'https://example.com/path', 'https://example.com/?x=1', 'https://example.com/#frag',

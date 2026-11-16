@@ -7,7 +7,7 @@ const client = require('../controllers/soundcloud/client');
 const YouTubeController = require('../controllers/YouTubeController');
 const { cleanTrackMeta } = require('../services/trackMeta');
 
-const authHeader = { Authorization: `Bearer ${jwt.sign({ userId: 1 }, process.env.JWT_SECRET, { expiresIn: '1h' })}` };
+const authHeader = { Authorization: `Bearer ${jwt.sign({ userId: 1, purpose: 'session' }, process.env.JWT_SECRET, { expiresIn: '1h' })}` };
 
 describe('soundcloud-cursor-ssrf-token-exfil: buildUrl pins the API origin', () => {
     const bypasses = [
@@ -44,7 +44,7 @@ describe('jwt-verify-no-algorithm-pin: sessions must expire', () => {
     });
 
     it('rejects an HS512 token signed with the real secret', async () => {
-        const hs512 = jwt.sign({ userId: 1 }, process.env.JWT_SECRET, { algorithm: 'HS512', expiresIn: '1h' });
+        const hs512 = jwt.sign({ userId: 1, purpose: 'session' }, process.env.JWT_SECRET, { algorithm: 'HS512', expiresIn: '1h' });
         const res = await request(app).get('/api/user/connections').set('Authorization', `Bearer ${hs512}`);
         expect(res.statusCode).toBe(401);
     });

@@ -80,16 +80,22 @@ Sign the command-line tool in to your Cloudflare account (opens the browser):
 npx wrangler login
 ```
 
-Create the database. Use the region closest to you (`weur`, `eeur`, `wnam`,
-`enam`, `apac`, `oc`). If you already created `music-manager`, skip this:
+Create the database, unless you already have one (made in the Cloudflare
+dashboard, say). Use the region closest to you (`weur`, `eeur`, `wnam`,
+`enam`, `apac`, `oc`):
 
 ```bash
-npx wrangler d1 create music-manager --location weur
+npx wrangler d1 create music-manager-db --location weur
 ```
 
-It prints a `database_id`. Put it in `wrangler.jsonc`, replacing the row of
-zeros. It is an identifier, not a secret. If Wrangler offers to add the
+It prints a `database_name` and a `database_id` (the dashboard's D1 page
+shows the same two). Put both in `wrangler.jsonc`, under `d1_databases`,
+in place of the ones there; keep `"binding": "DB"` and `migrations_dir` as
+they are. They are identifiers, not secrets. If Wrangler offers to add the
 binding to the configuration for you, answer no: it is already there.
+
+The file in the repository carries the owner's database. Deploying your own
+copy without changing it fails, because that database is not in your account.
 
 Create the tables:
 

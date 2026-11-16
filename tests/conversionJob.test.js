@@ -96,7 +96,10 @@ beforeEach(() => {
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 });
 afterEach(async () => {
-    mockChildren.splice(0).forEach((c) => { if (!c.closed) c.emit('close', 1); });
+    // Until none is left: a pass-through that fails starts ffmpeg once more.
+    const quiet = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    while (mockChildren.length) mockChildren.splice(0).forEach((c) => { if (!c.closed) c.emit('close', 1); });
+    quiet.mockRestore();
     await until(() => transcode._jobs.size === 0 && transcode._activeTranscodes() === 0, 'the jobs to end');
     logSpy.mockRestore();
     errorSpy.mockRestore();
@@ -280,5 +283,107 @@ describe('how long a conversion may run', () => {
         expect(child.kill).not.toHaveBeenCalled();
         jest.advanceTimersByTime(transcode.MAX_ATTENDED_MS);
         expect(child.kill).toHaveBeenCalledWith('SIGKILL'); // the backstop
+    });
+});
+
+// docs/performance-plan.md, step 2.2.
+describe('a source that is MP3 already is passed through, not converted again', () => {
+    const argsOf = (n = spawn.mock.calls.length - 1) => spawn.mock.calls[n][1];
+    const codec = (args) => args.slice(args.indexOf('-c:a'), args.indexOf('-c:a') + 2).join(' ');
+    const mp3 = { sourceCodec: 'mp3' };
+
+    it('copies the audio at standard and high quality, converts for low and for other sources', async () => {
+        play('soundcloud_1', fakeRes(), mp3);
+        expect(codec(argsOf())).toBe('-c:a copy');
+        expect(argsOf()).not.toContain('-b:a');
+        expect(argsOf().slice(-3)).toEqual(['-f', 'mp3', '-']);
+
+        const high = fakeRes();
+        transcode.streamTranscoded({ query: { quality: 'high' } }, high, { sourceUrl: 'https://media.example/a', cacheKey: 'soundcloud_1_q256', seekTime: 0, ...mp3 });
+        expect(codec(argsOf())).toBe('-c:a copy');
+
+        // "low" exists to make the audio smaller.
+        transcode.streamTranscoded({ query: { quality: 'low' } }, fakeRes(), { sourceUrl: 'https://media.example/a', cacheKey: 'soundcloud_1_q96', seekTime: 0, ...mp3 });
+        expect(codec(argsOf())).toBe('-c:a libmp3lame');
+        expect(argsOf()).toEqual(expect.arrayContaining(['-b:a', '96k']));
+
+        play('youtube_notmp3aaaaa');
+        expect(codec(argsOf())).toBe('-c:a libmp3lame');
+        // A seek (straight to the response) is passed through as well.
+        transcode.streamTranscoded({ query: {} }, fakeRes(), { sourceUrl: 'https://media.example/a', cacheKey: 'soundcloud_1', seekTime: 30, ...mp3 });
+        expect(codec(argsOf())).toBe('-c:a copy');
+        expect(argsOf().slice(argsOf().indexOf('-ss'), argsOf().indexOf('-ss') + 2)).toEqual(['-ss', '30']);
+    });
+
+    it('converts after all when ffmpeg cannot pass the source through, once, and without the listener noticing', async () => {
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const failed = jest.fn();
+        const res = play('soundcloud_2', fakeRes(), { ...mp3, onSourceFailed: failed });
+        expect(spawn).toHaveBeenCalledTimes(1);
+        mockChildren[0].closed = true;
+        mockChildren[0].emit('close', 1); // "not an MP3 stream": gave up before writing anything
+        expect(spawn).toHaveBeenCalledTimes(2);
+        expect(codec(argsOf(0))).toBe('-c:a copy');
+        expect(codec(argsOf(1))).toBe('-c:a libmp3lame');
+        expect(failed).not.toHaveBeenCalled();
+        expect(transcode._activeTranscodes()).toBe(1); // still one conversion, not two
+        expect(res.writableEnded).toBe(false);
+
+        const whole = audio(150000);
+        await convert(mockChildren[1], whole);
+        await until(() => res.writableEnded, 'the end of the response');
+        expect(res.body().equals(whole)).toBe(true);
+        await until(() => fs.existsSync(cacheFile('soundcloud_2')), 'the cache file');
+        expect(warn.mock.calls.some(([line]) => /could not be passed through as MP3/.test(line))).toBe(true);
+
+        // The second try failing too is a failure: no third.
+        const again = play('soundcloud_3', fakeRes(), { ...mp3, onSourceFailed: failed });
+        const before = spawn.mock.calls.length;
+        lastChild().closed = true;
+        lastChild().emit('close', 1);
+        lastChild().closed = true;
+        lastChild().emit('close', 1);
+        expect(spawn.mock.calls.length).toBe(before + 1);
+        expect(failed).toHaveBeenCalledTimes(1);
+        await until(() => again.writableEnded, 'the response to end');
+        warn.mockRestore();
+    });
+
+    it('does not start again when it was stopped on purpose, or after audio has been sent', async () => {
+        // The listener leaves at once and there is no room for another unattended job.
+        const max = transcode.MAX_BACKGROUND_TRANSCODES;
+        for (let i = 0; i < max; i++) prepare(`youtube_filler${i}aaa`);
+        const res = play('soundcloud_4', fakeRes(), mp3);
+        const child = lastChild();
+        const before = spawn.mock.calls.length;
+        res.destroy();
+        await until(() => child.kill.mock.calls.length > 0, 'the job to be stopped');
+        child.closed = true;
+        child.emit('close', 1); // killed before any audio
+        expect(spawn.mock.calls.length).toBe(before);
+
+        // Passed through for a while, then the source broke off: that is not "cannot be copied".
+        const cut = play('soundcloud_5', fakeRes(), mp3);
+        const during = spawn.mock.calls.length;
+        await convert(lastChild(), audio(120000), 1);
+        lastChild().closed = true;
+        await until(() => cut.writableEnded, 'the response to end');
+        expect(spawn.mock.calls.length).toBe(during);
+
+        // The same for a seek that goes straight to the response.
+        const seek = fakeRes();
+        transcode.streamTranscoded({ query: {} }, seek, { sourceUrl: 'https://media.example/a', cacheKey: 'soundcloud_6', seekTime: 30, ...mp3 });
+        const direct = lastChild();
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        direct.closed = true;
+        direct.emit('close', 1);
+        expect(codec(argsOf())).toBe('-c:a libmp3lame'); // tried again as a conversion
+        const retry = lastChild();
+        retry.stdout.write(audio(5000));
+        await until(() => seek.body().length === 5000, 'the audio of the second try');
+        retry.closed = true;
+        retry.emit('close', 0);
+        await until(() => seek.writableEnded, 'the response to end');
+        warn.mockRestore();
     });
 });

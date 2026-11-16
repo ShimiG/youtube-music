@@ -7,8 +7,9 @@
 //            30-second preview (not cached; preview URLs are signed and expire);
 //   none     neither: TRACK_UNAVAILABLE.
 // /stream and /duration run the same decision; the match engine remembers the
-// answer (track_matches) and de-duplicates in-flight lookups, so a play costs
-// one Deezer request and at most one YouTube search.
+// answer (track_matches) and de-duplicates in-flight lookups, so the first
+// play costs one Deezer request and at most one YouTube search, and later
+// plays of a matched track cost neither.
 const deezer = require('../providers/deezer');
 const matcher = require('../services/matcher');
 const YouTubeController = require('./YouTubeController');
@@ -16,6 +17,15 @@ const { parseSeek, streamTranscoded } = require('./transcode');
 const { sendSourceError } = require('../services/errors');
 
 async function playbackPlan(db, id) {
+    // A track that was matched before plays from that match, which is final
+    // (services/matcher): no need to ask Deezer about it again. This is what
+    // lets a Deezer track that is in the disk cache start without any request
+    // leaving the computer. Anything else (never matched, no match, an error
+    // that may have passed) goes the full way below.
+    const stored = await matcher.getMatch(db, 'deezer', id).catch(() => null);
+    if (stored && stored.status === 'matched' && YouTubeController.isValidVideoId(stored.videoId)) {
+        return { kind: 'full', videoId: stored.videoId };
+    }
     const raw = await deezer.getTrack(id);
     let match = null;
     try {

@@ -1,5 +1,6 @@
 const { cleanTrackMeta } = require('../services/trackMeta');
 const cloudSync = require('../services/cloud/sync');
+const trackLengths = require('../services/trackLengths');
 
 // Identity comes from requireAuth (req.userId), not from a client-supplied
 // header. The user row already exists because they logged in, so we only need
@@ -78,6 +79,9 @@ const getHistory = async (req, res, next) => {
             LIMIT 50
         `, [userId]);
 
+        // The player asks the server for a track's length when the row does
+        // not carry it; for a track played before, it is nearly always known.
+        await trackLengths.complete(history);
         res.json(history);
     } catch (error) {
         next(error);

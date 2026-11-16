@@ -285,6 +285,18 @@ async function initDB(filename = path.join(dataDir(), 'database.sqlite')) {
     if (!(await db.all('PRAGMA table_info(playlists)')).some((c) => c.name === 'sync_id')) {
         await db.exec('ALTER TABLE playlists ADD COLUMN sync_id TEXT');
     }
+    // How long each track is, as learned from yt-dlp and the services' own
+    // lists (services/trackLengths.js), so that it is not looked up again.
+    await db.exec(`
+        CREATE TABLE IF NOT EXISTS track_lengths (
+            source TEXT NOT NULL,
+            external_id TEXT NOT NULL,
+            duration_sec INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (source, external_id)
+        );
+    `);
+
     await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_sync_id ON playlists(sync_id) WHERE sync_id IS NOT NULL');
     // Whether the linked cloud account holds a YouTube connection (the last
     // answer from the cloud; services/cloud/google.js keeps it current).

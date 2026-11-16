@@ -14,6 +14,7 @@
 // report pending for tracks whose search is still running when the request
 // budget runs out; those finish in the background and land in the table.
 const { normalizeText, parseTitle, artistsOf, primaryArtist } = require('./normalize');
+const trackLengths = require('../trackLengths');
 const { pickBest, durationTolerance } = require('./score');
 const innertube = require('./innertube');
 const ytsearch = require('./ytsearch');
@@ -471,6 +472,8 @@ async function reuseByIsrc(db, isrc, sourceId, externalId, trackDurationSec) {
 // was overridden while this search ran, nothing changes and the override is
 // what the caller gets back.
 async function persist(db, { sourceId, externalId, isrc, status, videoId, score, method, candidates, durationSec = null, force }) {
+    // The matched video's length is then known without asking yt-dlp for it.
+    if (status === 'matched' && videoId && durationSec) trackLengths.remember('youtube', videoId, durationSec);
     const { changes } = await db.run(
         `INSERT INTO track_matches (source_id, external_id, isrc, status, video_id, score, method, candidates_json, checked_at, override_by, duration_sec)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)

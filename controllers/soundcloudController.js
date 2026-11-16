@@ -17,9 +17,9 @@ const LIBRARY_PAGE_LIMIT = 50;
 const LIBRARY_MAX_PAGES = 4; // up to 200 items per library call
 const LIKED_PLAYLIST_ID = 'liked';
 
-// Small in-memory cache for /duration so repeated plays do not re-fetch metadata.
-const durationCache = new Map();
-const DURATION_CACHE_MAX = 500;
+// Lengths are remembered there, across restarts, so repeated plays do not
+// fetch metadata (or start yt-dlp) again.
+const trackLengths = require('../services/trackLengths');
 
 // --- Provider selection (shared with providers/soundcloud.js) -----------------
 // See controllers/soundcloud/fallback.js for how api / ytdlp / auto is chosen.
@@ -326,6 +326,9 @@ const streamTrack = async (req, res) => {
         cacheKey,
         seekTime,
         allowCache: !picked.isPreview,
+        // SoundCloud's MP3 renditions ("http_mp3_...", "hls_mp3_128") are
+        // passed through as they are; only its AAC ones need converting.
+        sourceCodec: /(^|_)mp3(_|$)/.test(picked.format || '') ? 'mp3' : undefined,
         timing: { label: `soundcloud ${id}`, resolveMs: Date.now() - resolveStartedAt, resolvedBy: usedYtdlp ? (picked.from || 'yt-dlp') : 'api' },
         // A remembered address that no longer works must not be handed out again.
         onSourceFailed: () => ytdlp.forget(id)
@@ -337,7 +340,8 @@ const getDuration = async (req, res) => {
     if (!id) return res.status(400).json({ error: 'Missing videoId' });
     if (!client.isValidId(id)) return res.status(400).json({ error: 'Invalid videoId' });
 
-    if (durationCache.has(id)) return res.json({ duration: durationCache.get(id) });
+    const remembered = await trackLengths.known('soundcloud', id);
+    if (remembered) return res.json({ duration: remembered });
 
     const viaApi = async () => {
         const token = await tokens.getAppToken(req.app.locals.db);
@@ -348,10 +352,7 @@ const getDuration = async (req, res) => {
 
     try {
         const duration = await withFallback('duration', viaApi, viaYtdlp);
-        if (durationCache.size >= DURATION_CACHE_MAX) {
-            durationCache.delete(durationCache.keys().next().value);
-        }
-        durationCache.set(id, duration);
+        trackLengths.remember('soundcloud', id, duration);
         res.json({ duration });
     } catch (err) {
         if (err instanceof client.SoundCloudError && err.status === 429) {

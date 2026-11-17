@@ -40,7 +40,7 @@ const ytDlpPath = () => process.env.YTDLP_PATH || folderBuild || foundAtStart;
 //     computer is looked for in the usual places.
 // yt-dlp runs node with its permission model switched on (no files, no
 // network, no processes for the script); deno, where installed, still wins.
-const RUNTIME_DIRS = process.platform === 'win32'
+let RUNTIME_DIRS = process.platform === 'win32'
     ? []
     : ['/opt/homebrew/bin', '/usr/local/bin', path.join(require('os').homedir(), '.deno', 'bin'), '/usr/bin'];
 const MIN_NODE_MAJOR = 20;
@@ -72,8 +72,12 @@ function jsRuntime() {
     } else {
         const deno = findOnComputer('deno');
         const node = deno ? null : findOnComputer('node');
+        // With neither: the deno the app fetched for itself, once it has
+        // (services/jsRuntimeFetch.js; fetched by updateYtDlpIfDue).
+        const fetched = deno || node ? null : require('./jsRuntimeFetch').currentExe();
         runtimeMemo = deno ? { name: 'deno', path: deno, from: 'this computer' }
-            : node ? { name: 'node', path: node, from: 'this computer' } : null;
+            : node ? { name: 'node', path: node, from: 'this computer' }
+                : fetched ? { name: 'deno', path: fetched, from: 'fetched by the app' } : null;
     }
     return runtimeMemo;
 }
@@ -168,7 +172,25 @@ function updateDue(stampFile = defaultStampFile(), now = Date.now()) {
  * When it is in use afterwards there is nothing else to update. Otherwise
  * the single-file yt-dlp updates itself with `yt-dlp -U`, as before.
  */
+// Fetches a JavaScript runtime where the computer has none, and keeps a
+// fetched one current. Only then: a runtime found on the computer, the
+// server's own Node, or one named in YTDLP_JS_RUNTIME is left alone.
+async function ensureJsRuntime({ log = console } = {}) {
+    const fetcher = require('./jsRuntimeFetch');
+    const runtime = jsRuntime();
+    if (runtime && runtime.from !== 'fetched by the app') return { status: 'skipped', message: `yt-dlp uses the ${runtime.name} of ${runtime.from}` };
+    const result = await fetcher.ensure({ log });
+    if (result.status === 'installed') {
+        runtimeMemo = undefined; // looked for again: it is there now
+        require('./health')._resetMemo();
+    }
+    return result;
+}
+
 async function updateYtDlpIfDue({ log = console, stampFile = defaultStampFile() } = {}) {
+    // Not part of the daily look below: a computer without a runtime needs
+    // one at the first start, and the fetcher paces itself (once a week).
+    await ensureJsRuntime({ log }).catch(() => {});
     const due = updateDue(stampFile);
     // Whether to fetch the folder build at all is settled at the first start
     // where it could help, not a day later (it then settles in a moment,
@@ -196,4 +218,4 @@ async function updateYtDlpIfDue({ log = console, stampFile = defaultStampFile() 
 // Tests only.
 function _useFolderBuild(exe) { folderBuild = exe || null; }
 
-module.exports = { ytDlpPath, jsRuntime, jsRuntimeArgs, _forgetRuntime: () => { runtimeMemo = undefined; }, runner, autoUpdateEnabled, summarizeUpdateOutput, updateYtDlp, updateYtDlpIfDue, updateDue, CHECK_EVERY_MS, _useFolderBuild };
+module.exports = { ytDlpPath, jsRuntime, jsRuntimeArgs, ensureJsRuntime, _setRuntimeDirs: (dirs) => { RUNTIME_DIRS = dirs; runtimeMemo = undefined; }, _forgetRuntime: () => { runtimeMemo = undefined; }, runner, autoUpdateEnabled, summarizeUpdateOutput, updateYtDlp, updateYtDlpIfDue, updateDue, CHECK_EVERY_MS, _useFolderBuild };

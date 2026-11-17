@@ -444,10 +444,14 @@ as before.
 
 ### Still open
 
-- **The installed app carries no JavaScript runtime.** It uses a deno or
-  Node that is on the computer; with neither, YouTube stays limited and
-  Settings → System says so. Carrying deno (or fetching it, as the yt-dlp
-  folder build is fetched) is the way to close this.
+- **A JavaScript runtime for the installed app: fetched, not yet seen
+  working on a Mac.** The installed app is not a Node that can run a
+  script. Where the computer has no deno or Node either, it now fetches deno
+  from deno's releases into the data folder (`services/jsRuntimeFetch.js`):
+  checked against the published checksum, unpacked by the app's own code,
+  tried (`deno --version`) before yt-dlp is pointed at it, and looked at
+  again once a week. Tested with stand-ins for the network and the program;
+  the real download and the real deno have not been run from here.
 
 - **The flags `yt-dlp` is run with** (the other half of 1.5). Only
   comparable against the real thing. Settings → System → Recent plays now

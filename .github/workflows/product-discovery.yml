@@ -3,8 +3,9 @@ name: Product Discovery (weekly)
 # The product-discovery agent (.claude/agents/product-discovery.md), once a
 # week: it reads the repository, looks at comparable products on the web and
 # writes a prioritized roadmap. The report goes to a branch and a pull request,
-# and each roadmap item becomes an issue (scripts/report-to-issues.mjs, which
-# never files one twice and leaves out the low-priority ones).
+# and EVERY suggestion in it becomes an issue, whatever its priority, labelled
+# enhancement + priority:high/medium/low (scripts/report-to-issues.mjs, which
+# never files the same suggestion twice across runs).
 #
 # Setup is the same as for security-review.yml: one secret
 # (CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY), and for the pull request the
@@ -75,8 +76,11 @@ jobs:
             - docs/product-discovery-<DATE>.md - the full report in the persona's Output format.
             - reports/product-discovery/<DATE>.findings.json - exactly the findings-file
               schema in the persona (run.agent = "product-discovery", run.labels =
-              ["enhancement"], one entry per roadmap item, stable slug ids, priority
-              high/medium/low, size S/M/L). Only items you would actually put on the roadmap.
+              ["enhancement"]). ONE ENTRY PER SUGGESTION: every feature idea in the
+              report (all 10 to 15), each of which becomes its own GitHub issue. Stable
+              slug ids (reuse the id of an idea that was in an earlier findings file),
+              priority high/medium/low, size S/M/L, roadmap true/false, the five
+              scores, and acceptance criteria for roadmap items.
 
             Change no other file. Do NOT commit, push, open a pull request or open
             issues: the workflow does that with the two files.
@@ -107,11 +111,11 @@ jobs:
 
           gh pr create --base "${{ github.event.repository.default_branch }}" --head "$BRANCH" \
             --title "Product discovery $DATE" \
-            --body "Weekly run of the product-discovery agent. Report: \`docs/product-discovery-$DATE.md\`. One issue per roadmap item (not the low-priority ones) has been filed by this run." \
+            --body "Weekly run of the product-discovery agent. Report: \`docs/product-discovery-$DATE.md\`. One issue per suggestion has been filed by this run (label: product-discovery)." \
             || echo "::warning::No pull request was opened (it exists already, or Actions may not create pull requests in this repository). The report is on the branch $BRANCH."
 
           # A push made with this token starts no other workflow, so the issues
           # are filed here and not by "Report to Issues".
-          node scripts/report-to-issues.mjs \
+          node scripts/report-to-issues.mjs --all \
             --input "reports/product-discovery/$DATE.findings.json" \
             --report-url "$REPO_URL/blob/$SHA/reports/product-discovery/$DATE.findings.json"

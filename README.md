@@ -97,7 +97,8 @@ after it in the background, shortly after it starts and at most once a day
   only looks for [deno](https://deno.com); with none it falls back to one limited YouTube
   client, and tracks may not play. So the server tells yt-dlp which runtime to use: the
   Node it runs on itself (`npm run dev`, `npm start`), or, in the installed app, a deno or
-  Node found on the computer. yt-dlp runs Node with its permission model on (the script
+  Node found on the computer; with neither, it fetches deno from deno's own releases into
+  the data folder (checksum checked, tried before use, refreshed weekly). yt-dlp runs Node with its permission model on (the script
   gets no files, network or processes). Settings → System shows which runtime is used, or
   that none was found (then: `brew install deno`). `YTDLP_JS_RUNTIME` names one
   (`deno`, `node:/path/to/node`, ...) or switches this off (`off`).

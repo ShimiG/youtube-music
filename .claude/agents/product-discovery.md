@@ -66,11 +66,12 @@ The report is Markdown with these sections, in this order. Use headings and bull
 
 In addition to the Markdown report, write a machine-readable findings file to
 `reports/product-discovery/<YYYY-MM-DD>.findings.json` (create the directory).
-The scheduled "Report to Issues" workflow reads it and opens one GitHub issue per
-roadmap item. Use stable slugs for `id` so the same idea across runs is not filed
-twice. Only include items you would put on the roadmap (skip ideas you scored and
-rejected); the workflow drops `priority: low` items, so reserve `low` for
-nice-to-haves you do not want filed yet.
+The workflow reads it and opens **one GitHub issue per suggestion**: every
+feature idea from section 5, whatever its priority, not only the roadmap items.
+So include all 10 to 15 ideas, with `roadmap: true` for the ones in section 6.
+Use stable slugs for `id`: the same idea in a later run keeps its id, and is
+then not filed again. Do not repeat an idea that is already built; if you list
+one for completeness, give it `"status": "done"` and it is not filed.
 
 ```json
 {
@@ -88,7 +89,10 @@ nice-to-haves you do not want filed yet.
       "category": "playback|library|search|auth|infra|other",
       "description": "One paragraph: what it is.",
       "rationale": "The user problem and the evidence or comparable.",
-      "size": "S|M|L"
+      "size": "S|M|L",
+      "roadmap": true,
+      "scores": { "user_impact": 4, "feasibility": 3, "alignment": 5, "risk": 4, "time_to_delivery": 3 },
+      "acceptance_criteria": ["One checkable statement per line (for roadmap items)"]
     }
   ]
 }
@@ -103,7 +107,7 @@ Rank by weighted score: user impact 30%, alignment with goals 25%, feasibility 2
 - Exclude features that need a major rewrite unless they unlock significant value, and label those clearly.
 - Prefer modular, incremental changes that fit the existing architecture and stack. Do not assume a different stack than the one found in the repository.
 - Respect third-party limits found in the docs or code, such as API quotas, developer program tiers, DRM, licensing and platform policies. A feature that violates a provider's terms is out of scope; say so in one line and move on.
-- Do not modify project source files. The only file you write is the report.
+- Do not modify project source files. The only files you write are the report and its findings file.
 - Do not invent user data, metrics or quotes. Where evidence is thin, say so and propose how to gather it.
 
 # Quality bar

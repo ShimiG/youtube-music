@@ -14,7 +14,7 @@
 //
 // Usage:
 //   node scripts/report-to-issues.mjs --input <findings.json> --label <base>
-//        [--extra-label <l> ...] [--report-url <url>] [--dry-run]
+//        [--extra-label <l> ...] [--report-url <url>] [--all] [--dry-run]
 //
 // Auth: uses `gh`, which reads GITHUB_TOKEN / GH_TOKEN from the environment.
 // Set DRY_RUN=1 (or pass --dry-run) to print planned actions without calling gh.
@@ -33,6 +33,7 @@ function parseArgs(argv) {
         else if (a === '--extra-label') args.extraLabels.push(argv[++i]);
         else if (a === '--report-url') args.reportUrl = argv[++i];
         else if (a === '--dry-run') args.dryRun = true;
+        else if (a === '--all') args.all = true;
         else throw new Error(`Unknown argument: ${a}`);
     }
     if (!args.input) throw new Error('--input <findings.json> is required');
@@ -44,19 +45,32 @@ function parseArgs(argv) {
 // The flag was parsed and then ignored: only the environment variable counted,
 // so `--dry-run` filed real issues.
 const DRY_RUN = process.argv.includes('--dry-run') || process.env.DRY_RUN === '1' || process.env.DRY_RUN === 'true';
+const FILE_EVERY_FINDING = new Set(['product-discovery']);
+const ALREADY_DONE = new Set(['fixed', 'false-positive', 'done', 'shipped']);
 
 // Findings whose status/priority is below this are reported but not turned into
 // tasks. Exploiter statuses: confirmed | potential | attempted-failed | info;
 // remediation can set `fixed` / `false-positive` when the fix ships together
 // with the report, so no issue is opened for work that is already done.
-// Discovery priorities: high | medium | low.
+//
+// Product discovery is different: every suggestion becomes an issue, whatever
+// its priority (the owner's decision, 17 Nov 2026), so the backlog holds all
+// of them and the owner picks. Only one marked `fixed` (already built) is left
+// out. `--all` does the same for any findings file.
 const ISSUE_WORTHY_STATUS = new Set(['confirmed', 'potential', 'vulnerable', 'high', 'medium']);
 const NON_TASK_STATUS = new Set(['attempted-failed', 'not-vulnerable', 'info', 'low', 'fixed', 'false-positive']);
 
-// severity/priority -> label suffix, so issues sort and filter by importance.
+// severity -> label, so issues sort and filter by importance. A suggestion
+// has a priority, not a severity, and is labelled as one.
 const LEVEL_LABELS = {
     critical: 'severity:critical', high: 'severity:high', medium: 'severity:medium',
     low: 'severity:low', info: 'severity:info'
+};
+const PRIORITY_LABELS = { high: 'priority:high', medium: 'priority:medium', low: 'priority:low' };
+const levelLabel = (finding) => {
+    if (finding.severity) return LEVEL_LABELS[String(finding.severity).toLowerCase()] || null;
+    if (finding.priority) return PRIORITY_LABELS[String(finding.priority).toLowerCase()] || null;
+    return LEVEL_LABELS[String(finding.status || '').toLowerCase()] || null;
 };
 
 function gh(args, { allowFail = false } = {}) {
@@ -77,7 +91,8 @@ function fingerprint(agent, finding) {
     return createHash('sha1').update(`${agent}:${stable}`).digest('hex').slice(0, 16);
 }
 
-function isIssueWorthy(finding) {
+function isIssueWorthy(finding, { everything = false } = {}) {
+    if (everything) return !ALREADY_DONE.has(String(finding.status || '').toLowerCase());
     const level = String(finding.status || finding.priority || finding.severity || 'confirmed').toLowerCase();
     if (NON_TASK_STATUS.has(level)) return false;
     if (ISSUE_WORTHY_STATUS.has(level)) return true;
@@ -111,7 +126,7 @@ function issueExists(fp) {
 function buildBody(finding, fp, meta) {
     const lines = [];
     const level = finding.severity || finding.priority || finding.status;
-    if (level) lines.push(`**Severity / priority:** ${level}`);
+    if (level) lines.push(finding.severity ? `**Severity:** ${level}` : (finding.priority ? `**Priority:** ${level}` : `**Severity / priority:** ${level}`));
     if (finding.status && finding.status !== level) lines.push(`**Status:** ${finding.status}`);
     if (finding.category) lines.push(`**Category:** ${finding.category}`);
     if (finding.location) lines.push(`**Location:** \`${finding.location}\``);
@@ -122,6 +137,16 @@ function buildBody(finding, fp, meta) {
     if (finding.rationale) lines.push('### Rationale', finding.rationale, '');
     if (finding.suggested_fix) lines.push('### Suggested fix', finding.suggested_fix, '');
     if (finding.size) lines.push(`**Estimated size:** ${finding.size}`, '');
+    if (finding.scores && typeof finding.scores === 'object') {
+        const row = Object.entries(finding.scores).map(([k, v]) => `${k.replace(/_/g, ' ')} ${v}/5`).join(' · ');
+        if (row) lines.push(`**Scores:** ${row}`, '');
+    }
+    if (typeof finding.roadmap === 'boolean') {
+        lines.push(finding.roadmap ? '**On the roadmap** of this report.' : '**Not on the roadmap** of this report: a suggestion to keep in view.', '');
+    }
+    if (Array.isArray(finding.acceptance_criteria) && finding.acceptance_criteria.length) {
+        lines.push('### Acceptance criteria', ...finding.acceptance_criteria.map((c) => `- [ ] ${c}`), '');
+    }
 
     lines.push('---');
     lines.push(`Filed automatically by the **${meta.agent}** agent on ${meta.date}.`);
@@ -154,10 +179,12 @@ function main() {
     ensureLabel(baseLabel, 'B60205', `Filed by the ${agent} agent`);
     for (const l of extraLabels) ensureLabel(l, '5319E7', l);
     for (const lbl of Object.values(LEVEL_LABELS)) ensureLabel(lbl, 'BFD4F2', lbl);
+    const everything = args.all || FILE_EVERY_FINDING.has(agent);
+    if (everything) for (const lbl of Object.values(PRIORITY_LABELS)) ensureLabel(lbl, 'C5DEF5', lbl);
 
     let created = 0, skipped = 0, notTask = 0;
     for (const finding of findings) {
-        if (!isIssueWorthy(finding)) { notTask++; continue; }
+        if (!isIssueWorthy(finding, { everything })) { notTask++; continue; }
 
         const fp = fingerprint(agent, finding);
         if (issueExists(fp)) {
@@ -167,8 +194,8 @@ function main() {
         }
 
         const labels = [baseLabel, ...extraLabels];
-        const level = String(finding.severity || finding.priority || '').toLowerCase();
-        if (LEVEL_LABELS[level]) labels.push(LEVEL_LABELS[level]);
+        const level = levelLabel(finding);
+        if (level) labels.push(level);
 
         const title = `[${agent}] ${finding.title}`.slice(0, 250);
         const body = buildBody(finding, fp, { agent, date, reportUrl });

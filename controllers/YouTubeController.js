@@ -4,7 +4,7 @@ const { ytDlpPath, jsRuntimeArgs } = require('../services/ytdlp');
 // Lengths are remembered there, across restarts, so /duration does not start
 // yt-dlp for a track that has been seen before.
 const trackLengths = require('../services/trackLengths');
-const playReport = require('../services/playReport');
+const { ytdlpFeed, noteWarning } = require('../services/ytdlpFeed');
 
 // yt-dlp must never outlive the request that asked for it: bounded by a
 // timeout, and killed as soon as the client disconnects. `runner.execFile` is
@@ -69,17 +69,10 @@ function rememberDuration(videoId, seconds) {
 // JavaScript runtime could be found", "... formats have been skipped"). Each
 // distinct one goes to the log once; the latest goes with the play, where the
 // app shows it (services/playReport.js).
-const warned = new Set();
+// The first warning of a look-up, logged once (services/ytdlpFeed.js).
 function firstWarning(stderr) {
     const line = String(stderr || '').split('\n').map((l) => l.trim()).find((l) => /^WARNING:/.test(l));
-    if (!line) return null;
-    // eslint-disable-next-line no-control-regex
-    const text = line.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 240);
-    if (!warned.has(text) && warned.size < 20) {
-        warned.add(text);
-        console.warn(`yt-dlp: ${text}`);
-    }
-    return text;
+    return line ? noteWarning(line) : null;
 }
 
 function startResolving(videoId) {
@@ -177,71 +170,20 @@ function resolveVideo(videoId, { res } = {}) {
 // itself and writes it to its standard output, and ffmpeg reads it from
 // there (controllers/transcode.js, connectFeed). What yt-dlp can download,
 // the app can play; when YouTube changes again, a new yt-dlp is the fix, and
-// the app updates yt-dlp by itself.
-//
-// With `-o -` yt-dlp keeps its standard output for the audio and writes
-// everything else to its standard error: the lines asked for with --print
-// (the length, what it chose), warnings and errors.
-const FEED_TAIL_CHARS = 4000;
+// the app updates yt-dlp by itself. (The pipe itself: services/ytdlpFeed.js.)
 
 /** For transcode's `feed`: starts yt-dlp downloading the audio of `videoId`. */
 function downloadFeed(videoId, { res, timing } = {}) {
-    return () => {
-        const startedAt = Date.now();
-        const args = [
-            '-f', 'bestaudio/best', '--no-playlist', ...jsRuntimeArgs(),
-            '--no-part', '--no-simulate',
-            '--print', 'length: %(duration)s',
-            '--print', 'chosen: format %(format_id)s, %(protocol)s, %(acodec)s',
-            '-o', '-',
-            `https://www.youtube.com/watch?v=${videoId}`
-        ];
-        const child = runner.spawn(ytDlpPath(), args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-        // How long it took yt-dlp to start delivering: the look-up, in effect.
-        child.stdout.once('data', () => {
-            if (timing && timing.resolveMs === null) {
-                timing.resolveMs = Date.now() - startedAt;
-                timing.resolvedBy = 'yt-dlp';
-            }
-        });
-        let tail = '';
-        let pending = '';
-        let lastError = null;
-        child.stderr.on('data', (data) => {
-            const text = data.toString();
-            tail = (tail + text).slice(-FEED_TAIL_CHARS);
-            pending += text;
-            const lines = pending.split(/\r?\n/);
-            pending = lines.pop().slice(-FEED_TAIL_CHARS); // an unfinished line waits for its end
-            for (const raw of lines) {
-                const line = raw.trim();
-                if (!line) continue;
-                const length = /^length: (\d+(?:\.\d+)?)$/.exec(line);
-                if (length) {
-                    const seconds = Math.round(Number(length[1]));
-                    if (seconds > 0) rememberDuration(videoId, seconds);
-                } else if (line.startsWith('chosen: ')) {
-                    if (res) playReport.note(res, `yt-dlp ${line.slice(0, 140)}`.replace('chosen:', 'chose'));
-                } else if (/^WARNING:/.test(line)) {
-                    const warning = firstWarning(line);
-                    if (res && warning) playReport.note(res, `yt-dlp: ${warning}`);
-                } else if (/^ERROR:/.test(line)) {
-                    // eslint-disable-next-line no-control-regex
-                    lastError = line.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 300);
-                }
-            }
-        });
-        return {
-            child,
-            // Its own account of a failure; null when it did not fail.
-            failure(code, signal, { endedByUs = false } = {}) {
-                if (lastError) return `yt-dlp: ${lastError}`;
-                if (endedByUs || (code === 0 && !signal)) return null;
-                if (code === -1) return `yt-dlp not found at "${ytDlpPath()}". Install it (brew install yt-dlp) or set YTDLP_PATH.`;
-                return `yt-dlp: ${describeYtDlpFailure({}, tail)} (${signal ? `ended by ${signal}` : `exit code ${code}`})`;
-            }
-        };
-    };
+    return ytdlpFeed({
+        url: `https://www.youtube.com/watch?v=${videoId}`,
+        format: 'bestaudio/best',
+        jsRuntime: true,
+        // Through `runner` at call time, so tests can replace it.
+        spawn: (...args) => runner.spawn(...args),
+        res,
+        timing,
+        onLength: (seconds) => rememberDuration(videoId, seconds)
+    });
 }
 
 // YouTube video ids are always exactly 11 URL-safe characters. Being strict

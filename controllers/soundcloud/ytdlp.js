@@ -14,10 +14,11 @@
 // Ids are the same numeric SoundCloud track ids the official API uses, so a
 // track found here plays, caches and logs history exactly like one found via
 // the API.
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const { SOURCE_NAME, isValidId } = require('./client');
 const { ytDlpPath } = require('../../services/ytdlp');
 const trackLengths = require('../../services/trackLengths');
+const { ytdlpFeed } = require('../../services/ytdlpFeed');
 
 const SEARCH_LIMIT = 30;
 const EXEC_TIMEOUT_MS = 60 * 1000;
@@ -44,7 +45,13 @@ const runner = {
             }
             resolve(stdout.toString());
         });
-    })
+    }),
+    // Starts a download (downloadFeed). Tests replace it; one that forgot to
+    // must not start a real download.
+    spawn: (...args) => {
+        if (process.env.NODE_ENV === 'test') throw new Error('yt-dlp downloads are not run in tests: stub runner.spawn');
+        return spawn(...args);
+    }
 };
 
 const trackUrl = (id) => `https://api.soundcloud.com/tracks/${id}`;
@@ -201,6 +208,31 @@ async function getDuration(id) {
     return (await lookup(id)).duration;
 }
 
+// Renditions ffmpeg can be handed the address of: SoundCloud's MP3 ones
+// (progressive, or HLS of plain MP3 segments). Its AAC and Opus renditions
+// are HLS of fragments that ffmpeg, fetching them itself, decodes as noise
+// ("channel element ... is not allocated", thousands of lines, and garbage
+// in the cache); yt-dlp downloads those (downloadFeed).
+const handsOverAddress = (format) => /^(http|hls)_mp3_/.test(String(format || ''));
+
+/**
+ * For transcode's `feed`: starts yt-dlp downloading track `id` in exactly
+ * the rendition the look-up chose (`format`, its format id), so what plays is
+ * what was decided on (a preview stays a preview).
+ */
+function downloadFeed(id, format, { res, timing } = {}) {
+    if (!isValidId(id)) throw new Error('Invalid SoundCloud id');
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(String(format || ''))) throw new Error('Invalid SoundCloud format');
+    return ytdlpFeed({
+        url: trackUrl(id),
+        format,
+        spawn: (...args) => runner.spawn(...args),
+        res,
+        timing,
+        onLength: (seconds) => { if (!PREVIEW_FORMAT.test(format)) trackLengths.remember(SOURCE_NAME, id, seconds); }
+    });
+}
+
 /** Drops what is remembered about a track (its address turned out to be dead). */
 function forget(id) {
     remembered.delete(id);
@@ -220,6 +252,8 @@ module.exports = {
     getDuration,
     lookup,
     forget,
+    downloadFeed,
+    handsOverAddress,
     urlExpiry,
     _reset,
     normalizeEntry,

@@ -17,7 +17,7 @@ import { toast } from './utils/toast';
 import { isDesktopApp, onOAuthResult, openExternal } from './utils/desktop';
 import { SERVICE_LIST } from './utils/services';
 import { warmMediaToken } from './utils/media';
-import { apiFetch } from './utils/api';
+import { apiFetch, API_BASE } from './utils/api';
 import { resetSources } from './hooks/useSources';
 import './App.css';
 
@@ -183,7 +183,7 @@ function App() {
 
         let timer;
         let cancelled = false;
-        fetch('http://localhost:3000/api/user/connections', { headers: { Authorization: `Bearer ${authToken}` } })
+        fetch(`${API_BASE}/api/user/connections`, { headers: { Authorization: `Bearer ${authToken}` } })
             .then(res => (res.ok ? res.json() : []))
             .then(rows => {
                 if (cancelled || !Array.isArray(rows)) return;

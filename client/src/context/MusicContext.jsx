@@ -1,7 +1,7 @@
 import {  useState, useRef, useEffect, useCallback } from 'react';
 import { MusicContext } from './hook';
 import { toast } from '../utils/toast';
-import { apiFetch } from '../utils/api';
+import { apiFetch, API_BASE } from '../utils/api';
 import { DEFAULT_SOURCE } from '../utils/services';
 import { mediaUrl, mediaUrlSync, warmMediaToken } from '../utils/media';
 import { artOf } from '../utils/artwork';
@@ -135,7 +135,7 @@ export const MusicProvider = ({ children }) => {
         }
         const authToken = localStorage.getItem('authToken');
         if (authToken) {
-            fetch('http://localhost:3000/history', {
+            fetch(`${API_BASE}/history`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

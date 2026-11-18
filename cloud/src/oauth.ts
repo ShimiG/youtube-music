@@ -43,11 +43,26 @@ export async function unseal(env: Env, stored: string): Promise<string | null> {
     }
 }
 
-/** Where the browser may be sent after the consent page: the app, or this computer. */
-export function returnTarget(value: unknown): string {
+// The websites the owner runs Music Manager on (docs/deploy-render.md):
+// WEB_ORIGINS, comma-separated, each exactly "https://host" with nothing after.
+function webOrigins(env: Env): Set<string> {
+    const origins = new Set<string>();
+    for (const raw of String(env.WEB_ORIGINS ?? '').split(',')) {
+        const value = raw.trim();
+        if (/^https:\/\/[a-z0-9.-]+(?::\d{1,5})?$/i.test(value)) origins.add(value.toLowerCase());
+    }
+    return origins;
+}
+
+/**
+ * Where the browser may be sent after the consent page: the app, this
+ * computer, or one of the owner's own websites (WEB_ORIGINS). Nowhere else.
+ */
+export function returnTarget(env: Env, value: unknown): string {
     if (value === 'app') return APP_RETURN;
     if (typeof value === 'string' && LOCAL_RETURN.test(value)) return value;
-    throw new ApiError(400, 'BAD_RETURN', 'returnTo must be "app" or an address on this computer (http://localhost:<port>).');
+    if (typeof value === 'string' && webOrigins(env).has(value.toLowerCase())) return value.toLowerCase();
+    throw new ApiError(400, 'BAD_RETURN', 'returnTo must be "app", an address on this computer (http://localhost:<port>), or a site listed in WEB_ORIGINS.');
 }
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch] ?? ch));

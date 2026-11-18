@@ -255,6 +255,19 @@ A SoundCloud connection made earlier with credentials on a computer keeps
 working there. To move it: disconnect SoundCloud on that computer, then
 connect again.
 
+## Music Manager as a website (optional)
+
+When Music Manager also runs as a website (docs/deploy-render.md), the
+Worker has to know its address, or connecting YouTube or SoundCloud there
+cannot send the browser back:
+
+```bash
+npx wrangler secret put WEB_ORIGINS
+```
+
+Give it `https://<your-service>.onrender.com` (several: separated by commas;
+each exactly `https://host`, nothing after it). Then deploy.
+
 ## Other settings the Worker hands out
 
 Not secrets, so the Worker simply passes them on to signed-in computers

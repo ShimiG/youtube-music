@@ -13,6 +13,9 @@ export interface Env {
     /** SoundCloud API client (optional; see src/soundcloud.ts). */
     SOUNDCLOUD_CLIENT_ID?: string;
     SOUNDCLOUD_CLIENT_SECRET?: string;
+    /** The websites Music Manager runs on (comma-separated https origins): a
+     *  sign-in started there may send the browser back there. */
+    WEB_ORIGINS?: string;
     /** Audius API key (optional, not a secret: it only names the app to Audius). */
     AUDIUS_API_KEY?: string;
 }

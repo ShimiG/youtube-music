@@ -63,6 +63,15 @@ describe('starting the YouTube sign-in', () => {
             expect((await startFlow(token, ok)).status).toBe(200);
         }
         expect(await call('/google/start', { method: 'POST', token, body: {} })).toMatchObject({ status: 400, json: { code: 'BAD_RETURN' } });
+        // The owner's own website, once it is listed in WEB_ORIGINS; no other.
+        const site = { WEB_ORIGINS: 'https://music-manager.onrender.com, https://music.example.org:8443' };
+        for (const ok of ['https://music-manager.onrender.com', 'https://MUSIC-manager.onrender.com', 'https://music.example.org:8443']) {
+            expect((await call('/google/start', { method: 'POST', token, body: { returnTo: ok }, env: site })).status).toBe(200);
+        }
+        for (const bad of ['https://music-manager.onrender.com/', 'https://music-manager.onrender.com.evil.example', 'http://music-manager.onrender.com', 'https://other.onrender.com']) {
+            expect(await call('/google/start', { method: 'POST', token, body: { returnTo: bad }, env: site })).toMatchObject({ status: 400, json: { code: 'BAD_RETURN' } });
+        }
+        expect((await call('/google/start', { method: 'POST', token, body: { returnTo: 'https://evil.example' }, env: { WEB_ORIGINS: 'https://evil.example/path, javascript:alert(1), *' } })).status).toBe(400);
         for (const bad of ['', 'web', 'https://evil.example', 'http://localhost:5173/path', 'http://localhost.evil.example', 'http://192.168.1.5:5173', 'musicmanager://oauth', 'javascript:alert(1)', ['app']]) {
             expect(await startFlow(token, bad)).toMatchObject({ status: 400, json: { code: 'BAD_RETURN' } });
         }

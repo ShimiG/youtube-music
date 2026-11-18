@@ -153,7 +153,7 @@ export async function status(env: Env, userId: number) {
 export async function start(env: Env, userId: number, origin: string, body: unknown) {
     const { clientId } = credentials(env);
     const input = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
-    returnTarget(input.returnTo); // refuse a bad one now, not after the consent page
+    returnTarget(env, input.returnTo); // refuse a bad one now, not after the consent page
     // PKCE: SoundCloud is shown a hash now and the value itself with the code
     // later. The value travels in `state`, through the browser, so it is
     // encrypted there; `state` as a whole is signed and says who asked and
@@ -184,7 +184,7 @@ export async function callback(env: Env, origin: string, query: { code?: string;
         const payload = await verify(query.state ?? '', secret(env), 'HS256');
         if (payload.purpose !== STATE_PURPOSE) throw new Error('wrong purpose');
         userId = Number(payload.sub);
-        target = returnTarget(payload.ret);
+        target = returnTarget(env, payload.ret);
         verifier = typeof payload.v === 'string' ? await unseal(env, payload.v) : null;
         if (!Number.isSafeInteger(userId) || userId <= 0 || !verifier) throw new Error('bad state');
     } catch {

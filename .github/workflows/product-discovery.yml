@@ -51,12 +51,19 @@ jobs:
         run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
 
       - name: Product discovery
+        id: claude
+        # A failed run is looked into below, and whatever it wrote is still
+        # published: the job fails at the end if the reports are missing.
+        continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Model: the repository variable CLAUDE_MODEL when set (for example
+          # claude-sonnet-5-5: cheaper, higher rate limits), else Claude Code's default.
           claude_args: >-
+            ${{ vars.CLAUDE_MODEL && format('--model {0}', vars.CLAUDE_MODEL) || '' }}
             --max-turns 120
             --allowedTools "Read,Grep,Glob,Bash,Write,WebSearch,WebFetch"
           prompt: |
@@ -86,6 +93,16 @@ jobs:
             issues: the workflow does that with the two files.
 
             Finish by stating the two file paths and the number of roadmap items.
+
+      # The action hides the run (tool output may hold anything). This prints
+      # only how it ended, any API error, and Claude's own last words.
+      - name: Why the run ended
+        if: always()
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          echo "Claude step: ${{ steps.claude.outcome }}"
+          node scripts/agent-run-summary.mjs "${EXECUTION_FILE:-$RUNNER_TEMP/claude-execution-output.json}" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Publish the report (branch, pull request, issues)
         env:

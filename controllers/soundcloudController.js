@@ -360,6 +360,22 @@ const streamTrack = async (req, res) => {
 
     if (clientGone) return;
 
+    const timing = { label: `soundcloud ${id}`, resolveMs: Date.now() - resolveStartedAt, resolvedBy: usedYtdlp ? (picked.from || 'yt-dlp') : 'api' };
+
+    // A rendition found by yt-dlp that is not MP3 (AAC, Opus): yt-dlp
+    // downloads it and ffmpeg converts what it is handed. Given the address,
+    // ffmpeg decodes those as noise (ytdlp.js, handsOverAddress).
+    if (usedYtdlp && !ytdlp.handsOverAddress(picked.format)) {
+        playReport.note(res, `yt-dlp chose ${picked.format}; downloaded by yt-dlp`);
+        return streamTranscoded(req, res, {
+            feed: ytdlp.downloadFeed(id, picked.format, { res, timing }),
+            cacheKey,
+            seekTime,
+            allowCache: !picked.isPreview,
+            timing
+        });
+    }
+
     // Preview snippets are short and cheap; do not let them occupy the cache
     // under the full track's key.
     streamTranscoded(req, res, {
@@ -370,7 +386,7 @@ const streamTrack = async (req, res) => {
         // SoundCloud's MP3 renditions ("http_mp3_...", "hls_mp3_128") are
         // passed through as they are; only its AAC ones need converting.
         sourceCodec: /(^|_)mp3(_|$)/.test(picked.format || '') ? 'mp3' : undefined,
-        timing: { label: `soundcloud ${id}`, resolveMs: Date.now() - resolveStartedAt, resolvedBy: usedYtdlp ? (picked.from || 'yt-dlp') : 'api' },
+        timing,
         // A remembered address that no longer works must not be handed out again.
         onSourceFailed: () => ytdlp.forget(id)
     });

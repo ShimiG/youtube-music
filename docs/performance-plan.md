@@ -442,6 +442,32 @@ its bitrate is its own and may vary, so there a seek still converts from
 the position. Once a track is in the cache, seeks are served from the file
 as before.
 
+### Tenth round: SoundCloud's AAC renditions are downloaded by yt-dlp
+
+The owner's log of 15 Nov held thousands of ffmpeg lines for one SoundCloud
+track ("channel element 2.12 is not allocated", "Prediction is not allowed
+in AAC-LC", ...), megabytes in all, and what played was noise. Without API
+credentials SoundCloud goes through yt-dlp, which prefers an MP3 rendition;
+where a track has none, it chose an AAC one (`hls_aac_160k`, sometimes
+`hls-aes_aac_...`) and the app handed ffmpeg that address. Those renditions
+are HLS of MP4 fragments, some encrypted, which yt-dlp's own extractor marks
+as needing its handling (`container: m4a_dash`); ffmpeg fetching them itself
+decoded them as garbage.
+
+Now an AAC or Opus rendition is downloaded by yt-dlp and piped into ffmpeg,
+like YouTube (the pipe moved to `services/ytdlpFeed.js`, which both use).
+The look-up still decides which rendition and whether it is a preview, so a
+preview stays out of the cache; the download is asked for exactly that
+rendition. MP3 renditions are handed over as before and passed through
+without conversion: that path works and is the faster one.
+
+Checked with real ffmpeg: MP4 fragments of AAC, as yt-dlp writes them, read
+from a pipe: 30.07 s out of 30, no decode errors; through the server with a
+stand-in yt-dlp, the same, first byte after 0.07 s, cached, the replay from
+the cache in 0.008 s. Not checked against SoundCloud itself (no access from
+the build machine). Not changed: the official API path (with credentials),
+which picks MP3 first and hands over its AAC address otherwise.
+
 ### Still open
 
 - **A JavaScript runtime for the installed app: fetched, not yet seen

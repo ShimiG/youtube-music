@@ -112,6 +112,20 @@ describe('coming back from SoundCloud', () => {
         expect(res.headers.get('Location')).toBe('http://localhost:5173/#soundcloud=connected');
     });
 
+    it("returns to the owner's website when it is listed in WEB_ORIGINS, and not once it is removed", async () => {
+        const token = await account();
+        const site = { WEB_ORIGINS: 'https://music-manager.onrender.com' };
+        const started = await call('/soundcloud/start', { method: 'POST', token, body: { returnTo: 'https://music-manager.onrender.com' }, env: site });
+        expect(started.status).toBe(200);
+        const state = stateOf(started.json.url);
+        const done = await call(`/soundcloud/callback?code=c&state=${encodeURIComponent(state)}`, { env: site });
+        expect(done.status).toBe(302);
+        expect(done.headers.get('Location')).toBe('https://music-manager.onrender.com/#soundcloud=connected');
+        // Taken off the list between start and finish: no redirect there.
+        const again = stateOf((await call('/soundcloud/start', { method: 'POST', token, body: { returnTo: 'https://music-manager.onrender.com' }, env: site })).json.url);
+        expect((await call(`/soundcloud/callback?code=c&state=${encodeURIComponent(again)}`)).status).toBe(400);
+    });
+
     it('accepts no state it did not issue, and connects nothing when the user or SoundCloud says no', async () => {
         const token = await account();
         const googleState = stateOf((await call('/google/start', { method: 'POST', token, body: { returnTo: 'app' } })).json.url);

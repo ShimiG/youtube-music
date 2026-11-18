@@ -1,7 +1,11 @@
 // The one way the client talks to the API: attaches our session JWT, parses
 // JSON, and turns a non-2xx response into an ApiError carrying the server's
 // `code` and `source` so callers can react to SOURCE_NOT_CONNECTED etc.
-export const API_BASE = 'http://localhost:3000';
+// Where the API is. The desktop app and the dev client talk to the server on
+// this computer; a client the server itself serves (hosted, e.g. on Render)
+// is built with VITE_API_BASE="" and uses addresses on its own site.
+const configured = import.meta.env.VITE_API_BASE;
+export const API_BASE = typeof configured === 'string' ? configured.replace(/\/+$/, '') : 'http://localhost:3000';
 
 export class ApiError extends Error {
     constructor(message, { status, code, source, body } = {}) {

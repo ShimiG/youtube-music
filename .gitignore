@@ -25,3 +25,6 @@ database.sqlite-wal
 reports/security/*.tmp
 # Server log (services/logFile.js)
 logs/
+
+# Data folder of a hosted build (render.yaml: MUSIC_DATA_DIR=./data)
+/data/

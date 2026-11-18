@@ -87,7 +87,10 @@ const getSources = async (req, res, next) => {
         const soundcloudViaCloud = await cloudSoundcloud.connected(req.app.locals.db, req.userId);
         const viaCloud = (name) => (name === 'youtube' && youtubeViaCloud) || (name === 'soundcloud' && soundcloudViaCloud);
 
-        const sources = listProviders().map(p => {
+        // A source that needs no account but is switched off here (Local
+        // Files on a website) is not offered at all: nothing to connect.
+        const offered = listProviders().filter(p => p.connect.required || typeof p.isAvailable !== 'function' || p.isAvailable());
+        const sources = offered.map(p => {
             const row = byName.get(p.name);
             let connected;
             if (!p.connect.required) {

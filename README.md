@@ -274,6 +274,12 @@ npm run tauri:build   # standalone desktop app (bundles that executable, ffmpeg 
 The packaged app keeps its data in the per-user app-data folder, not the project folder;
 see [docs/packaging.md](docs/packaging.md).
 
+### As a website (Render)
+
+The server can also serve the web client itself and run on a host. `render.yaml`
+holds the setup; [docs/deploy-render.md](docs/deploy-render.md) has the steps and what
+does not work there (YouTube often refuses data-centre addresses).
+
 ## API overview
 
 | Method & path | Auth | Purpose |

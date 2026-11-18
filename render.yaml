@@ -1,0 +1,47 @@
+# Music Manager as a website on Render (https://render.com), from this
+# repository. One web service: the server, which also serves the built client.
+# Step by step, and what does not work on a host: docs/deploy-render.md.
+#
+# Data (the database, the audio cache) lives in ./data, which Render empties
+# on every deploy and restart. That is fine: what matters (playlists, history,
+# connected services) is kept by the cloud account (cloud/) and comes back at
+# sign-in.
+services:
+  - type: web
+    name: music-manager
+    runtime: node
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /api/cloud/info
+    buildCommand: >-
+      npm ci &&
+      npm ci --prefix client &&
+      VITE_API_BASE= npm run build --prefix client &&
+      MUSIC_DATA_DIR=./data node scripts/fetch-ytdlp.js
+    startCommand: node server.js
+    envVars:
+      # What CI tests on. (package.json allows any newer Node, and Render
+      # would otherwise pick the newest.)
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      # Listen on every address (on a computer the server only answers itself).
+      - key: HOST
+        value: 0.0.0.0
+      # Serve the built client from the same address (services/hosting.js).
+      - key: SERVE_CLIENT
+        value: "1"
+      # One proxy (Render's) sits in front: rate limits count each visitor.
+      - key: TRUST_PROXY
+        value: "1"
+      # A website has no music folders of its visitors.
+      - key: LOCAL_FILES
+        value: "off"
+      # Inside the project folder, which Render keeps from the build, so the
+      # yt-dlp fetched at build time is there.
+      - key: MUSIC_DATA_DIR
+        value: ./data
+      # The Worker's address (cloud/README.md). Sign-in needs it.
+      - key: CLOUD_URL
+        sync: false

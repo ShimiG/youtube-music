@@ -13,7 +13,8 @@
 // numbers only.
 const APP_RETURN_URL = 'musicmanager://oauth';
 
-const clientOrigin = () => (process.env.CLIENT_ORIGIN || 'http://localhost:5173').split(',')[0].trim();
+// Hosted, the site itself (services/hosting.js) when CLIENT_ORIGIN is not set.
+const clientOrigin = () => (process.env.CLIENT_ORIGIN || require('./hosting').publicUrl() || 'http://localhost:5173').split(',')[0].trim();
 
 /** Normalises the `return` query value; anything but "app" means web. */
 const parseReturnTarget = (value) => (value === 'app' ? 'app' : 'web');

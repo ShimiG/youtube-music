@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -26,11 +28,36 @@ const settingsController = require('./controllers/settingsController');
 const cloudController = require('./controllers/cloudController');
 const logFile = require('./services/logFile');
 const playReport = require('./services/playReport');
+const hosting = require('./services/hosting');
 
 const app = express();
 
 // --- Global middleware ---
-app.use(helmet());
+// Behind a host's proxy (Render): the visitor's address is in X-Forwarded-For.
+const trustProxy = hosting.trustProxy();
+if (trustProxy) app.set('trust proxy', trustProxy);
+
+// Serving the web client from here (hosted, services/hosting.js) needs a
+// content policy for a page, not for an API: covers from the services'
+// own image hosts, and audio from this same address.
+const servedClient = hosting.clientDir();
+app.use(helmet(servedClient ? {
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'", 'https:'],
+            fontSrc: ["'self'", 'https:', 'data:'],
+            imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+            mediaSrc: ["'self'", 'blob:'],
+            connectSrc: ["'self'"],
+            objectSrc: ["'none'"],
+            frameAncestors: ["'self'"],
+            baseUri: ["'self'"],
+            formAction: ["'self'"]
+        }
+    }
+} : undefined));
 
 // Allow only known client origins (dev Vite server + the Tauri webview).
 // Configure extra origins via CLIENT_ORIGIN (comma-separated).
@@ -40,7 +67,9 @@ const allowedOrigins = new Set([
     'tauri://localhost',
     'https://tauri.localhost',
     'http://tauri.localhost', // Tauri v2 on Windows
-    ...(process.env.CLIENT_ORIGIN ? process.env.CLIENT_ORIGIN.split(',').map(o => o.trim()) : [])
+    ...(process.env.CLIENT_ORIGIN ? process.env.CLIENT_ORIGIN.split(',').map(o => o.trim()) : []),
+    // Hosted: the site's own pages send their address with every POST.
+    ...(hosting.publicUrl() ? [hosting.publicUrl()] : [])
 ]);
 app.use(cors({
     origin: (origin, cb) => {
@@ -91,9 +120,20 @@ const artworkLimiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
 app.use(apiLimiter);
 
 // --- Health ---
-app.get('/', (req, res) => {
-    res.json({ status: 'Running', message: 'Music Backend is active' });
-});
+// Hosted, the address itself is the web client (its files are served below).
+if (servedClient) {
+    app.use('/assets', express.static(path.join(servedClient, 'assets'), { immutable: true, maxAge: '1y', index: false }));
+    app.get('/', (req, res) => res.sendFile(path.join(servedClient, 'index.html'), { headers: { 'Cache-Control': 'no-cache' } }));
+    for (const file of fs.readdirSync(servedClient)) {
+        if (file !== 'index.html' && /^[\w.-]+\.(svg|png|ico|webmanifest|txt)$/.test(file)) {
+            app.get(`/${file}`, (req, res) => res.sendFile(path.join(servedClient, file)));
+        }
+    }
+} else {
+    app.get('/', (req, res) => {
+        res.json({ status: 'Running', message: 'Music Backend is active' });
+    });
+}
 app.get('/test', (req, res) => res.send('Server is working!'));
 // Health (app version, whether yt-dlp and ffmpeg were found, cache usage) for
 // every account; the exact versions of the helper programs and of Node only
@@ -197,6 +237,11 @@ app.get('/api/search/:source', requireAuth, sourceToken(null, { optional: true }
 // --- Local files (issue #24): the folders a user plays music from. Adding a
 // folder starts a background scan; tracks then appear under source=local in
 // the Library and Search. ---
+// Not on a website: its visitors' music folders are not on its disk.
+const localFilesOnly = (req, res, next) => (hosting.localFilesEnabled()
+    ? next()
+    : res.status(404).json({ error: 'Local files are not available on this installation.', code: 'LOCAL_FILES_OFF' }));
+app.use('/api/local', localFilesOnly);
 app.get('/api/local/folders', requireAuth, localController.listFolders);
 app.post('/api/local/folders', requireAuth, requireExistingUser, localController.addFolder);
 app.post('/api/local/folders/:id/rescan', requireAuth, localController.rescanFolder);

@@ -77,7 +77,7 @@ initDB()
             // and the processor (docs/performance-plan.md, step 3.2).
             const later = setTimeout(() => {
                 // Pick up music added or removed in local folders while the app was closed.
-                require('./services/localLibrary').rescanAll(db)
+                if (require('./services/hosting').localFilesEnabled()) require('./services/localLibrary').rescanAll(db)
                     .catch((err) => console.warn('Local files: rescan after startup failed:', err.message));
                 // Best-effort: a stale yt-dlp is the usual reason YouTube or
                 // SoundCloud playback stops working. Looked for once a day.

@@ -57,7 +57,7 @@ export async function status(env: Env, userId: number) {
 export async function start(env: Env, userId: number, origin: string, body: unknown) {
     const { clientId } = credentials(env);
     const input = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
-    returnTarget(input.returnTo); // refuse a bad one now, not after the consent page
+    returnTarget(env, input.returnTo); // refuse a bad one now, not after the consent page
     // Google echoes `state` back untouched: it carries who asked and where
     // the browser goes afterwards ("app" or an address on this computer),
     // signed, so the callback can trust both. The callback checks it again.
@@ -85,7 +85,7 @@ export async function callback(env: Env, origin: string, query: { code?: string;
         const payload = await verify(query.state ?? '', secret(env), 'HS256');
         if (payload.purpose !== STATE_PURPOSE) throw new Error('wrong purpose');
         userId = Number(payload.sub);
-        target = returnTarget(payload.ret);
+        target = returnTarget(env, payload.ret);
         if (!Number.isSafeInteger(userId) || userId <= 0) throw new Error('bad subject');
     } catch {
         // Not a flow we started (or it took longer than ten minutes): there is

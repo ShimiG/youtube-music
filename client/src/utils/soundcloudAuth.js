@@ -1,5 +1,6 @@
 import { startOAuth } from './desktop';
 import { toast } from './toast';
+import { API_BASE } from './api';
 
 // Starts the SoundCloud connect flow (OAuth 2.1 + PKCE; the verifier stays on
 // the server). Same shape as connectGoogle: browser window or system browser,
@@ -7,7 +8,7 @@ import { toast } from './toast';
 // the server refreshes them itself.
 export async function connectSoundCloud() {
     try {
-        const result = await startOAuth('http://localhost:3000/auth/soundcloud/url');
+        const result = await startOAuth(`${API_BASE}/auth/soundcloud/url`);
         if (result.status === 503) {
             toast('SoundCloud is not set up on this computer yet. See Settings, Accounts.', { kind: 'warning' });
             return;

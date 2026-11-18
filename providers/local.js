@@ -129,7 +129,7 @@ module.exports = {
     connect: { kind: 'none', required: false },
     capabilities: { search: true, playlists: true, liked: false, like: false, stream: true },
     searchRequiresToken: false,
-    isAvailable: () => true,
+    isAvailable: () => require('../services/hosting').localFilesEnabled(),
     getPlaylists,
     getPlaylistTracks,
     search,

@@ -1,5 +1,6 @@
 import { startOAuth } from './desktop';
 import { toast } from './toast';
+import { API_BASE } from './api';
 
 // Starts the Google connect flow for the logged-in user. The API returns a
 // consent URL tied to our session through the signed `state`. In the browser
@@ -13,7 +14,7 @@ import { toast } from './toast';
 export async function connectGoogle({ scope } = {}) {
     try {
         const params = scope === 'write' ? { scope: 'write' } : {};
-        const result = await startOAuth('http://localhost:3000/auth/google/url', params);
+        const result = await startOAuth(`${API_BASE}/auth/google/url`, params);
         if (!result.ok && result.status !== undefined) throw new Error(result.error || 'Failed to get Google auth URL');
     } catch (err) {
         console.error('Could not start Google connect flow:', err);

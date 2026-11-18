@@ -28,7 +28,7 @@ In the Render dashboard, open the service, then **Settings**:
 - **Build Command**:
 
   ```
-  npm ci && npm ci --prefix client && VITE_API_BASE= npm run build --prefix client && MUSIC_DATA_DIR=./data node scripts/fetch-ytdlp.js
+  npm ci --include=dev && npm ci --include=dev --prefix client && VITE_API_BASE= npm run build --prefix client && MUSIC_DATA_DIR=./data node scripts/fetch-ytdlp.js
   ```
 
 - **Start Command**: `node server.js`
@@ -39,13 +39,18 @@ Then **Environment**, add:
 | Key | Value |
 |---|---|
 | `NODE_VERSION` | `22` |
-| `NODE_ENV` | `production` |
 | `HOST` | `0.0.0.0` |
 | `SERVE_CLIENT` | `1` |
 | `TRUST_PROXY` | `1` |
 | `LOCAL_FILES` | `off` |
 | `MUSIC_DATA_DIR` | `./data` |
 | `CLOUD_URL` | your Worker's address, e.g. `https://music-manager-cloud.<you>.workers.dev` |
+
+Do not set `NODE_ENV=production`: Render applies it to the build as well,
+where it makes `npm ci` leave out the packages the build needs (husky,
+Vite), and the build fails with `husky: not found`. The server does not
+use it. (The build command's `--include=dev` keeps the build working even
+if it is set.)
 
 Save, then **Manual Deploy → Deploy latest commit**.
 

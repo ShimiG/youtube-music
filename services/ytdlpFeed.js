@@ -11,6 +11,8 @@
 // With `-o -` yt-dlp keeps its standard output for the audio and writes
 // everything else to its standard error: the lines asked for with --print
 // (`length: ...`, `chosen: ...`), warnings and errors.
+const { EventEmitter } = require('events');
+const { PassThrough } = require('stream');
 const { ytDlpPath, jsRuntimeArgs } = require('./ytdlp');
 const playReport = require('./playReport');
 
@@ -46,8 +48,9 @@ function lastWords(stderr) {
  *   timing     its resolveMs/resolvedBy are set when the first audio arrives
  *   onLength   called with the track's length in seconds, when yt-dlp knows it
  *   jsRuntime  pass yt-dlp the JavaScript runtime (YouTube needs one)
+ *   extraArgs  more options, before the address
  */
-function ytdlpFeed({ url, format, spawn, res, timing, onLength, jsRuntime = false }) {
+function ytdlpFeed({ url, format, spawn, res, timing, onLength, jsRuntime = false, extraArgs = [] }) {
     return () => {
         const startedAt = Date.now();
         const args = [
@@ -56,6 +59,7 @@ function ytdlpFeed({ url, format, spawn, res, timing, onLength, jsRuntime = fals
             '--print', 'length: %(duration)s',
             '--print', 'chosen: format %(format_id)s, %(protocol)s, %(acodec)s',
             '-o', '-',
+            ...extraArgs,
             url
         ];
         const child = spawn(ytDlpPath(), args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -105,4 +109,122 @@ function ytdlpFeed({ url, format, spawn, res, timing, onLength, jsRuntime = fals
     };
 }
 
-module.exports = { ytdlpFeed, noteWarning, lastWords };
+/**
+ * Several ways to get the same audio, tried in turn: the next one starts only
+ * when the one before ended with nothing delivered and its own account of a
+ * failure. What ends the conversion ends whichever is running, and nothing
+ * further is tried.
+ *
+ *   steps   [{ start, when?, onFailed?, onDelivered? }]: `start` is a feed (as
+ *           ytdlpFeed returns); `when(previousFailure)` says whether to try
+ *           this one at all; `onFailed(failure)` / `onDelivered()` are told
+ *           how it went.
+ *   timing  its resolveMs/resolvedBy are set when the first audio arrives,
+ *           counted from the first attempt.
+ *
+ * Returns a feed: { child, failure } where child behaves as one process
+ * (stdout, kill, exitCode, 'close').
+ */
+function chainFeeds(steps, { timing } = {}) {
+    return () => {
+        const startedAt = Date.now();
+        const out = new PassThrough();
+        const child = new EventEmitter();
+        child.stdout = out;
+        child.exitCode = null;
+        let current = null;     // { feed, step }
+        let index = -1;
+        let killedWith = null;
+        let delivered = false;
+        let lastFailure = null;
+        let last = { code: 1, signal: null };
+        let done = false;
+
+        // As a process does: 'close' once its output has been read to the end
+        // (or a moment later, if nobody reads it any more).
+        const finish = () => {
+            if (done) return;
+            done = true;
+            child.exitCode = last.signal ? null : (last.code ?? 1);
+            let told = false;
+            const tell = () => {
+                if (told) return;
+                told = true;
+                child.emit('close', last.code, last.signal);
+            };
+            out.once('end', () => process.nextTick(tell));
+            out.end();
+            if (out.readableEnded) process.nextTick(tell);
+            setTimeout(tell, 2000).unref();
+        };
+
+        child.kill = (signal = 'SIGTERM') => {
+            killedWith = signal;
+            if (current && current.feed.child.exitCode === null) current.feed.child.kill(signal);
+            if (!current) finish();
+            return true;
+        };
+
+        const next = () => {
+            index += 1;
+            while (index < steps.length && steps[index].when && !steps[index].when(lastFailure)) index += 1;
+            if (index >= steps.length || killedWith) return finish();
+            const step = steps[index];
+            let feed;
+            try {
+                feed = step.start();
+            } catch (err) {
+                lastFailure = `it could not be started: ${err.message}`;
+                return next();
+            }
+            current = { feed, step };
+            const source = feed.child;
+            let ended = false;
+            source.stdout.on('data', (chunk) => {
+                if (!delivered) {
+                    delivered = true;
+                    if (timing && timing.resolveMs === null) {
+                        timing.resolveMs = Date.now() - startedAt;
+                        timing.resolvedBy = 'yt-dlp';
+                    }
+                }
+                if (!out.write(chunk)) {
+                    source.stdout.pause();
+                    out.once('drain', () => source.stdout.resume());
+                }
+            });
+            const over = (code, signal, startError) => {
+                if (ended) return;
+                ended = true;
+                last = { code, signal };
+                const failure = startError
+                    ? `yt-dlp could not be started: ${startError.message}`
+                    : feed.failure(code, signal, { endedByUs: Boolean(killedWith) });
+                if (failure && !delivered) {
+                    lastFailure = failure;
+                    if (step.onFailed) step.onFailed(failure);
+                    if (!killedWith) return next();
+                } else if (!failure && delivered && step.onDelivered) {
+                    step.onDelivered();
+                }
+                if (failure) lastFailure = failure;
+                return finish();
+            };
+            source.once('close', (code, signal) => over(code, signal, null));
+            source.once('error', (err) => over(-1, null, err));
+            return undefined;
+        };
+        out.on('error', () => {});
+        next();
+        return {
+            child,
+            failure(code, signal, { endedByUs = false } = {}) {
+                if (delivered && !lastFailure) return null;
+                if (endedByUs && !lastFailure) return null;
+                return delivered ? null : lastFailure;
+            }
+        };
+    };
+}
+
+module.exports = { ytdlpFeed, chainFeeds, noteWarning, lastWords };

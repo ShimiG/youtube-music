@@ -235,6 +235,7 @@ Required environment variables (see `.env.example`):
 | `SOUNDCLOUD_PROVIDER` | `auto` (default), `api` or `ytdlp`; see "SoundCloud without API credentials" |
 | `YTDLP_AUTO_UPDATE` | Keep yt-dlp up to date (and fetch its faster folder build when the one in use is slow), shortly after the server starts, once a day (default `true`) |
 | `YTDLP_JS_RUNTIME` | The JavaScript runtime yt-dlp runs YouTube's player script in: `auto` (default: the server's own Node, or a deno/Node found on the computer when installed), a name with an optional path (`deno`, `node:/usr/local/bin/node`), or `off` |
+| `YTDLP_YOUTUBE_QUICK` | `on` (default): a YouTube track is first fetched the quick way (yt-dlp's visionOS client, no JavaScript runtime), and the full way follows only if that fails. `off`: always the full way |
 | `CLIENT_ORIGIN` | Allowed browser origin(s), comma-separated (default `http://localhost:5173`) |
 | `TOKEN_ENCRYPTION_KEY` | Key (32 bytes: 64 hex chars or base64) for encrypting stored OAuth tokens. Blank: the server generates `.token-key` in the data folder on first run. Changing it means users reconnect their services |
 | `CACHE_MAX_BYTES` | Audio cache size cap in bytes; least recently played tracks are evicted first (default `524288000`, 500 MB) |

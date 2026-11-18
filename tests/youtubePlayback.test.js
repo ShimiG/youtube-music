@@ -50,6 +50,10 @@ afterEach(() => {
 
 // Lets the promise chain behind a look-up, or a stream's events, run.
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+const until = async (check) => {
+    for (let i = 0; i < 200 && !check(); i++) await new Promise((resolve) => setTimeout(resolve, 5));
+    if (!check()) throw new Error('timed out');
+};
 
 // Starts a play and hands back what the conversion was given.
 function play(videoId = 'dQw4w9WgXcQ', query = {}) {
@@ -98,7 +102,8 @@ describe('a play is downloaded by yt-dlp', () => {
         expect(opts.stdio).toEqual(['ignore', 'pipe', 'pipe']);
     });
 
-    it('points yt-dlp at a JavaScript runtime: the Node this server runs on, or the one named', () => {
+    it('points the full way at a JavaScript runtime: the Node this server runs on, or the one named', () => {
+        process.env.YTDLP_YOUTUBE_QUICK = 'off'; // the full way only: one process per play
         const runs = stubDownload();
         play('aaaaaaaaaa1').options.feed();
         expect(runs[0].args[runs[0].args.indexOf('--js-runtimes') + 1]).toBe(`node:${process.execPath}`);
@@ -108,6 +113,7 @@ describe('a play is downloaded by yt-dlp', () => {
         process.env.YTDLP_JS_RUNTIME = 'off';
         play('aaaaaaaaaa3').options.feed();
         expect(runs[2].args).not.toContain('--js-runtimes');
+        delete process.env.YTDLP_YOUTUBE_QUICK;
     });
 
     it('reads the length, what was chosen and the warnings from what yt-dlp writes beside the audio', async () => {
@@ -144,29 +150,36 @@ describe('a play is downloaded by yt-dlp', () => {
         expect(options.timing.resolveMs).toBeGreaterThanOrEqual(10);
     });
 
-    it("gives yt-dlp's own words when the download fails", async () => {
+    it("gives yt-dlp's own words when the download fails, both ways", async () => {
         const runs = stubDownload();
         const failed = play('cccccccccc1').options.feed();
-        runs[0].child.stderr.write('WARNING: something minor\nERROR: [youtube] cccccccccc1: Sign in to confirm you’re not a bot\u001b[0m\n');
-        await settle();
+        runs[0].child.stderr.write('ERROR: [youtube] cccccccccc1: Requested format is not available\n');
+        runs[0].child.exit(1);
+        await until(() => runs.length === 2);
+        runs[1].child.stderr.write('WARNING: something minor\nERROR: [youtube] cccccccccc1: Sign in to confirm you’re not a bot\u001b[0m\n');
+        runs[1].child.exit(1);
+        await new Promise((resolve) => failed.child.once('close', resolve));
+        // The last way tried is the one whose words count.
         const words = failed.failure(1, null);
         expect(words).toBe('yt-dlp: ERROR: [youtube] cccccccccc1: Sign in to confirm you’re not a bot [0m');
         expect(words).not.toContain(String.fromCharCode(27));
-        // Its error stands even when the conversion ended first and stopped it.
         expect(failed.failure(null, 'SIGKILL', { endedByUs: true })).toBe(words);
     });
 
-    it('reports no failure for a download that went well or was stopped, and says so when one ends without a word', async () => {
+    it('reports no failure for a download that went well, and says so when one ends without a word', async () => {
+        process.env.YTDLP_YOUTUBE_QUICK = 'off';
         const runs = stubDownload();
         const fine = play('cccccccccc2').options.feed();
+        runs[0].child.stdout.write(Buffer.alloc(100));
+        runs[0].child.exit(0);
+        await new Promise((resolve) => { fine.child.stdout.resume(); fine.child.once('close', resolve); });
         expect(fine.failure(0, null)).toBeNull();
-        expect(fine.failure(null, 'SIGKILL', { endedByUs: true })).toBeNull();
-        expect(fine.child).toBe(runs[0].child);
 
         const silent = play('cccccccccc3').options.feed();
+        runs[1].child.exit(2);
+        await new Promise((resolve) => { silent.child.stdout.resume(); silent.child.once('close', resolve); });
         expect(silent.failure(2, null)).toBe('yt-dlp: unknown error (exit code 2)');
-        expect(silent.failure(null, 'SIGSEGV')).toBe('yt-dlp: unknown error (ended by SIGSEGV)');
-        expect(silent.failure(-1, null)).toMatch(/^yt-dlp not found at ".*"\. Install it \(brew install yt-dlp\) or set YTDLP_PATH\.$/);
+        delete process.env.YTDLP_YOUTUBE_QUICK;
     });
 
     it('refuses a video id that is not one, before anything is started', () => {
@@ -179,8 +192,121 @@ describe('a play is downloaded by yt-dlp', () => {
         expect(runs).toHaveLength(0);
     });
 
-    it('never starts a real download in a test that forgot its stand-in', () => {
-        expect(() => play('dddddddddd1').options.feed()).toThrow(/not run in tests/);
+    it('never starts a real download in a test that forgot its stand-in', async () => {
+        // Neither way can start; the conversion is told why instead of a process running.
+        const feed = play('dddddddddd1').options.feed();
+        await new Promise((resolve) => feed.child.once('close', resolve));
+        expect(feed.failure(1, null)).toMatch(/not run in tests/);
+    });
+});
+
+// --- The quick way first: visionOS alone, no JavaScript runtime; the full way
+// only when that delivers nothing (the owner's log: 8 s per first play).
+describe('the quick way, then the full way', () => {
+    const quickArgs = (args) => args.includes('--extractor-args') && args[args.indexOf('--extractor-args') + 1] === 'youtube:player_client=visionos';
+    const drain = (feed) => new Promise((resolve) => { feed.child.stdout.resume(); feed.child.once('close', resolve); });
+
+    it('asks visionOS alone with no runtime, and goes no further when it delivers', async () => {
+        const runs = stubDownload();
+        const { options } = play('qqqqqqqqqq1');
+        const feed = options.feed();
+        expect(runs).toHaveLength(1);
+        expect(quickArgs(runs[0].args)).toBe(true);
+        expect(runs[0].args).not.toContain('--js-runtimes');
+        expect(runs[0].args[runs[0].args.length - 1]).toBe('https://www.youtube.com/watch?v=qqqqqqqqqq1');
+        const got = [];
+        feed.child.stdout.on('data', (chunk) => got.push(chunk));
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        runs[0].child.stdout.write(Buffer.from('audio'));
+        runs[0].child.exit(0);
+        await new Promise((resolve) => feed.child.once('close', resolve));
+        expect(Buffer.concat(got).toString()).toBe('audio');
+        expect(runs).toHaveLength(1);
+        expect(feed.failure(0, null)).toBeNull();
+        expect(options.timing).toMatchObject({ resolvedBy: 'yt-dlp' });
+        expect(options.timing.resolveMs).toBeGreaterThanOrEqual(10);
+    });
+
+    it('follows with the full way, with the runtime, when the quick way delivers nothing', async () => {
+        const runs = stubDownload();
+        const { res, options } = play('qqqqqqqqqq2');
+        const noteSpy = jest.spyOn(require('../services/playReport'), 'note');
+        const feed = options.feed();
+        const got = [];
+        feed.child.stdout.on('data', (chunk) => got.push(chunk));
+        runs[0].child.stderr.write('ERROR: [youtube] qqqqqqqqqq2: Requested format is not available\n');
+        runs[0].child.exit(1);
+        await until(() => runs.length === 2);
+        expect(quickArgs(runs[1].args)).toBe(false);
+        expect(runs[1].args[runs[1].args.indexOf('--js-runtimes') + 1]).toBe(`node:${process.execPath}`);
+        runs[1].child.stdout.write(Buffer.from('full'));
+        runs[1].child.exit(0);
+        await new Promise((resolve) => feed.child.once('close', resolve));
+        expect(Buffer.concat(got).toString()).toBe('full');
+        expect(feed.failure(0, null)).toBeNull();
+        expect(noteSpy.mock.calls.map((c) => c[1]).join(' | ')).toMatch(/the quick way failed \(yt-dlp: ERROR: .*Requested format is not available\); the full way followed .*played the full way/);
+        expect(noteSpy.mock.calls.every((c) => c[0] === res)).toBe(true);
+        noteSpy.mockRestore();
+    });
+
+    it('does not try the full way for a video that is not there', async () => {
+        const runs = stubDownload();
+        const feed = play('qqqqqqqqqq3').options.feed();
+        runs[0].child.stderr.write('ERROR: [youtube] qqqqqqqqqq3: Video unavailable. This video has been removed by the uploader\n');
+        runs[0].child.exit(1);
+        await drain(feed);
+        expect(runs).toHaveLength(1);
+        expect(feed.failure(1, null)).toMatch(/Video unavailable/);
+    });
+
+    it('leaves the quick way out for an hour after three plays in a row where it failed', async () => {
+        const runs = stubDownload();
+        const failQuick = async (id) => {
+            const feed = play(id).options.feed();
+            const quick = runs[runs.length - 1];
+            quick.child.stderr.write('ERROR: [youtube] x: nope\n');
+            quick.child.exit(1);
+            await until(() => runs[runs.length - 1] !== quick);
+            const full = runs[runs.length - 1];
+            full.child.stdout.write(Buffer.from('a'));
+            full.child.exit(0);
+            await drain(feed);
+        };
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        await failQuick('rrrrrrrrrr1');
+        await failQuick('rrrrrrrrrr2');
+        await failQuick('rrrrrrrrrr3');
+        expect(warn.mock.calls.map((c) => c[0]).join('\n')).toMatch(/the quick way failed 3 plays in a row; using the full way for an hour/);
+        const before = runs.length;
+        play('rrrrrrrrrr4').options.feed();
+        expect(runs).toHaveLength(before + 1);
+        expect(quickArgs(runs[before].args)).toBe(false); // straight to the full way
+        // An hour later it is tried again.
+        const now = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 61 * 60 * 1000);
+        play('rrrrrrrrrr5').options.feed();
+        expect(quickArgs(runs[runs.length - 1].args)).toBe(true);
+        now.mockRestore();
+        warn.mockRestore();
+    });
+
+    it('a success resets the count; YTDLP_YOUTUBE_QUICK=off goes straight to the full way', async () => {
+        process.env.YTDLP_YOUTUBE_QUICK = 'off';
+        const runs = stubDownload();
+        play('ssssssssss1').options.feed();
+        expect(runs).toHaveLength(1);
+        expect(quickArgs(runs[0].args)).toBe(false);
+        delete process.env.YTDLP_YOUTUBE_QUICK;
+    });
+
+    it('stops whichever way is running when the conversion ends, and tries nothing further', async () => {
+        const runs = stubDownload();
+        const feed = play('tttttttttt1').options.feed();
+        feed.child.kill('SIGKILL');
+        expect(runs[0].child.kill).toHaveBeenCalledWith('SIGKILL');
+        await drain(feed);
+        expect(runs).toHaveLength(1);
+        expect(feed.failure(null, 'SIGKILL', { endedByUs: true })).toBeNull();
+        expect(feed.child.exitCode).toBeNull(); // ended by a signal
     });
 });
 

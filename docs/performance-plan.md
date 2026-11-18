@@ -468,6 +468,33 @@ the cache in 0.008 s. Not checked against SoundCloud itself (no access from
 the build machine). Not changed: the official API path (with credentials),
 which picks MP3 first and hands over its AAC address otherwise.
 
+### Eleventh round: what the owner's log of 16 to 18 Nov showed
+
+With the earlier rounds in place the log reads well: a track prepared ahead
+starts from the cache in 0 to 1 ms (eight in a row on 18 Nov), seeks in a
+cached track take 15 to 21 ms, a seek joins the running conversion. Three
+things were left:
+
+- **Every uncached YouTube track took 7.7 to 8.7 s to start**, all of it
+  inside yt-dlp (which starts in 0.2 s). Before yt-dlp had a JavaScript
+  runtime the same look-up took about 3 s: without one it asks only YouTube's
+  visionOS client; with one it asks three clients and runs the player script.
+  Now a play asks visionOS alone first, with no runtime, and only when that
+  delivers nothing does the full way follow, in the same request
+  (`controllers/YouTubeController.js`, `downloadFeed`;
+  `services/ytdlpFeed.js`, `chainFeeds`). After three plays in a row where
+  the quick way failed it is left out for an hour; `YTDLP_YOUTUBE_QUICK=off`
+  switches it off. Measured with a stand-in yt-dlp (0.3 s quick, 1.5 s full)
+  and real ffmpeg: 0.33 s when the quick way works, 1.83 s when it fails and
+  the full way follows; both 20.0 s of audio, no process left behind. On
+  YouTube itself the gain is expected from about 8.5 s to about 3 s, and is
+  not measured yet: the log will show it (`address … ms (yt-dlp)`).
+- **One track failed with yt-dlp's own `HTTP Error 403`** (7uAcI3c8iIU). The
+  second way now also serves as a second try for such a failure.
+- **SoundCloud 2411458800 was still garbled on 18 Nov**: that was version
+  2.2.5, before the tenth round. With that round the track is downloaded by
+  yt-dlp.
+
 ### Still open
 
 - **A JavaScript runtime for the installed app: fetched, not yet seen

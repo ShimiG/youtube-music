@@ -4,7 +4,8 @@ const { ytDlpPath, jsRuntimeArgs } = require('../services/ytdlp');
 // Lengths are remembered there, across restarts, so /duration does not start
 // yt-dlp for a track that has been seen before.
 const trackLengths = require('../services/trackLengths');
-const { ytdlpFeed, noteWarning } = require('../services/ytdlpFeed');
+const { ytdlpFeed, chainFeeds, noteWarning } = require('../services/ytdlpFeed');
+const playReport = require('../services/playReport');
 
 // yt-dlp must never outlive the request that asked for it: bounded by a
 // timeout, and killed as soon as the client disconnects. `runner.execFile` is
@@ -172,18 +173,62 @@ function resolveVideo(videoId, { res } = {}) {
 // the app can play; when YouTube changes again, a new yt-dlp is the fix, and
 // the app updates yt-dlp by itself. (The pipe itself: services/ytdlpFeed.js.)
 
+// --- The quick way first --------------------------------------------------------
+//
+// The owner's log (18 Nov 2026): every YouTube track that was not cached took
+// 7.7 to 8.7 s to start, all of it inside yt-dlp (which itself starts in
+// 0.2 s). Before yt-dlp was given a JavaScript runtime the same look-up took
+// about 3 s: without one, yt-dlp asks only YouTube's visionOS client, which
+// hands out audio addresses without the scrambled parts a JavaScript runtime
+// has to work out; with one, it asks three clients and runs the player script.
+//
+// So a play first asks visionOS alone, with no runtime. If that delivers no
+// audio, the full way (three clients, the runtime) follows at once, in the
+// same request: the listener waits for both, nothing worse. When the quick
+// way has failed three plays in a row it is left out for an hour, so a
+// YouTube change that breaks it costs a few seconds once, not on every play.
+// YTDLP_YOUTUBE_QUICK=off switches it off.
+const QUICK_ARGS = ['--extractor-args', 'youtube:player_client=visionos'];
+const QUICK_FAILURES_TO_PAUSE = 3;
+const QUICK_PAUSE_MS = 60 * 60 * 1000;
+const quick = { failuresInARow: 0, pausedUntil: 0 };
+const quickEnabled = () => !['0', 'false', 'no', 'off'].includes(String(process.env.YTDLP_YOUTUBE_QUICK ?? 'on').toLowerCase());
+const quickAvailable = () => quickEnabled() && Date.now() >= quick.pausedUntil;
+// A failure the full way cannot change: the video itself is not available.
+const finalFailure = (failure) => /Video unavailable|Private video|removed|not available in your country|members-only|This live event/i.test(String(failure || ''));
+
 /** For transcode's `feed`: starts yt-dlp downloading the audio of `videoId`. */
 function downloadFeed(videoId, { res, timing } = {}) {
-    return ytdlpFeed({
+    const common = {
         url: `https://www.youtube.com/watch?v=${videoId}`,
         format: 'bestaudio/best',
-        jsRuntime: true,
         // Through `runner` at call time, so tests can replace it.
         spawn: (...args) => runner.spawn(...args),
         res,
-        timing,
         onLength: (seconds) => rememberDuration(videoId, seconds)
-    });
+    };
+    const useQuick = quickAvailable();
+    return chainFeeds([
+        {
+            when: () => useQuick,
+            start: ytdlpFeed({ ...common, extraArgs: QUICK_ARGS }),
+            onDelivered: () => { quick.failuresInARow = 0; },
+            onFailed: (failure) => {
+                quick.failuresInARow += 1;
+                if (quick.failuresInARow >= QUICK_FAILURES_TO_PAUSE) {
+                    quick.pausedUntil = Date.now() + QUICK_PAUSE_MS;
+                    quick.failuresInARow = 0;
+                    console.warn(`YouTube: the quick way failed ${QUICK_FAILURES_TO_PAUSE} plays in a row; using the full way for an hour. Last: ${failure}`);
+                }
+                if (res) playReport.note(res, `the quick way failed (${String(failure).slice(0, 160)}); the full way followed`);
+            }
+        },
+        {
+            when: (previous) => !finalFailure(previous),
+            start: ytdlpFeed({ ...common, jsRuntime: true }),
+            onDelivered: () => { if (res && useQuick) playReport.note(res, 'played the full way'); }
+        }
+    ], { timing });
 }
 
 // YouTube video ids are always exactly 11 URL-safe characters. Being strict
@@ -265,6 +310,8 @@ const getDuration = (req, res) => {
 
 // Tests only.
 function _resetResolver() {
+    quick.failuresInARow = 0;
+    quick.pausedUntil = 0;
     resolved.clear();
     resolving.clear();
     trackLengths._reset();

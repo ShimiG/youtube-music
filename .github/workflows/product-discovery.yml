@@ -1,7 +1,7 @@
-name: Product Discovery (weekly)
+name: Product Discovery (every 2 weeks)
 
-# The product-discovery agent (.claude/agents/product-discovery.md), once a
-# week: it reads the repository, looks at comparable products on the web and
+# The product-discovery agent (.claude/agents/product-discovery.md), every
+# other week: it reads the repository, looks at comparable products on the web and
 # writes a prioritized roadmap. The report goes to a branch and a pull request,
 # and EVERY suggestion in it becomes an issue, whatever its priority, labelled
 # enhancement + priority:high/medium/low (scripts/report-to-issues.mjs, which
@@ -13,7 +13,9 @@ name: Product Discovery (weekly)
 
 on:
   schedule:
-    - cron: '23 5 * * 3' # Wednesdays 05:23 UTC
+    # Every Wednesday 05:23 UTC; the `due` job below lets every other one through.
+    # (Cron has no "every two weeks".)
+    - cron: '23 5 * * 3'
   workflow_dispatch:
 
 permissions:
@@ -26,7 +28,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Every second Wednesday: whole weeks since 1 Jan 1970, even ones only
+  # (25 Nov 2026, 9 Dec, 23 Dec, ...). Exactly 14 days apart, across new year
+  # too. A run started by hand always goes ahead.
+  due:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "Started by hand: running."; exit 0
+          fi
+          WEEK=$(( $(date -u +%s) / 86400 / 7 ))
+          if [ $(( WEEK % 2 )) -eq 0 ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "An on week: running."
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"; echo "An off week: the next run is in 7 days."
+          fi
+
   discover:
+    needs: due
+    if: needs.due.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -51,16 +75,23 @@ jobs:
         run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
 
       - name: Product discovery
+        id: claude
+        # A failed run is looked into below, and whatever it wrote is still
+        # published: the job fails at the end if the reports are missing.
+        continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Model: the repository variable CLAUDE_MODEL when set (for example
+          # claude-sonnet-5-5: cheaper, higher rate limits), else Claude Code's default.
           claude_args: >-
+            ${{ vars.CLAUDE_MODEL && format('--model {0}', vars.CLAUDE_MODEL) || '' }}
             --max-turns 120
             --allowedTools "Read,Grep,Glob,Bash,Write,WebSearch,WebFetch"
           prompt: |
-            You are running as the scheduled WEEKLY product-discovery pass for the Music
+            You are running as the scheduled product-discovery pass (every two weeks) for the Music
             Manager repository (a Node/Express + React desktop music app, checked out in
             the working directory). Read `.claude/agents/product-discovery.md` and act
             exactly as that agent: scan this repository and its docs (README.md,
@@ -87,6 +118,16 @@ jobs:
 
             Finish by stating the two file paths and the number of roadmap items.
 
+      # The action hides the run (tool output may hold anything). This prints
+      # only how it ended, any API error, and Claude's own last words.
+      - name: Why the run ended
+        if: always()
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          echo "Claude step: ${{ steps.claude.outcome }}"
+          node scripts/agent-run-summary.mjs "${EXECUTION_FILE:-$RUNNER_TEMP/claude-execution-output.json}" | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Publish the report (branch, pull request, issues)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -111,7 +152,7 @@ jobs:
 
           gh pr create --base "${{ github.event.repository.default_branch }}" --head "$BRANCH" \
             --title "Product discovery $DATE" \
-            --body "Weekly run of the product-discovery agent. Report: \`docs/product-discovery-$DATE.md\`. One issue per suggestion has been filed by this run (label: product-discovery)." \
+            --body "Run of the product-discovery agent (every two weeks). Report: \`docs/product-discovery-$DATE.md\`. One issue per suggestion has been filed by this run (label: product-discovery)." \
             || echo "::warning::No pull request was opened (it exists already, or Actions may not create pull requests in this repository). The report is on the branch $BRANCH."
 
           # A push made with this token starts no other workflow, so the issues

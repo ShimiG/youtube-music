@@ -255,6 +255,31 @@ A SoundCloud connection made earlier with credentials on a computer keeps
 working there. To move it: disconnect SoundCloud on that computer, then
 connect again.
 
+## Credentials you already entered in the app
+
+Google or SoundCloud credentials typed into the app (Settings, Accounts) or
+put in its `.env` file can be handed to the Worker without copying them by
+hand. From the repository's folder, on the computer that has them:
+
+```bash
+node scripts/copy-secret.js --list
+```
+
+shows which there are (never the values). Then, one at a time:
+
+```bash
+node scripts/copy-secret.js GOOGLE_CLIENT_ID | (cd cloud && npx wrangler secret put GOOGLE_CLIENT_ID)
+```
+
+```bash
+node scripts/copy-secret.js GOOGLE_CLIENT_SECRET | (cd cloud && npx wrangler secret put GOOGLE_CLIENT_SECRET)
+```
+
+The same for `SOUNDCLOUD_CLIENT_ID`, `SOUNDCLOUD_CLIENT_SECRET` and
+`AUDIUS_API_KEY`. The value goes from the app's database straight into
+Cloudflare; it is never shown (the script refuses to print a secret on the
+screen). Then `npm run deploy` in `cloud/`.
+
 ## Music Manager as a website (optional)
 
 When Music Manager also runs as a website (docs/deploy-render.md), the

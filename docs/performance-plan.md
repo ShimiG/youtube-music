@@ -495,6 +495,34 @@ things were left:
   2.2.5, before the tenth round. With that round the track is downloaded by
   yt-dlp.
 
+### Twelfth round: the website (Render) sends less
+
+Hosted, the client and every answer travel over the internet, and the server
+sent them as they were: the main script alone is 295 KB. Now
+(`services/compression.js`, on when the server serves the client, `COMPRESS`
+to choose):
+
+- the client's files are compressed once at start-up, with brotli at its best
+  setting and with gzip, and served from memory to whichever the browser
+  accepts (295 KB becomes 79 KB);
+- JSON answers above 1.4 KB are compressed as they are sent, with a quick
+  brotli setting: a search page of 30 tracks 8.5 KB to 0.4 KB, a playlist of
+  200 tracks 56.7 KB to 1.4 KB, each in under 2 ms;
+- audio is left alone (compressed already, and asked for in parts), and so is
+  everything on a computer, where the client talks to localhost.
+
+Measured with Chromium over an emulated 1.6 Mbit/s connection with 150 ms
+round trips, opening the site until the sign-in screen shows (median of 3):
+
+| | before | after |
+|---|---|---|
+| time to the sign-in screen | 2.16 s | 1.00 s |
+| bytes over the wire | 306 KB | 84 KB |
+
+Whether Render's own edge compresses as well could not be checked from here;
+an answer that is compressed already is passed on as it is, so this costs
+nothing if it does.
+
 ### Still open
 
 - **A JavaScript runtime for the installed app: fetched, not yet seen

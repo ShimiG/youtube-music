@@ -13,6 +13,9 @@
 //                           limits count each visitor, not the proxy
 //   LOCAL_FILES=off         no "Local Files": a website has no music folders
 //                           of its visitors, and its own disk is not theirs
+//   COMPRESS=on|off         compress the client's files and JSON answers
+//                           (services/compression.js). Default: on when the
+//                           client is served (hosted), off otherwise.
 const fs = require('fs');
 const path = require('path');
 
@@ -49,4 +52,10 @@ function trustProxy() {
 
 const localFilesEnabled = () => !off(process.env.LOCAL_FILES);
 
-module.exports = { publicUrl, clientDir, trustProxy, localFilesEnabled };
+function compressionEnabled() {
+    const value = process.env.COMPRESS;
+    if (value !== undefined && String(value).trim() !== '') return !off(value);
+    return Boolean(clientDir());
+}
+
+module.exports = { publicUrl, clientDir, trustProxy, localFilesEnabled, compressionEnabled };

@@ -102,3 +102,5 @@ All in `services/hosting.js`:
   `RENDER_EXTERNAL_URL`, which Render sets, so there is nothing to set.
 - `TRUST_PROXY=1`: one proxy sits in front, so rate limits count each visitor.
 - `LOCAL_FILES=off`: no Local Files.
+- `COMPRESS`: compress the client's files and JSON answers. On by default
+  when `SERVE_CLIENT` is set; `COMPRESS=off` to leave it to the host.

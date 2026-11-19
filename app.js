@@ -29,6 +29,7 @@ const cloudController = require('./controllers/cloudController');
 const logFile = require('./services/logFile');
 const playReport = require('./services/playReport');
 const hosting = require('./services/hosting');
+const compression = require('./services/compression');
 
 const app = express();
 
@@ -80,6 +81,9 @@ app.use(cors({
 }));
 
 app.use(express.json({ limit: '1mb' }));
+// Hosted, answers travel over the internet: JSON is compressed when large
+// enough (services/compression.js). On a computer it would only cost time.
+if (hosting.compressionEnabled()) app.use(compression.compressJson);
 
 // --- Rate limiters ---
 // A general baseline cap on every request. Rate-limiting middleware bounds how
@@ -122,7 +126,8 @@ app.use(apiLimiter);
 // --- Health ---
 // Hosted, the address itself is the web client (its files are served below).
 if (servedClient) {
-    app.use('/assets', express.static(path.join(servedClient, 'assets'), { immutable: true, maxAge: '1y', index: false }));
+    // From memory, compressed once at start-up (services/compression.js).
+    app.use('/assets', compression.serveCompressedAssets(path.join(servedClient, 'assets')));
     app.get('/', (req, res) => res.sendFile(path.join(servedClient, 'index.html'), { headers: { 'Cache-Control': 'no-cache' } }));
     for (const file of fs.readdirSync(servedClient)) {
         if (file !== 'index.html' && /^[\w.-]+\.(svg|png|ico|webmanifest|txt)$/.test(file)) {

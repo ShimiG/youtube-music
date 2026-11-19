@@ -68,10 +68,17 @@ describe('starting the YouTube sign-in', () => {
         for (const ok of ['https://music-manager.onrender.com', 'https://MUSIC-manager.onrender.com', 'https://music.example.org:8443']) {
             expect((await call('/google/start', { method: 'POST', token, body: { returnTo: ok }, env: site })).status).toBe(200);
         }
+        // Pasted with a trailing slash, quotes, spaces or a path: the site is what counts.
+        for (const pasted of ['https://music-manager.onrender.com/', '"https://music-manager.onrender.com"', '  https://Music-Manager.onrender.com/  ', "'https://music-manager.onrender.com/settings'"]) {
+            expect((await call('/google/start', { method: 'POST', token, body: { returnTo: 'https://music-manager.onrender.com' }, env: { WEB_ORIGINS: pasted } })).status).toBe(200);
+        }
+        expect((await call('/health', { env: { WEB_ORIGINS: '"https://a.onrender.com/", https://b.example.org' } })).json.webOrigins).toBe(2);
+        expect((await call('/health', { env: { WEB_ORIGINS: 'http://a.onrender.com, not an address, javascript:alert(1)' } })).json.webOrigins).toBe(0);
+        expect((await call('/health', { env: { WEB_ORIGINS: undefined } })).json.webOrigins).toBe(0);
         for (const bad of ['https://music-manager.onrender.com/', 'https://music-manager.onrender.com.evil.example', 'http://music-manager.onrender.com', 'https://other.onrender.com']) {
             expect(await call('/google/start', { method: 'POST', token, body: { returnTo: bad }, env: site })).toMatchObject({ status: 400, json: { code: 'BAD_RETURN' } });
         }
-        expect((await call('/google/start', { method: 'POST', token, body: { returnTo: 'https://evil.example' }, env: { WEB_ORIGINS: 'https://evil.example/path, javascript:alert(1), *' } })).status).toBe(400);
+        expect((await call('/google/start', { method: 'POST', token, body: { returnTo: 'https://evil.example' }, env: { WEB_ORIGINS: 'http://evil.example, javascript:alert(1), *, https://user:pw@evil.example' } })).status).toBe(400);
         for (const bad of ['', 'web', 'https://evil.example', 'http://localhost:5173/path', 'http://localhost.evil.example', 'http://192.168.1.5:5173', 'musicmanager://oauth', 'javascript:alert(1)', ['app']]) {
             expect(await startFlow(token, bad)).toMatchObject({ status: 400, json: { code: 'BAD_RETURN' } });
         }

@@ -18,13 +18,14 @@ import { bodyLimit } from 'hono/body-limit';
 import { secureHeaders } from 'hono/secure-headers';
 import { deleteAccount, login, refresh, register, requireSession } from './auth';
 import * as google from './google';
+import { webOrigins } from './oauth';
 import * as soundcloud from './soundcloud';
 import { pull, push } from './sync';
 import { ApiError, type AppEnv } from './types';
 
 // Nothing but the handler may be exported from this file: the Workers runtime
 // treats every export of the entry module as an entrypoint.
-const VERSION = '0.4.0';
+const VERSION = '0.5.0';
 const MAX_BODY_BYTES = 1024 * 1024;
 
 const app = new Hono<AppEnv>();
@@ -53,7 +54,10 @@ app.get('/health', (c) => c.json({
     ok: true,
     service: 'music-manager-cloud',
     version: VERSION,
-    registrationOpen: Boolean(c.env.REGISTRATION_CODE)
+    registrationOpen: Boolean(c.env.REGISTRATION_CODE),
+    // How many websites WEB_ORIGINS names, as understood (not which: a check
+    // that a pasted value was taken, without listing anything).
+    webOrigins: webOrigins(c.env).size
 }));
 
 app.post('/auth/register', async (c) => c.json(await register(c.env, await jsonBody(c.req.raw)), 201));

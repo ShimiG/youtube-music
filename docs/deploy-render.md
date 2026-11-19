@@ -72,7 +72,8 @@ Dashboard → **New → Blueprint**, pick this repository. Render reads
   ```
 
   and give it `https://<your-service>.onrender.com` (several sites: separate
-  them with commas). A connection made on a computer works on the website
+  them with commas). The Worker's `/health` page then shows
+  `"webOrigins": 1`; `0` means the value was not understood. A connection made on a computer works on the website
   too, and the other way round: it belongs to the account.
 
 ## What does not work on a host

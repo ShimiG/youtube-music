@@ -20,13 +20,14 @@ function describeConnectFailure(err, { label, source, returnTo }) {
             // The Worker only sends the browser back to places it knows.
             return answer(502, 'CLOUD_RETURN_NOT_ALLOWED',
                 `Your cloud service does not accept ${returnTo === 'app' ? 'the desktop app' : returnTo} as the place to come back to after connecting ${label}. `
-                + 'Add this site\'s address to the Worker\'s WEB_ORIGINS (as a Secret), and make sure the Worker runs the latest version: its /health page should say version 0.4.0 or later.');
+                + `Set the Worker's WEB_ORIGINS (a Secret) to ${returnTo === 'app' ? 'this site\'s address' : returnTo} and deploy it. `
+                + 'The Worker\'s /health page says how many sites it took from WEB_ORIGINS ("webOrigins"): 0 means the value was not understood.');
         case 'NOT_SIGNED_IN':
             return answer(401, 'CLOUD_SIGNIN_REQUIRED', 'Your cloud session has ended. Sign out and sign in again, then connect again.');
         case 'NOT_CONFIGURED':
             return answer(502, 'CLOUD_NOT_CONFIGURED', 'Your cloud service is not set up yet: its JWT_SECRET is missing or too short.');
         case 'NOT_FOUND':
-            return answer(502, 'CLOUD_TOO_OLD', `Your cloud service does not offer ${label} sign-in: it runs an older version. Deploy the Worker again (its /health page should say version 0.4.0 or later).`);
+            return answer(502, 'CLOUD_TOO_OLD', `Your cloud service does not offer ${label} sign-in: it runs an older version. Deploy the Worker again (its /health page should say version 0.5.0 or later).`);
         case 'UNREACHABLE':
             return answer(502, 'SOURCE_UPSTREAM', `Your cloud account could not be reached to connect ${label}. Try again in a moment.`);
         default:

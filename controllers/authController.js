@@ -8,6 +8,7 @@ const { SOURCE_IDS, storeConnection } = connections;
 const { parseReturnTarget, finishOAuth, clientOrigin } = require('../services/oauthReturn');
 const cloudGoogle = require('../services/cloud/google');
 const cloudSoundcloud = require('../services/cloud/soundcloud');
+const { describeConnectFailure } = require('../services/cloud/connectError');
 
 const DEFAULT_REDIRECT_URI = 'http://localhost:3000/auth/google/callback';
 const GOOGLE_REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
@@ -33,12 +34,12 @@ const oauthClient = () => new auth.OAuth2(
 // Authorization header, so we carry the userId across in `state` — a
 // short-lived signed token Google echoes back to us untouched.
 const getGoogleAuthUrl = async (req, res, next) => {
+    const returnTo = parseReturnTarget(req.query.return) === 'app' ? 'app' : clientOrigin();
     try {
-        const target = parseReturnTarget(req.query.return);
         const viaCloud = await cloudGoogle.startConnect(req.app.locals.db, req.userId, {
-            // The cloud sends the browser back to the desktop app's link, or
-            // to the web client on this computer; it accepts nothing else.
-            returnTo: target === 'app' ? 'app' : clientOrigin(),
+            // The cloud sends the browser back to the desktop app's link, to
+            // the web client on this computer, or to a site in its WEB_ORIGINS.
+            returnTo,
             scope: req.query.scope === 'write' ? 'write' : undefined
         });
         if (viaCloud) return res.json({ url: viaCloud, via: 'cloud' });
@@ -47,11 +48,9 @@ const getGoogleAuthUrl = async (req, res, next) => {
         // credentials when it has them; otherwise say what is wrong.
         console.warn(`Google connect: the cloud account could not start it: ${err.message}`);
         if (!isConfigured()) {
-            return res.status(502).json({
-                error: 'Your cloud account could not be reached to connect YouTube. Try again in a moment.',
-                code: 'SOURCE_UPSTREAM',
-                source: 'youtube'
-            });
+            // Say what the cloud said: most refusals are a setting, not a wait.
+            const { status, body } = describeConnectFailure(err, { label: 'YouTube', source: 'youtube', returnTo });
+            return res.status(status).json(body);
         }
     }
     try {

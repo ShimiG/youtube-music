@@ -7,6 +7,7 @@
 const { sendSourceError } = require('../services/errors');
 const { parseReturnTarget, finishOAuth, clientOrigin } = require('../services/oauthReturn');
 const cloudSoundcloud = require('../services/cloud/soundcloud');
+const { describeConnectFailure } = require('../services/cloud/connectError');
 const client = require('./soundcloud/client');
 const tokens = require('./soundcloud/tokens');
 const ytdlp = require('./soundcloud/ytdlp');
@@ -101,21 +102,18 @@ function sendSoundCloudError(res, err, fallbackMessage) {
 // is then kept with the cloud account and works on every computer signed in
 // to it. Otherwise with this computer's own credentials, when it has some.
 const getAuthUrl = async (req, res, next) => {
+    // The cloud sends the browser back to the desktop app's link, to the web
+    // client on this computer, or to a site in its WEB_ORIGINS.
+    const returnTo = parseReturnTarget(req.query.return) === 'app' ? 'app' : clientOrigin();
     try {
-        const viaCloud = await cloudSoundcloud.startConnect(req.app.locals.db, req.userId, {
-            // The cloud sends the browser back to the desktop app's link, or
-            // to the web client on this computer; it accepts nothing else.
-            returnTo: parseReturnTarget(req.query.return) === 'app' ? 'app' : clientOrigin()
-        });
+        const viaCloud = await cloudSoundcloud.startConnect(req.app.locals.db, req.userId, { returnTo });
         if (viaCloud) return res.json({ url: viaCloud, via: 'cloud' });
     } catch (err) {
         console.warn(`SoundCloud connect: the cloud account could not start it: ${err.message}`);
         if (!client.isConfigured()) {
-            return res.status(502).json({
-                error: 'Your cloud account could not be reached to connect SoundCloud. Try again in a moment.',
-                code: 'SOURCE_UPSTREAM',
-                source: 'soundcloud'
-            });
+            // Say what the cloud said: most refusals are a setting, not a wait.
+            const { status, body } = describeConnectFailure(err, { label: 'SoundCloud', source: 'soundcloud', returnTo });
+            return res.status(status).json(body);
         }
     }
     try {

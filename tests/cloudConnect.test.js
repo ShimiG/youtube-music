@@ -113,6 +113,29 @@ describe('YouTube through the cloud account', () => {
         expect(cloud.googleStarts[2]).toEqual({ returnTo: 'http://localhost:5173' });
     });
 
+    it("says why the cloud refused to start the sign-in, instead of \"try again\"", async () => {
+        // A website the Worker does not know (WEB_ORIGINS): the stand-in, like
+        // a Worker before 0.4.0, accepts only the app and this computer.
+        const saved = process.env.CLIENT_ORIGIN;
+        process.env.CLIENT_ORIGIN = 'https://music-manager.onrender.com';
+        const site = await on(A).get('/auth/google/url');
+        expect(site.statusCode).toBe(502);
+        expect(site.body).toMatchObject({ code: 'CLOUD_RETURN_NOT_ALLOWED', source: 'youtube', reason: 'BAD_RETURN' });
+        expect(site.body.error).toMatch(/does not accept https:\/\/music-manager\.onrender\.com .*WEB_ORIGINS.*0\.4\.0/);
+        if (saved === undefined) delete process.env.CLIENT_ORIGIN; else process.env.CLIENT_ORIGIN = saved;
+
+        // The cloud session is no longer accepted: sign in again.
+        cloud.rejectSessions = true;
+        const ended = await on(A).get('/auth/google/url');
+        expect(ended).toMatchObject({ statusCode: 401, body: { code: 'CLOUD_SIGNIN_REQUIRED' } });
+        cloud.rejectSessions = false;
+
+        // Really out of reach: try again later.
+        cloud.down = true;
+        expect((await on(A).get('/auth/google/url')).body).toMatchObject({ code: 'SOURCE_UPSTREAM', error: expect.stringMatching(/could not be reached/) });
+        cloud.down = false;
+    });
+
     it('once connected in the cloud, this computer gets its tokens from there and stores no refresh token', async () => {
         cloud.connectYouTube();
         // The client asks for this when the browser comes back from Google.

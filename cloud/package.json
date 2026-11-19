@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "deploy:ci": "wrangler d1 migrations apply DB --remote && wrangler deploy",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "migrate:local": "wrangler d1 migrations apply DB --local",

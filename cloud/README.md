@@ -137,6 +137,25 @@ Deploy:
 npm run deploy
 ```
 
+### Or: deploy on every merge (Workers Builds)
+
+Instead of running `npm run deploy` by hand, Cloudflare can deploy each
+change merged into `main`. In the dashboard: Workers & Pages →
+music-manager-cloud → Settings → Builds → Connect, choose this repository,
+then:
+
+| Setting | Value |
+|---|---|
+| Root directory | `cloud` |
+| Build command | `npm ci` |
+| Deploy command | `npm run deploy:ci` |
+
+`deploy:ci` first applies any new database migration (`migrations/`), then
+deploys, so the code and the tables always arrive together. Connecting does
+not deploy what is already there: the first deploy comes with the next
+change merged into `main` (or use "Retry build" on a build in the
+Deployments list).
+
 Wrangler prints the Worker's address
 (`https://music-manager-cloud.<your-subdomain>.workers.dev`). Check it:
 
@@ -225,7 +244,7 @@ to Artist Pro accounts).
 2. Create the tables it needs (once; this is migration `0003`):
 
    ```bash
-   npm run migrate
+   npm run migrate:remote
    ```
 
 3. Give the client ID and the client secret to the Worker, then deploy:

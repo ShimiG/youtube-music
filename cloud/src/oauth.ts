@@ -44,12 +44,18 @@ export async function unseal(env: Env, stored: string): Promise<string | null> {
 }
 
 // The websites the owner runs Music Manager on (docs/deploy-render.md):
-// WEB_ORIGINS, comma-separated, each exactly "https://host" with nothing after.
-function webOrigins(env: Env): Set<string> {
+// WEB_ORIGINS, comma-separated https addresses. What is pasted is forgiven
+// where it does not change the meaning: a trailing slash or a path (only the
+// site counts), quotes, spaces, upper case. What is not https is left out.
+export function webOrigins(env: Env): Set<string> {
     const origins = new Set<string>();
-    for (const raw of String(env.WEB_ORIGINS ?? '').split(',')) {
-        const value = raw.trim();
-        if (/^https:\/\/[a-z0-9.-]+(?::\d{1,5})?$/i.test(value)) origins.add(value.toLowerCase());
+    for (const raw of String(env.WEB_ORIGINS ?? '').split(/[,\s]+/)) {
+        const value = raw.trim().replace(/^["']+|["']+$/g, '');
+        if (!value) continue;
+        try {
+            const url = new URL(value);
+            if (url.protocol === 'https:' && !url.username && !url.password) origins.add(url.origin.toLowerCase());
+        } catch { /* not an address: left out */ }
     }
     return origins;
 }

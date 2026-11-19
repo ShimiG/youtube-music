@@ -121,7 +121,7 @@ describe('YouTube through the cloud account', () => {
         const site = await on(A).get('/auth/google/url');
         expect(site.statusCode).toBe(502);
         expect(site.body).toMatchObject({ code: 'CLOUD_RETURN_NOT_ALLOWED', source: 'youtube', reason: 'BAD_RETURN' });
-        expect(site.body.error).toMatch(/does not accept https:\/\/music-manager\.onrender\.com .*WEB_ORIGINS.*0\.4\.0/);
+        expect(site.body.error).toMatch(/does not accept https:\/\/music-manager\.onrender\.com .*WEB_ORIGINS \(a Secret\) to https:\/\/music-manager\.onrender\.com and deploy.*"webOrigins"/);
         if (saved === undefined) delete process.env.CLIENT_ORIGIN; else process.env.CLIENT_ORIGIN = saved;
 
         // The cloud session is no longer accepted: sign in again.
